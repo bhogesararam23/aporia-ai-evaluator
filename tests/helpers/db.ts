@@ -441,3 +441,69 @@ export function insertObservationAssessment(
   );
   return id;
 }
+
+export function insertWebsiteAudit(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    label?: string;
+    inputMethod?: 'PASTED' | 'UPLOADED';
+    filename?: string | null;
+    html?: string;
+  } = {},
+): string {
+  const id = options.id ?? 'wsa_1';
+  const html =
+    options.html ?? '<html><head><title>Example</title></head><body><h1>Example</h1></body></html>';
+  const hash = createHash('sha256').update(html, 'utf8').digest('hex');
+  db.prepare(
+    `INSERT INTO website_audits
+      (id, project_id, label, input_method, input_filename, content_hash, byte_length,
+       html_snapshot, audited_at, methodology_version, findings_json,
+       unavailable_checks_json, metadata_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'local-html-audit-v1', '[]', '[]', '{}', ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.label ?? 'Homepage snapshot',
+    options.inputMethod ?? 'PASTED',
+    options.filename ?? null,
+    hash,
+    Buffer.byteLength(html, 'utf8'),
+    html,
+    TEST_TIME,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertReport(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    reportNumber?: number;
+    title?: string;
+    supersededBy?: string | null;
+  } = {},
+): string {
+  const id = options.id ?? 'rep_1';
+  db.prepare(
+    `INSERT INTO reports
+      (id, project_id, report_number, title, generated_at, snapshot_version,
+       methodology_version, metrics_version, evidence_rule_version, snapshot_json,
+       superseded_by_report_id, created_at)
+     VALUES (?, ?, ?, ?, ?, 'report-snapshot-v1', 'methodology-2026-10-28', 'metrics-v1',
+       'evidence-aggregation-v1', '{"schemaVersion":"report-snapshot-v1"}', ?, ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.reportNumber ?? 1,
+    options.title ?? 'Evaluation report 1',
+    TEST_TIME,
+    options.supersededBy ?? null,
+    TEST_TIME,
+  );
+  return id;
+}
