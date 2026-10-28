@@ -182,3 +182,66 @@ export function findingsCsv(snapshot: ReportSnapshot): string {
 export function reportJson(snapshot: ReportSnapshot): string {
   return `${JSON.stringify(snapshot, null, 2)}\n`;
 }
+
+export function observationsCsv(snapshot: ReportSnapshot): string {
+  let output = csvLine([
+    'run_id',
+    'run_name',
+    'provider_label',
+    'model_label',
+    'interface_label',
+    'grounding_mode',
+    'locale',
+    'region',
+    'query_ordinal',
+    'query_text',
+    'observation_status',
+    'eligibility',
+    'captured_at',
+    'citation_capture',
+    'answer_text',
+    'error_note',
+    'context_notes',
+    'citations',
+    'latest_assessments',
+    'voided_at',
+    'void_reason',
+  ]);
+  for (const run of snapshot.runs) {
+    for (const observation of run.observations) {
+      const citations = observation.citations
+        .map(
+          (citation) =>
+            `${String(citation.position)}|${citation.url}|${citation.title ?? ''}|${citation.targetOwned ? 'target-owned' : 'third-party'}|${citation.voidedAt === null ? 'active' : 'voided'}`,
+        )
+        .join('; ');
+      const assessments = latestAssessments(observation.assessments)
+        .map((assessment) => `${assessment.dimension}:${assessment.label}`)
+        .join('; ');
+      output += csvLine([
+        run.id,
+        run.name,
+        run.providerLabel,
+        run.modelLabel,
+        run.interfaceLabel,
+        run.groundingMode,
+        run.locale,
+        run.region,
+        observation.queryOrdinal,
+        observation.queryTextSnapshot,
+        observation.status,
+        observation.statusEligibility,
+        observation.capturedAt,
+        observation.citationCapture,
+        observation.answerText,
+        observation.errorNote,
+        observation.contextNotes,
+        citations,
+        assessments,
+        observation.voidedAt,
+        observation.voidReason,
+      ]);
+    }
+  }
+  return output;
+}

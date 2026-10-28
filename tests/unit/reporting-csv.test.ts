@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { csvCell, findingsCsv, metricsCsv, reportJson } from '../../src/reporting/csv.ts';
+import {
+  csvCell,
+  findingsCsv,
+  metricsCsv,
+  observationsCsv,
+  reportJson,
+} from '../../src/reporting/csv.ts';
 import { buildReportSnapshot } from '../../src/reporting/snapshot.ts';
 import { baseInput } from '../helpers/reporting.ts';
 
@@ -31,3 +37,13 @@ function metricsCellCount(csv: string): number {
   const lines = csv.trimEnd().split('\n');
   return lines.length;
 }
+
+test('exports one immutable observation row per captured answer', () => {
+  const snapshot = buildReportSnapshot(baseInput());
+  const csv = observationsCsv(snapshot);
+  assert.match(csv, /^"run_id","run_name"/);
+  assert.match(csv, /"query_ordinal"/);
+  assert.match(csv, /Project A was created by Ram\./);
+  assert.match(csv, /PRESENCE:MENTIONED/);
+  assert.equal(csv.trimEnd().split('\n').length, 3);
+});
