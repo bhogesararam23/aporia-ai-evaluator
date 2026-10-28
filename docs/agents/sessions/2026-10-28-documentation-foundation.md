@@ -83,10 +83,10 @@ Create the initial documentation foundation for an evidence-first evaluator that
 ## 6. Validation performed
 - Repository metadata and ability to write to main were checked through the connected GitHub integration.
 - The bulk tree operation accepted 45 file entries, and the branch update was confirmed successful.
-- Main-branch fetches confirmed README.md, AGENTS.md, docs/README.md, docs/agents/ADR_INDEX.md, docs/evaluator/BENCHMARKING_AND_VALIDATION.md, and docs/safety/SAFETY_POLICY.md are present. The documentation index links were inspected against the repository file list.
+- Main-branch fetches confirmed README.md, AGENTS.md, docs/README.md, docs/agents/ADR_INDEX.md, docs/evaluator/BENCHMARKING_AND_VALIDATION.md, and docs/safety/SAFETY_POLICY.md are present. A relative-link check parsed Markdown links in README.md, AGENTS.md, docs/README.md, docs/agents/ADR_INDEX.md, docs/business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md, docs/agents/AGENT_OPERATING_PROTOCOL.md, and docs/governance/CONTRIBUTING.md; all 49 internal links from those seven files resolved against the committed 45-file path inventory.
 - Official external documentation was consulted for OpenAI crawler distinctions, Google Search/AI-feature eligibility, Bing AI Performance reporting, Gemini Search grounding, Anthropic web search, and NIST's Generative AI Risk Management Profile.
 - No application tests, lint, type checks, or builds were run because this change adds documentation and boundary READMEs only; there is no application implementation in this repository yet.
-- An automated link-check attempt was not completed because the multi-file GitHub fetch session returned a remote protocol error. Do not describe the whole documentation tree as having passed an automated link checker.
+- A full-tree relative-link check was not completed because a broader multi-file GitHub fetch session returned a remote protocol error. The result above covers only the seven named Markdown files; the remaining documents were not covered by that automated pass.
 
 ## 7. Risks and limitations
 - Provider APIs, crawlers, model identifiers, citation behavior, cost, and regional access change. Each adapter needs individual verification before implementation.
