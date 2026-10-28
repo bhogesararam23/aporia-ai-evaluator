@@ -59,6 +59,21 @@ test('accepts an uploaded HTML file and stores a local snapshot', async () => {
     assert.match(detail.text, /Uploaded page\.html/);
     assert.match(detail.text, /Local HTML audit/);
     assert.match(detail.text, /HTTP status/);
+    const auditPath = pathOf(locationOf(response));
+    const auditExport = await fetch(`${server.url}${auditPath}/export.json`, {
+      headers: { cookie: project.cookie },
+    });
+    assert.equal(auditExport.status, 200);
+    assert.match(auditExport.headers.get('content-type') ?? '', /application\/json/);
+    const auditJson = (await auditExport.json()) as Record<string, unknown>;
+    assert.equal(auditJson['contentHash'], detail.text.match(/[a-f0-9]{64}/)?.[0]);
+    assert.equal(typeof auditJson['htmlSnapshot'], 'string');
+    const activity = await getPage(
+      server,
+      '/projects/' + project.path.split('/')[2] + '/activity',
+      project.cookie,
+    );
+    assert.match(activity.text, /website_audit.exported/);
   } finally {
     await server.close();
   }

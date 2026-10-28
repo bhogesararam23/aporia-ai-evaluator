@@ -14,7 +14,8 @@ import {
   getWebsiteAudit,
   listWebsiteAudits,
 } from '../../persistence/repositories/websiteAudits.ts';
-import { htmlResponse, redirectWithNotice } from '../http/responses.ts';
+import { appendAuditEvent } from '../../persistence/audit.ts';
+import { htmlResponse, jsonResponse, redirectWithNotice } from '../http/responses.ts';
 import { writeContext, type RouteDefinition } from '../http/types.ts';
 import {
   csrfField,
@@ -329,6 +330,28 @@ export const auditRoutes: RouteDefinition[] = [
   },
   {
     method: 'GET',
+    path: '/projects/:projectId/audits/:auditId/export.json',
+    handler: (context) => {
+      const projectId = context.params['projectId'] ?? '';
+      const auditId = context.params['auditId'] ?? '';
+      const audit = getWebsiteAudit(context.deps.db, projectId, auditId);
+      if (audit === null) {
+        throw new AppError('NOT_FOUND', 'Website audit not found.');
+      }
+      appendAuditEvent(context.deps.db, {
+        projectId,
+        actor: context.deps.config.operator,
+        action: 'website_audit.exported',
+        entityType: 'website_audit',
+        entityId: audit.id,
+        details: { format: 'json', contentHash: audit.contentHash },
+        at: context.now,
+      });
+      return jsonResponse(audit, 200, `aporia-audit-${audit.id}.json`);
+    },
+  },
+  {
+    method: 'GET',
     path: '/projects/:projectId/audits/:auditId',
     handler: (context) => {
       const projectId = context.params['projectId'] ?? '';
@@ -344,7 +367,10 @@ export const auditRoutes: RouteDefinition[] = [
         ${pageHeader(
           audit.label,
           `Local HTML audit · ${audit.inputMethod === 'UPLOADED' ? (audit.inputFilename ?? 'uploaded file') : 'pasted HTML'} · ${formatDateTime(audit.auditedAt)}`,
-          html`<a class="button" href="/projects/${projectId}/audits">All audits</a>`,
+          html`<a class="button" href="/projects/${projectId}/audits">All audits</a>
+            <a class="button" href="/projects/${projectId}/audits/${audit.id}/export.json"
+              >Download audit JSON</a
+            >`,
         )}
         <div class="notice" role="status">
           This audit inspected only the supplied HTML. HTTP status, robots.txt, sitemaps, TLS, live
