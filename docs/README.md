@@ -16,6 +16,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [System Architecture](technical/SYSTEM_ARCHITECTURE.md) — components, data flows, trust boundaries, and deployment separation.
 - [Local Core Architecture](technical/LOCAL_CORE_ARCHITECTURE.md) — implemented module layout, request flow, boundaries, security posture, and absences.
 - [Local Schema](technical/LOCAL_SCHEMA.md) — SQLite tables, migrations, triggers, immutability, and deletion behavior.
+- [Local HTTP Route Map](technical/HTTP_ROUTE_MAP.md) — implemented pages, actions, scoping, and error behavior.
 - [Module Boundaries](technical/MODULE_BOUNDARIES.md) — enforceable dependency directions, package rules, and future CI requirements.
 - [Data Model](technical/DATA_MODEL.md) — entities, relationships, lifecycle, provenance, retention, and versioning.
 - [API and Job Contracts](technical/API_AND_JOB_CONTRACTS.md) — normalized request/response, job state, idempotency, and error semantics.
