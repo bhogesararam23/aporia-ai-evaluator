@@ -1,0 +1,27 @@
+# Glossary
+
+- **Achievement record:** Structured public description of a bounded accomplishment, creator/contributor roles, dates, and inspectable evidence.
+- **Answer fidelity:** Degree to which an AI answer represents a target proposition accurately and with appropriate qualifications.
+- **Attribution correctness:** Whether an answer identifies the correct person/entity, role, and source for an accomplishment.
+- **Canonical URL:** Preferred stable URL for a resource or duplicate set; not proof of indexing.
+- **Claim:** Original statement submitted for evaluation.
+- **Proposition:** Atomic, bounded statement derived from a claim for evidence assessment.
+- **Evidence item:** Relevant passage, artifact, data point, repository reference, or test output tied to a source.
+- **Evidence provenance:** Record of where evidence came from, when/how it was obtained, and how it relates to a claim.
+- **Independent corroboration:** Supporting evidence from a source not merely repeating the same claim source; independence must be assessed, not assumed.
+- **Mention rate:** Fraction of eligible completed responses that mention the target under a specified test protocol.
+- **Citation:** Source reference returned by a provider or attached to an answer; its presence does not prove support.
+- **Citation support:** Whether cited content materially supports the associated answer claim.
+- **Discoverability:** Ability of a specified crawler, search service, or evaluation process to access or surface relevant information.
+- **Indexing:** Inclusion or representation in a provider's searchable index, as observed through suitable provider evidence.
+- **Caching:** Storage/reuse of content by a system; generally not directly observable to Aporia unless the provider exposes a specific signal.
+- **Grounded test:** A run where the configured model/API has a search or retrieval tool enabled.
+- **Provider observation:** Exact output and metadata observed from one provider/configuration/test.
+- **Query set:** Versioned collection of representative test questions and expected evaluation targets.
+- **Eligible test:** Completed test that satisfies metric inclusion criteria; errors are not silent negatives.
+- **Verdict:** Bounded evidence-status conclusion with rationale and limitations.
+- **Confidence/calibration:** A probability-like estimate that has been evaluated against labelled outcomes; do not use as decoration.
+- **ADR:** Architecture Decision Record that documents context, decision, alternatives, consequences, and validation.
+- **Commercial boundary:** Code and data associated with billing, plans, entitlements, sales, and customer lifecycle, kept out of evaluator semantics.
+- **Untrusted content:** Retrieved or uploaded material that may be misleading or contain prompt injection; it is data, not instruction.
+- **Unknown/unavailable:** An explicit state where available evidence or integration does not permit a conclusion.
