@@ -19,8 +19,8 @@
   --focus: #0b5fff;
   --radius: 0.55rem;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06);
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -205,7 +205,7 @@ pre {
   background: var(--surface);
 }
 
-.subnav a[aria-current="page"] {
+.subnav a[aria-current='page'] {
   background: var(--accent-soft);
   font-weight: 650;
 }
@@ -462,7 +462,7 @@ button:hover {
   margin-bottom: 0.25rem;
 }
 
-.field input:not([type="checkbox"]),
+.field input:not([type='checkbox']),
 .field select,
 .field textarea {
   width: 100%;
@@ -833,4 +833,8 @@ details[open] summary {
   details > summary {
     display: none;
   }
+}
+
+.home-grid {
+  margin-top: 1rem;
 }
