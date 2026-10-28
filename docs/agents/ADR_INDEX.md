@@ -14,6 +14,8 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 | [ADR-008](adrs/ADR-008-local-first-single-package-typescript.md) | Implement local core v0.1 as a single-package TypeScript application | Proposed | 2026-10-28 | One Node 24 package with internal module boundaries, SQLite, and server-rendered HTML. |
 | [ADR-009](adrs/ADR-009-deterministic-evidence-aggregation.md) | Derive evidence status deterministically from human-recorded relationships | Proposed | 2026-10-28 | Human relations plus a pure, versioned precedence rule; explicit human conclusions remain visible. |
 | [ADR-010](adrs/ADR-010-manual-observation-capture.md) | Use manually captured observations as the only v0.1 answer source | Proposed | 2026-10-28 | No provider calls or fake adapters; structured manual capture, explicit unknowns, and immutable finalized runs. |
+| [ADR-011](adrs/ADR-011-local-html-only-analysis.md) | Analyze only user-supplied HTML locally | Proposed | 2026-10-28 | Parse supplied HTML without network access; mark network-dependent checks unavailable. |
+| [ADR-012](adrs/ADR-012-loopback-single-operator-security.md) | Adopt a loopback-only, single-operator security posture for v0.1 | Proposed | 2026-10-28 | No remote binding or accounts; CSRF, host validation, CSP, body limits, and explicit local-only limits. |
 
 ## ADR lifecycle
 
