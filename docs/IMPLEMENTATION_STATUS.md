@@ -11,7 +11,7 @@ This matrix records what is actually implemented and verified in this repository
 
 | Capability | Status | Implementation | Verification |
 |---|---|---|---|
-| Local project workspace | Implemented / Validated | Projects and target entities, lifecycle and audit; `src/persistence/repositories/projects.ts`, `src/app/routes/projects.ts` | `tests/integration/repositories-projects.test.ts`, `tests/integration/project-workflows.test.ts` |
+| Local project workspace | Implemented / Validated | Project creation and profile editing, target entities, lifecycle and audit; `src/persistence/repositories/projects.ts`, `src/app/routes/projects.ts` | `tests/integration/repositories-projects.test.ts`, `tests/integration/project-workflows.test.ts` |
 | Entity records and roles | Implemented / Validated | Entity types, aliases, URLs, declared identity status/method/scope; no independent verification | Repository and HTTP tests; identity copy is asserted |
 | Claims and immutable revisions | Implemented / Validated | Append-only revisions, current revision, lifecycle; `src/core/lifecycle.ts`, `src/persistence/repositories/claims.ts` | Schema, repository, and claim workflow tests |
 | Atomic propositions | Implemented / Validated | Immutable propositions, conditions, time interval, units, evidence requirements, expected criterion, ambiguity notes | Schema and claim workflow tests |
@@ -31,7 +31,7 @@ This matrix records what is actually implemented and verified in this repository
 | Local HTML audit | Implemented / Validated | User-supplied paste/upload, parse5, in-document findings, network checks unavailable | Website unit tests, audit repository and upload tests |
 | HTML snapshot storage | Implemented / Validated | SHA-256, byte length, raw local snapshot, findings/unavailable/metadata; immutable | Audit schema and repository tests |
 | Immutable report snapshots | Implemented / Validated | Versioned snapshot, rendered only from stored JSON; earlier reports retained and superseded | Reporting unit, service, repository, HTTP immutability tests |
-| JSON/CSV exports | Implemented / Validated | Report JSON, metrics CSV, findings CSV, project JSON; formula-injection protection | CSV unit tests, workflow tests |
+| JSON/CSV exports | Implemented / Validated | Report JSON, metrics/findings/observations CSV, local audit JSON, project JSON; formula-injection protection; download audit events | CSV unit tests, workflow and audit tests |
 | Run comparisons | Implemented / Validated | Only identical query set/config are comparable; deltas labelled descriptive, not causal | Reporting unit tests |
 | Audit trail | Implemented / Validated | Append-only local events; project deletion removes them (disclosed); export actions audited | Audit/schema, project, claim, run tests |
 | Deletion and export control | Implemented / Validated | Explicit JSON export and typed-name project deletion with cascade disclosure | Project workflow tests |

@@ -46,7 +46,7 @@ npm run dev
 
 ## What works
 
-- **Projects and entities:** target person/product/repository/artifact, alternate names, public URLs, explicitly asserted identity status (never described as verified).
+- **Projects and entities:** create and edit a project profile, target person/product/repository/artifact, alternate names, public URLs, explicitly asserted identity status (never described as verified).
 - **Claims and propositions:** immutable claim revisions, atomic propositions with scope/time/units/evidence requirements, versioned review status.
 - **Sources and evidence:** source descriptors, user-supplied excerpts and locators with SHA-256 digests, supporting and contradictory relationships that coexist, one-way supersession with retained history.
 - **Evidence review:** a transparent `evidence-aggregation-v1` rule over human-recorded relationships, plus versioned explicit human proposition assessments and visible disagreement when the two differ.
@@ -55,7 +55,7 @@ npm run dev
 - **Assessments:** separate presence, fidelity, citation-support, and attribution assessments with append-only versions and reviewer rationale.
 - **Metrics:** mention rate, target-source and any-source citation rates, citation support, claim fidelity, attribution correctness, observed answer-level coverage, explicit numerators/denominators/exclusions, and `null` unknowns. No composite score.
 - **Local HTML audits:** paste or upload HTML; inspect title, robots meta, canonical, JSON-LD alignment, headings, author/date signals, links, alt text, and parser issues. No network request, script execution, or crawler is used. Network-dependent checks are reported as unavailable.
-- **Reports:** immutable snapshots built from persisted records, with scope, method, coverage, claims/evidence, audits, runs, metric definitions/exclusions, comparisons, remediation suggestions, limitations, and unavailable checks. JSON, metrics CSV, and findings CSV exports.
+- **Reports:** immutable snapshots built from persisted records, with scope, method, coverage, claims/evidence, audits, runs, metric definitions/exclusions, comparisons, remediation suggestions, limitations, and unavailable checks. JSON, metrics CSV, findings CSV, observations CSV, and local audit JSON exports; export actions are audited.
 - **Data control:** project JSON export, typed-name deletion, local audit trail, and no telemetry or provider calls.
 
 ## Commands
