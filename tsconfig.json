@@ -16,6 +16,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "useUnknownInCatchVariables": true,
     "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
