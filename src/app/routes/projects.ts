@@ -13,7 +13,7 @@ import {
 } from '../../core/vocabulary.ts';
 import type { ValidationIssue } from '../../core/validation.ts';
 import { AppError } from '../../errors.ts';
-import { listAuditEvents } from '../../persistence/audit.ts';
+import { appendAuditEvent, listAuditEvents } from '../../persistence/audit.ts';
 import { listClaims } from '../../persistence/repositories/claims.ts';
 import { listSources } from '../../persistence/repositories/evidence.ts';
 import {
@@ -814,6 +814,15 @@ export const projectRoutes: RouteDefinition[] = [
     handler: (context) => {
       const projectId = context.params['projectId'] ?? '';
       getProjectOrThrow(context.deps.db, projectId);
+      appendAuditEvent(context.deps.db, {
+        projectId,
+        actor: context.deps.config.operator,
+        action: 'project.exported',
+        entityType: 'project',
+        entityId: projectId,
+        details: { format: 'json' },
+        at: context.now,
+      });
       const exported = exportProject(context.deps.db, projectId, context.now);
       return jsonResponse(exported, 200, `aporia-project-${projectId}.json`);
     },
