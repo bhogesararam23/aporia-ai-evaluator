@@ -49,7 +49,8 @@ test('creates a project with a self-declared target entity and audit trail', () 
     assert.deepEqual(
       listAuditEvents(db, detail.project.id).map((event) => event.action),
       ['project.target_entity_set', 'entity.created', 'project.created'],
-    );  } finally {
+    );
+  } finally {
     closeDatabase(db);
   }
 });
