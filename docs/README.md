@@ -34,6 +34,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Claim and Attribution Trust Model](trust/CLAIM_AND_ATTRIBUTION_TRUST.md) — evidence status, source quality, identity, authorship, roles, disputes, and corrections.
 - [Safety Policy](safety/SAFETY_POLICY.md) — abuse cases, allowed/disallowed uses, refusal distinctions, review, and mitigations.
 - [Security and Privacy](security/SECURITY_PRIVACY.md) — threat model, tenant isolation, SSRF, uploads, credentials, retention, and deletion.
+- [Local Security Test Matrix](security/LOCAL_SECURITY_TEST_MATRIX.md) — implemented local controls, evidence, and residual limits.
 - [Observability, Cost, and Incidents](operations/OBSERVABILITY_COST_INCIDENTS.md) — run logging, reliability, budget guardrails, alerts, and response.
 
 ## Project governance and agents
