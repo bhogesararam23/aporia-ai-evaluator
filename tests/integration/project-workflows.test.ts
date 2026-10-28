@@ -251,8 +251,9 @@ test('edits an entity and can change the project target', async () => {
       },
     );
     assert.equal(added.status, 303);
-    const entitiesAfter = await getPage(server, `${projectPath}/entities`, newProject.cookie);
-    const entityId = entitiesAfter.text.match(/\/entities\/(ent_[0-9a-f-]+)\/edit/)?.[1];
+    const entityId = listEntities(server.db, projectId).find(
+      (entity) => entity.canonicalName === 'Second entity',
+    )?.id;
     assert.ok(entityId);
 
     const editPage = await getPage(
