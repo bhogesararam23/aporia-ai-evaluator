@@ -180,3 +180,198 @@ export function insertEvidenceWithRelation(
   );
   return { evidenceId, relationshipId };
 }
+
+export function insertQuerySet(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    name?: string;
+    version?: number;
+    status?: 'DRAFT' | 'APPROVED';
+    supersedesId?: string | null;
+  } = {},
+): string {
+  const id = options.id ?? 'qst_1';
+  const status = options.status ?? 'DRAFT';
+  db.prepare(
+    `INSERT INTO query_sets
+      (id, project_id, name, version, status, description, locale, approved_by, approved_at,
+       approval_note, supersedes_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, NULL, 'en', ?, ?, NULL, ?, ?, ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.name ?? 'Core discovery',
+    options.version ?? 1,
+    status,
+    status === 'APPROVED' ? TEST_ACTOR : null,
+    status === 'APPROVED' ? TEST_TIME : null,
+    options.supersedesId ?? null,
+    TEST_TIME,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertQuery(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    querySetId?: string;
+    ordinal?: number;
+    text?: string;
+    intent?: string;
+    branded?: boolean;
+  } = {},
+): string {
+  const id = options.id ?? 'qry_1';
+  db.prepare(
+    `INSERT INTO queries
+      (id, query_set_id, ordinal, text, intent, locale, region, branded,
+       expected_elements, inclusion_rationale, created_at)
+     VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, 'Project A and its creator.', 'Baseline.', ?)`,
+  ).run(
+    id,
+    options.querySetId ?? 'qst_1',
+    options.ordinal ?? 1,
+    options.text ?? 'What is Project A?',
+    options.intent ?? 'IDENTITY',
+    options.branded ? 1 : 0,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function approveQuerySet(
+  db: DatabaseSync,
+  options: { querySetId?: string; reviewer?: string; at?: string } = {},
+): void {
+  db.prepare(
+    `UPDATE query_sets
+     SET status = 'APPROVED', approved_by = ?, approved_at = ?, updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    options.reviewer ?? TEST_ACTOR,
+    options.at ?? TEST_TIME,
+    options.at ?? TEST_TIME,
+    options.querySetId ?? 'qst_1',
+  );
+}
+
+export function insertRun(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    querySetId?: string;
+    name?: string;
+    status?: 'OPEN' | 'FINALIZED' | 'CANCELLED';
+  } = {},
+): string {
+  const id = options.id ?? 'run_1';
+  const querySetId = options.querySetId ?? 'qst_1';
+  const set = db.prepare('SELECT name, version FROM query_sets WHERE id = ?').get(querySetId) as
+    Record<string, unknown> | undefined;
+  if (set === undefined) {
+    throw new Error('Test helper requires a query set.');
+  }
+  const status = options.status ?? 'OPEN';
+  db.prepare(
+    `INSERT INTO runs
+      (id, project_id, query_set_id, query_set_name, query_set_version, name,
+       provider_label, model_label, interface_label, grounding_mode, locale, region,
+       capture_from, capture_to, conditions, notes, status, created_by, created_at,
+       finalized_at, cancelled_at, cancel_reason)
+     VALUES (?, ?, ?, ?, ?, ?, 'Manual assistant', 'unknown-model', 'Consumer interface',
+       'SEARCH_GROUNDED', 'en', NULL, ?, ?, 'Manual capture under default settings.', NULL,
+       ?, ?, ?, NULL, NULL, NULL)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    querySetId,
+    String(set['name']),
+    Number(set['version']),
+    options.name ?? 'Manual baseline',
+    TEST_TIME,
+    TEST_TIME,
+    status,
+    TEST_ACTOR,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertObservation(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    runId?: string;
+    queryId?: string;
+    status?: string;
+    answerText?: string;
+    errorNote?: string;
+    citationCapture?: 'CAPTURED' | 'NOT_SHOWN' | 'UNKNOWN';
+  } = {},
+): string {
+  const id = options.id ?? 'obs_1';
+  const queryId = options.queryId ?? 'qry_1';
+  const query = db
+    .prepare('SELECT ordinal, text, intent FROM queries WHERE id = ?')
+    .get(queryId) as Record<string, unknown> | undefined;
+  if (query === undefined) {
+    throw new Error('Test helper requires a query.');
+  }
+  const status = options.status ?? 'COMPLETED';
+  const requiresAnswer = ['COMPLETED', 'REFUSAL', 'NO_ANSWER'].includes(status);
+  db.prepare(
+    `INSERT INTO observations
+      (id, run_id, query_id, query_ordinal, query_text_snapshot, query_intent_snapshot,
+       status, captured_at, answer_text, error_note, citation_capture, context_notes,
+       voided_at, void_reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+  ).run(
+    id,
+    options.runId ?? 'run_1',
+    queryId,
+    Number(query['ordinal']),
+    String(query['text']),
+    String(query['intent']),
+    status,
+    TEST_TIME,
+    requiresAnswer ? (options.answerText ?? 'Project A was created by Ram.') : null,
+    requiresAnswer ? (options.errorNote ?? null) : (options.errorNote ?? 'Capture failed.'),
+    options.citationCapture ?? 'CAPTURED',
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertCitation(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    observationId?: string;
+    position?: number;
+    url?: string;
+    title?: string;
+    targetOwned?: boolean;
+  } = {},
+): string {
+  const id = options.id ?? 'cit_1';
+  db.prepare(
+    `INSERT INTO citations
+      (id, observation_id, position, url, title, snippet, target_owned, voided_at,
+       void_reason, created_at)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?)`,
+  ).run(
+    id,
+    options.observationId ?? 'obs_1',
+    options.position ?? 1,
+    options.url ?? 'https://example.com/source',
+    options.title ?? 'Source',
+    options.targetOwned ? 1 : 0,
+    TEST_TIME,
+  );
+  return id;
+}
