@@ -139,6 +139,19 @@ test('query sets, manual runs, assessments, finalization, and reports work end t
     const observationId = afterObservation.text.match(/observations\/(obs_[0-9a-f-]+)/)?.[1];
     assert.ok(observationId);
 
+    const unsafeCitation = await postForm(
+      server,
+      `${run.path}/observations/${observationId}/citations`,
+      project.cookie,
+      csrfFrom(afterObservation.text),
+      {
+        url: 'javascript:alert(1)',
+        title: 'Unsafe',
+      },
+    );
+    assert.equal(unsafeCitation.status, 422);
+    assert.match(await unsafeCitation.text(), /Only HTTP and HTTPS URLs are allowed/);
+
     const citation = await postForm(
       server,
       `${run.path}/observations/${observationId}/citations`,
