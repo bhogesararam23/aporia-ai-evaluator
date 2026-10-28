@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { listEntities } from '../../src/persistence/repositories/projects.ts';
 import {
   csrfFrom,
   getPage,
@@ -213,6 +214,80 @@ test('edits a project profile and records the change', async () => {
     });
     assert.equal(invalid.status, 422);
     assert.match(await invalid.text(), /Only HTTP and HTTPS URLs are allowed/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('edits an entity and can change the project target', async () => {
+  const server = await startTestServer();
+  try {
+    const newProject = await getPage(server, '/projects/new');
+    const created = await postForm(
+      server,
+      '/projects',
+      newProject.cookie,
+      csrfFrom(newProject.text),
+      {
+        name: 'Entity edit project',
+        targetEntityName: 'First target',
+        targetEntityType: 'PERSON',
+      },
+    );
+    const projectPath = pathOf(locationOf(created));
+    const projectId = projectPath.split('/')[2] ?? '';
+
+    const entitiesPage = await getPage(server, `${projectPath}/entities`, newProject.cookie);
+    const added = await postForm(
+      server,
+      `${projectPath}/entities`,
+      newProject.cookie,
+      csrfFrom(entitiesPage.text),
+      {
+        type: 'ORGANIZATION',
+        canonicalName: 'Second entity',
+        alternateNames: 'Second',
+        identityStatus: 'UNVERIFIED',
+      },
+    );
+    assert.equal(added.status, 303);
+    const entitiesAfter = await getPage(server, `${projectPath}/entities`, newProject.cookie);
+    const entityId = entitiesAfter.text.match(/\/entities\/(ent_[0-9a-f-]+)\/edit/)?.[1];
+    assert.ok(entityId);
+
+    const editPage = await getPage(
+      server,
+      `${projectPath}/entities/${entityId}/edit`,
+      newProject.cookie,
+    );
+    const updated = await postForm(
+      server,
+      `${projectPath}/entities/${entityId}`,
+      newProject.cookie,
+      csrfFrom(editPage.text),
+      {
+        type: 'ORGANIZATION',
+        canonicalName: 'Corrected entity',
+        identityStatus: 'SELF_DECLARED',
+        identityMethod: 'Operator declaration; no independent verification.',
+      },
+    );
+    assert.equal(updated.status, 303);
+    const afterEdit = await getPage(server, `${projectPath}/entities`, newProject.cookie);
+    assert.match(afterEdit.text, /Corrected entity/);
+    assert.match(afterEdit.text, /Self-declared by operator/);
+
+    const targetPage = await getPage(server, `${projectPath}/entities`, newProject.cookie);
+    const setTarget = await postForm(
+      server,
+      `${projectPath}/entities/${entityId}/target`,
+      newProject.cookie,
+      csrfFrom(targetPage.text),
+      {},
+    );
+    assert.equal(setTarget.status, 303);
+    const afterTarget = await getPage(server, `${projectPath}/entities`, newProject.cookie);
+    assert.match(afterTarget.text, /Current target/);
   } finally {
     await server.close();
   }
