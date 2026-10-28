@@ -9,6 +9,7 @@ import {
   validateObservationAssessmentDraftInput,
   validateObservationDraftInput,
   validateProjectInput,
+  validateProjectUpdateInput,
   validatePropositionAssessmentInput,
   validatePropositionInput,
   validateQueryDraftInput,
@@ -415,4 +416,21 @@ test('empty input never throws and reports required fields', () => {
     assert.equal(result.ok, false);
     assert.ok(!result.ok && result.issues.length > 0);
   }
+});
+
+test('project profile updates validate the same safe fields without a target entity', () => {
+  const update = expectOk(
+    validateProjectUpdateInput({
+      name: 'Updated project',
+      description: 'Updated description.',
+      primaryDomain: 'https://example.com/updated',
+    }),
+  );
+  assert.equal(update.name, 'Updated project');
+  assert.equal(update.primaryDomain, 'https://example.com/updated');
+  expectIssue(
+    validateProjectUpdateInput({ name: 'Updated', primaryDomain: 'javascript:alert(1)' }),
+    'primaryDomain',
+  );
+  expectIssue(validateProjectUpdateInput({ name: '' }), 'name');
 });

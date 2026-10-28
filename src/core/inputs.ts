@@ -731,3 +731,22 @@ export function validateConfirmationName(
   }
   return confirmation;
 }
+
+export interface ProjectUpdateInput {
+  readonly name: string;
+  readonly description: string | undefined;
+  readonly primaryDomain: string | undefined;
+}
+
+export function validateProjectUpdateInput(raw: RawFields): ValidationResult<ProjectUpdateInput> {
+  const reader = createReader();
+  const name = reader.read(requiredText(raw['name'], 'name', { max: 200 }));
+  const description = reader.read(
+    optionalText(raw['description'], 'description', { max: 4000, multiline: true }),
+  );
+  const primaryDomain = reader.read(optionalHttpUrl(raw['primaryDomain'], 'primaryDomain'));
+  if (reader.issues.length > 0) {
+    return invalidMany(reader.issues);
+  }
+  return valid({ name, description, primaryDomain });
+}
