@@ -232,6 +232,15 @@ test('query sets, manual runs, assessments, finalization, and reports work end t
     assert.match(metrics.headers.get('content-type') ?? '', /text\/csv/);
     assert.match(await metrics.text(), /mention_rate/);
 
+    const observations = await fetch(`${server.url}${reportPath}/observations.csv`, {
+      headers: { cookie: project.cookie },
+    });
+    assert.equal(observations.status, 200);
+    assert.match(observations.headers.get('content-type') ?? '', /text\/csv/);
+    const observationsText = await observations.text();
+    assert.match(observationsText, /Aporia is an evaluation project created by Ram/);
+    assert.match(observationsText, /PRESENCE:MENTIONED/);
+
     const findings = await fetch(`${server.url}${reportPath}/findings.csv`, {
       headers: { cookie: project.cookie },
     });

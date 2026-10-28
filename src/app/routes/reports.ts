@@ -1,7 +1,7 @@
 import { validateReportInput } from '../../core/inputs.ts';
 import type { ValidationIssue } from '../../core/validation.ts';
 import type { ReportSnapshot } from '../../reporting/types.ts';
-import { findingsCsv, metricsCsv } from '../../reporting/csv.ts';
+import { findingsCsv, metricsCsv, observationsCsv } from '../../reporting/csv.ts';
 import { AppError } from '../../errors.ts';
 import { getProjectOrThrow } from '../../persistence/repositories/projects.ts';
 import {
@@ -228,6 +228,22 @@ export const reportRoutes: RouteDefinition[] = [
       return csvResponse(
         metricsCsv(snapshotOf(report)),
         `aporia-report-${String(report.reportNumber)}-metrics.csv`,
+      );
+    },
+  },
+  {
+    method: 'GET',
+    path: '/projects/:projectId/reports/:reportId/observations.csv',
+    handler: (context) => {
+      const projectId = context.params['projectId'] ?? '';
+      const reportId = context.params['reportId'] ?? '';
+      const report = getReport(context.deps.db, projectId, reportId);
+      if (report === null) {
+        throw new AppError('NOT_FOUND', 'Report not found.');
+      }
+      return csvResponse(
+        observationsCsv(snapshotOf(report)),
+        `aporia-report-${String(report.reportNumber)}-observations.csv`,
       );
     },
   },
