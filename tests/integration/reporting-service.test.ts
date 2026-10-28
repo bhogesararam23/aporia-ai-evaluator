@@ -387,3 +387,104 @@ test('project export contains persisted sources, runs, audits, and reports', () 
     closeDatabase(db);
   }
 });
+
+test('provider failures are reported as exclusions, not negative answers', () => {
+  const db = createTestDatabase();
+  try {
+    const project = createProject(
+      db,
+      {
+        name: 'Failure project',
+        description: undefined,
+        primaryDomain: undefined,
+        targetEntity: null,
+      },
+      CONTEXT,
+    );
+    const set = createQuerySet(
+      db,
+      project.project.id,
+      { name: 'Failure set', description: undefined, locale: 'en' },
+      CONTEXT,
+    );
+    const query = addQuery(
+      db,
+      project.project.id,
+      set.set.id,
+      {
+        text: 'What is the artifact?',
+        intent: 'DESCRIPTION',
+        locale: undefined,
+        region: undefined,
+        branded: false,
+        expectedElements: 'The artifact.',
+        inclusionRationale: 'Baseline.',
+      },
+      CONTEXT,
+    );
+    approveQuerySet(
+      db,
+      project.project.id,
+      set.set.id,
+      { reviewer: 'Ram', note: undefined },
+      CONTEXT,
+    );
+    const run = createRun(
+      db,
+      project.project.id,
+      set.set.id,
+      {
+        name: 'Error-only run',
+        providerLabel: 'Example assistant',
+        modelLabel: undefined,
+        interfaceLabel: 'Consumer interface',
+        groundingMode: 'UNKNOWN',
+        locale: 'en',
+        region: undefined,
+        captureFrom: '2026-10-28T10:00:00.000Z',
+        captureTo: '2026-10-28T11:00:00.000Z',
+        conditions: 'Manual capture attempt.',
+        notes: undefined,
+      },
+      CONTEXT,
+    );
+    addObservation(
+      db,
+      project.project.id,
+      run.run.id,
+      {
+        queryId: query.id,
+        status: 'ERROR',
+        capturedAt: '2026-10-28T10:30:00.000Z',
+        answerText: undefined,
+        errorNote: 'The interface returned a server error.',
+        citationCapture: 'UNKNOWN',
+        contextNotes: undefined,
+      },
+      CONTEXT,
+    );
+    finalizeRun(db, project.project.id, run.run.id, CONTEXT);
+    const generated = generateReport(db, project.project.id, 'Failure report', CONTEXT);
+    const runView = generated.snapshot.runs[0];
+    assert.ok(runView);
+    assert.equal(runView.metrics.mentionRate.denominator, 0);
+    assert.equal(runView.metrics.mentionRate.value, null);
+    assert.equal(
+      runView.metrics.mentionRate.exclusions.some(
+        (exclusion) => exclusion.reason === 'PROVIDER_ERROR',
+      ),
+      true,
+    );
+    assert.equal(runView.observations[0]?.status, 'ERROR');
+    assert.equal(runView.observations[0]?.statusEligibility, 'EXCLUDED');
+    assert.ok(generated.snapshot.limitations.some((item) => /denominators are empty/.test(item)));
+    assert.equal(
+      generated.snapshot.remediation.some((item) =>
+        /missing observation assessments/.test(item.action),
+      ),
+      true,
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
