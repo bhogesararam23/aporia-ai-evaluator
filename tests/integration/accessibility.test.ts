@@ -362,3 +362,19 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
     await server.close();
   }
 });
+
+test('not-found errors are accessible and do not expose internals', async () => {
+  const server = await startTestServer();
+  try {
+    const form = await getPage(server, '/projects/new');
+    const cookie = cookieFrom(form.response);
+    const missing = await getPage(server, '/projects/prj_missing', cookie);
+    assert.equal(missing.response.status, 404);
+    assert.deepEqual(accessibilityViolations(missing.text), []);
+    assert.match(missing.text, /Page not found/);
+    assert.match(missing.text, /Request /);
+    assert.equal(missing.text.includes('Error:'), false);
+  } finally {
+    await server.close();
+  }
+});
