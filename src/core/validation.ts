@@ -147,6 +147,16 @@ export function optionalHttpUrl(
   return httpUrl(value, field);
 }
 
+export function optionalDateOnly(
+  value: unknown,
+  field: string,
+): ValidationResult<string | undefined> {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    return valid(undefined);
+  }
+  return dateOnly(value, field);
+}
+
 const ISO_DATE_TIME =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
