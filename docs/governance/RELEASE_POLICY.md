@@ -48,3 +48,9 @@ Release notes describe what changed, what was tested, known limitations, provide
 ## 7. Incident-triggered release stop
 
 Stop or roll back when a vulnerability risks private data, a critical evaluator regression appears, attribution is systematically wrong, a provider integration violates applicable terms, or a runaway-cost incident occurs. Resumption requires mitigation and documented review.
+
+## Evidence of engineering readiness
+
+Use [Quality Gates](QUALITY_GATES.md) as the acceptance baseline. Policy text is not enforcement: required reviews, branch protection, status checks, environment approvals, and release permissions must be configured and verified in GitHub separately. Record which controls are active and which remain manual or unavailable.
+
+Avoid blanket labels such as “enterprise-ready,” “production-ready,” or “secure.” State the exact capabilities, checks, review scope, operating limits, and remaining risks that support a claim.

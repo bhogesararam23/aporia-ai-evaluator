@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible defect or unmet requirement.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include API keys, credentials, private customer data, or sensitive personal information. Use a configured private disclosure route for security vulnerabilities."
+  - type: textarea
+    id: summary
+    attributes:
+      label: Observed problem
+      description: What happened, and what should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Smallest reproducible sequence, sanitized inputs, and relevant revision/configuration.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and impact
+      description: Logs, screenshots, run IDs, or sources; remove secrets and private data.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Documentation or governance
+        - Website audit or crawling
+        - Evidence and source provenance
+        - Query design or answerability
+        - AI answer or citation evaluation
+        - Attribution
+        - Provider adapter
+        - Security, privacy, or safety
+        - Reporting or retesting
+        - Operations or cost
+        - Unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - P0 - immediate severe risk
+        - P1 - core workflow or release blocked
+        - P2 - material issue with workaround
+        - P3 - minor or cosmetic
+        - Unknown / needs triage
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Expected acceptance criteria
+      description: What observable conditions would demonstrate that the defect is fixed?
+    validations:
+      required: true

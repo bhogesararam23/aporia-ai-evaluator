@@ -61,3 +61,11 @@ Completion means the requested outcome is implemented, validated, documented, an
 - ADRs are indexed sequentially.
 - Commit SHA and push status are correct.
 - Next steps and owner decisions are listed.
+
+## Work-item and release discipline
+
+- Acceptance criteria link to evidence, tests, or a recorded owner decision.
+- Status accurately reflects whether work is proposed, implemented, validated, accepted, or released.
+- Applicable [Quality Gates](QUALITY_GATES.md) ran; not-run checks and reasons are recorded.
+- Risks, dependencies, migration/compatibility, observability, rollback, and follow-up are addressed proportionately.
+- The session/release record names the exact revision and does not claim unverified repository settings or production controls.

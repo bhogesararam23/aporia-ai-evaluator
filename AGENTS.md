@@ -31,3 +31,10 @@ Read this file before making changes. The detailed policies are in docs/agents/A
 ## Source-of-truth hierarchy
 
 For architecture, accepted ADRs and architecture docs govern. For metric semantics, Evaluator Methodology and Metrics govern. For trust/safety/security, the corresponding policy docs govern. If two documents conflict, stop, document the conflict, and propose an ADR or documentation correction rather than choosing silently.
+
+## Company-grade execution requirements
+
+13. For substantial tasks, record a directly responsible individual (DRI), problem statement, acceptance criteria, non-goals, risks, verification plan, and handoff.
+14. Follow the [Engineering Operating Model](docs/governance/ENGINEERING_OPERATING_MODEL.md), [Work Intake and Delivery](docs/governance/WORK_INTAKE_AND_DELIVERY.md), and [Quality Gates](docs/governance/QUALITY_GATES.md). Policy text is not proof of GitHub enforcement.
+15. Distinguish proposed, ready, in progress, blocked, in review, accepted, and released. A completed document or green check does not by itself prove production readiness or user outcomes.
+16. Prioritize trust, correctness, security, privacy, safety, and reproducibility before feature breadth. Never invent roles, reviews, provider capabilities, or production controls.

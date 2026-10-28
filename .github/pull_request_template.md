@@ -21,3 +21,11 @@
 
 ## Risks and follow-up
 Describe known gaps, migration needs, rollback, and owner decisions.
+
+## Delivery readiness
+- [ ] Linked work item or documented reason this is a small direct fix
+- [ ] Acceptance criteria and non-goals are explicit
+- [ ] Risks, compatibility/migrations, observability, and rollback considered where applicable
+- [ ] Exact checks and results recorded; not-run checks explained
+- [ ] Status claims distinguish drafted, implemented, validated, accepted, and released
+- [ ] No GitHub enforcement, reviewer approval, provider capability, or production readiness is claimed without evidence

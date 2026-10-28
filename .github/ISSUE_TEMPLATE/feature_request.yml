@@ -1,0 +1,62 @@
+name: Product or engineering proposal
+description: Propose a product outcome, technical improvement, research task, or documentation change.
+title: "proposal: "
+body:
+  - type: markdown
+    attributes:
+      value: "Describe the problem and intended outcome, not just a preferred implementation. Keep evidence support, discoverability, AI visibility, answer fidelity, citation support, and attribution distinct. Do not include secrets or private customer data."
+  - type: dropdown
+    id: type
+    attributes:
+      label: Work type
+      options:
+        - Product change
+        - Research required
+        - Reliability or technical debt
+        - Documentation or governance
+        - Security, privacy, or safety improvement
+        - Provider integration
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and affected user
+      description: Who has the problem, in what context, and what evidence shows it matters?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Intended outcome
+      description: What should become possible or measurably better?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable pass/fail conditions, including important failure cases.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What should be included and deliberately excluded?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence, assumptions, and alternatives
+      description: Link relevant sources, issues, benchmark cases, or research; separate facts from hypotheses.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and dependencies
+      description: Affected ADRs, provider/legal constraints, privacy/security/safety risks, cost, and compatibility.
+    validations:
+      required: false

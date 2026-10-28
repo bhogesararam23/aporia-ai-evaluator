@@ -36,3 +36,9 @@ Use the authenticated repository account under the authorization granted for the
 ## 8. Definition of Done
 
 Use [Definition of Done](DEFINITION_OF_DONE.md). Merge/release acceptance requires applicable criteria, not merely a completed commit.
+
+## Company-grade work discipline
+
+For substantial work, use the [Work Intake and Delivery Standard](WORK_INTAKE_AND_DELIVERY.md) and [Engineering Operating Model](ENGINEERING_OPERATING_MODEL.md). Identify the user problem, DRI, acceptance criteria, non-goals, dependencies, risks, and verification plan before implementation. Keep one logical change per pull request where practical.
+
+Review correctness, evidence, failure behavior, security/privacy/safety, maintainability, compatibility, observability, and truthful documentation. A green CI run is evidence only for checks that actually ran; approval is not implied by silence.
