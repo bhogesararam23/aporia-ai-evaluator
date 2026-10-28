@@ -258,6 +258,13 @@ export const auditRoutes: RouteDefinition[] = [
       }
       const file = context.file;
       const pasted = context.fields.get('html') ?? '';
+      if (
+        file !== null &&
+        !file.filename.toLowerCase().endsWith('.html') &&
+        !file.filename.toLowerCase().endsWith('.htm')
+      ) {
+        issues.push({ field: 'htmlFile', message: 'Upload an .html or .htm file.' });
+      }
       if (file !== null && pasted.trim().length > 0) {
         issues.push({ field: 'html', message: 'Choose either pasted HTML or a file, not both.' });
       }
