@@ -16,6 +16,7 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 | [ADR-010](adrs/ADR-010-manual-observation-capture.md) | Use manually captured observations as the only v0.1 answer source | Proposed | 2026-10-28 | No provider calls or fake adapters; structured manual capture, explicit unknowns, and immutable finalized runs. |
 | [ADR-011](adrs/ADR-011-local-html-only-analysis.md) | Analyze only user-supplied HTML locally | Proposed | 2026-10-28 | Parse supplied HTML without network access; mark network-dependent checks unavailable. |
 | [ADR-012](adrs/ADR-012-loopback-single-operator-security.md) | Adopt a loopback-only, single-operator security posture for v0.1 | Proposed | 2026-10-28 | No remote binding or accounts; CSRF, host validation, CSP, body limits, and explicit local-only limits. |
+| [ADR-013](adrs/ADR-013-immutable-report-snapshots.md) | Store immutable report snapshots and render exports from them | Proposed | 2026-10-28 | Reports and JSON/CSV exports derive only from stored snapshots; corrections create new reports. |
 
 ## ADR lifecycle
 
