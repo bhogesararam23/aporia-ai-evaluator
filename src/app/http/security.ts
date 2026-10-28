@@ -105,6 +105,10 @@ export function validOrigin(origin: string | undefined, config: AppConfig): bool
   if (origin === undefined || origin.length === 0) {
     return true;
   }
+  // Opaque origins ("null") cannot be compared. The synchronizer token remains mandatory.
+  if (origin === 'null') {
+    return true;
+  }
   let parsed: URL;
   try {
     parsed = new URL(origin);

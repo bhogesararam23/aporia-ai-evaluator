@@ -76,6 +76,7 @@ test('origin validation accepts same-origin forms and rejects cross-origin forms
   const cfg = config();
   assert.equal(validOrigin(undefined, cfg), true);
   assert.equal(validOrigin('', cfg), true);
+  assert.equal(validOrigin('null', cfg), true);
   assert.equal(validOrigin('http://127.0.0.1:4310', cfg), true);
   assert.equal(validOrigin('http://127.0.0.1:4311', cfg), false);
   assert.equal(validOrigin('https://127.0.0.1:4310', cfg), false);
