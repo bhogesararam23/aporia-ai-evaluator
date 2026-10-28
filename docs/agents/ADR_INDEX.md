@@ -26,3 +26,7 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 - **Superseded:** replaced by a later ADR, with a link to its successor.
 
 Accepted does not mean implemented. Implementation and test status must be recorded separately. Never renumber historical ADRs to make the sequence appear continuous; unused identifiers may be reserved if a record is withdrawn, with a note in the index.
+
+## Implementation status
+
+As of 2026-10-29, ADR-008 through ADR-013 are implemented in local core v0.1 and validated by the repository test suite. Their status remains **Proposed** pending project-owner review and acceptance. Implementation is not equivalent to owner approval. See [Implementation Status](../IMPLEMENTATION_STATUS.md) for capability and test evidence.
