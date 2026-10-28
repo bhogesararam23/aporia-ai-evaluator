@@ -3,6 +3,7 @@ import { html, type Html } from './html.ts';
 
 const NOTICES: Record<string, string> = {
   'project-created': 'Project created.',
+  'project-deleted': 'Project and its local records were deleted.',
   'entity-created': 'Entity added.',
   'entity-updated': 'Entity updated.',
   'target-set': 'Target entity updated.',
@@ -55,6 +56,7 @@ export interface ProjectNavOptions {
 
 const PROJECT_LINKS = [
   { key: 'overview', label: 'Overview', suffix: '' },
+  { key: 'entities', label: 'Entities', suffix: '/entities' },
   { key: 'claims', label: 'Claims', suffix: '/claims' },
   { key: 'sources', label: 'Sources', suffix: '/sources' },
   { key: 'query-sets', label: 'Query sets', suffix: '/query-sets' },

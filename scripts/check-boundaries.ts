@@ -17,6 +17,9 @@ const FORBIDDEN_LAYERS: Record<Layer, Layer[]> = {
 
 function layerOf(absolutePath: string): Layer {
   const rel = relative(SRC, absolutePath).split(sep).join('/');
+  if (rel === 'server.ts') {
+    return 'app';
+  }
   const first = rel.split('/')[0] ?? '';
   if (first === 'core') return 'core';
   if (first === 'website') return 'website';

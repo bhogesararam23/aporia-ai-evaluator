@@ -342,6 +342,13 @@ export function plural(count: number, singular: string, pluralForm = `${singular
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
+export function humanize(value: string): string {
+  return value
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
 export function definitionRow(term: string, value: Html): Html {
   return html`<div class="definition-row">
     <dt>${term}</dt>
