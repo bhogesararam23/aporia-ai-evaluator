@@ -128,7 +128,7 @@ test('query sets, manual runs, assessments, finalization, and reports work end t
         queryId: set.queryId,
         status: 'COMPLETED',
         capturedAt: '2026-10-28T10:30:00Z',
-        answerText: 'Aporia is an evaluation project created by Ram.',
+        answerText: 'Aporia is an evaluation project created by Ram. <script>alert(9)</script>',
         citationCapture: 'CAPTURED',
         contextNotes: 'Default interface.',
       },
@@ -228,6 +228,8 @@ test('query sets, manual runs, assessments, finalization, and reports work end t
     assert.match(reportView.text, /Mention rate/);
     assert.match(reportView.text, /Limitations/);
     assert.match(reportView.text, /Download JSON/);
+    assert.match(reportView.text, /&lt;script&gt;alert\(9\)&lt;\/script&gt;/);
+    assert.equal(reportView.text.includes('<script>alert(9)</script>'), false);
 
     const reportJson = await fetch(`${server.url}${reportPath}/export.json`, {
       headers: { cookie: project.cookie },
