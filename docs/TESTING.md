@@ -97,7 +97,7 @@ The suite explicitly covers:
 
 ## 7. CI
 
-The repository runs the same gate in `.github/workflows/ci.yml` using Node 24 and `npm ci`, `npm run check`. The first hosted run was [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) at commit `38d3006` on branch `feat/aporia-local-core-v0.1`: **success**, with install, typecheck, lint, formatting, boundaries, and tests passing. The session report records any later run.
+The repository runs the same gate in `.github/workflows/ci.yml` using Node 24 and `npm ci`, `npm run check`. The first hosted run was [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) at commit `38d3006`. The final checkpoint run [40775144790](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40775144790) at `4dae6ce` was also **success**, with install, typecheck, lint, formatting, boundaries, and all 266 tests passing.
 
 ## 8. Adding tests
 

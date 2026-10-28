@@ -125,7 +125,8 @@ Alternatives rejected: multi-package workspace/provider stubs, mock LLMs, remote
   - empty report generation;
   - dark color scheme at desktop width.
 - Browser verification discovered a real defect: a real browser POST sent `Origin: null`, causing a 403 despite a valid CSRF token. The origin check was adjusted to accept opaque origins while preserving the mandatory token, with a unit test. Re-verification successfully created a project.
-- GitHub Actions CI run [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) — **success** on `38d3006`; job `check` passed install, typecheck, lint, formatting, boundaries, and tests.
+- GitHub Actions CI run [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) — **success** on `38d3006`.
+- GitHub Actions final checkpoint run [40775144790](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40775144790) — **success** on `4dae6ce`; job `check` passed install, typecheck, lint, formatting, boundaries, and 266 tests.
 
 ### Not run
 
@@ -154,9 +155,9 @@ No external provider documentation or data was required for implementation. The 
 ## 9. Commit and publication
 
 - Branch: `feat/aporia-local-core-v0.1` (never pushed to `main`, never force-pushed, no history rewrite).
-- Pushed checkpoint: `38d3006` at https://github.com/bhogesararam23/aporia-ai-evaluator/tree/feat/aporia-local-core-v0.1.
-- Branch contained 93 commits at the time of the checkpoint push; the later documentation/session commit adds to it.
-- CI: success at `38d3006`, run 40773185352.
+- Pushed checkpoints include `38d3006` and the final code/documentation checkpoint `4dae6ce0e58ba20e422b4915851b9d71466ca261` at https://github.com/bhogesararam23/aporia-ai-evaluator/tree/feat/aporia-local-core-v0.1.
+- The branch reached 100 commits at the final checkpoint; the session-report update adds one final documentation commit after it.
+- CI: success at `38d3006` (run 40773185352) and at the final checkpoint `4dae6ce` (run 40775144790).
 - Pull request: not created. No merge, release, or deployment is claimed.
 - The commit that adds this report is not self-referential; the final branch head after the handoff will be listed in the next session update or repository history.
 
