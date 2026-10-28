@@ -170,6 +170,36 @@ test('reports preserve the snapshot after underlying records change', async () =
     assert.match(firstView.text, /SUPPORTED_WITHIN_SCOPE|Supported within scope/);
     assert.match(firstView.text, /No finalized manual run/);
     assert.match(firstView.text, /Limitations/);
+    for (const heading of [
+      '1. Scope',
+      '2. Method',
+      '3. Coverage',
+      '4. Claims and evidence',
+      '5. Website and HTML discoverability',
+      '6. Manual AI answer runs and metrics',
+      '7. Change over time',
+      '8. Suggested next steps',
+      '9. Limitations',
+    ]) {
+      assert.ok(firstView.text.includes(heading), heading);
+    }
+
+    const otherForm = await getPage(server, '/projects/new');
+    const otherCreated = await postForm(
+      server,
+      '/projects',
+      otherForm.cookie,
+      csrfFrom(otherForm.text),
+      {
+        name: 'Other project',
+      },
+    );
+    const otherPath = pathOf(locationOf(otherCreated));
+    const reportId = firstPath.split('/').pop() ?? '';
+    const crossProject = await fetch(`${server.url}${otherPath}/reports/${reportId}`, {
+      headers: { cookie: project.cookie },
+    });
+    assert.equal(crossProject.status, 404);
 
     addEvidence(
       server,
