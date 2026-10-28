@@ -54,7 +54,7 @@ export function listAuditEvents(
       `SELECT id, project_id, actor, action, entity_type, entity_id, details_json, created_at
        FROM audit_events
        WHERE project_id = ?
-       ORDER BY created_at DESC, id DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT ? OFFSET ?`,
     )
     .all(projectId, limit, offset)
