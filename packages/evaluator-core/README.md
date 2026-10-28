@@ -1,16 +1,21 @@
 # Evaluator Core
 
-**Status: Planned package — no evaluator implementation is present yet.**
+**Status: Implemented for local v0.1 in `src/core`.**
 
-This package will define provider-independent domain types and evidence evaluation:
-- claims and proposition decomposition contracts;
-- typed evidence relationships and verdict vocabulary;
-- source quality and independence assessment contracts;
-- answer-claim fidelity and citation-support evaluation;
-- attribution correctness;
-- versioned metric definitions and deterministic aggregation;
-- uncertainty, coverage, and adjudication records.
+The core contains:
 
-Hard boundary: this package must not depend on UI frameworks, web APIs, provider SDKs, crawler implementation, database clients, subscription/billing/entitlement services, or sales/customer lifecycle code. Network retrieval and provider calls must be injected through contracts at application boundaries.
+- controlled claim, proposition, relation, observation, assessment, attribution, source, and query vocabularies;
+- claim/run lifecycle transitions;
+- boundary input validation used by the local HTTP workflows;
+- `evidence-aggregation-v1` over human-recorded evidence relationships;
+- explicit human conclusion resolution with visible disagreement;
+- `metrics-v1` mention, citation, citation-support, fidelity, attribution, and observed-coverage calculations with explicit exclusions and null unknowns.
 
-Every semantic change requires methodology review, benchmark/regression tests, and an ADR where required. Identical normalized inputs and evaluator version should produce deterministic outputs except for explicitly identified model-assisted stages; those stages must record their model/configuration and may require repeated evaluation.
+Hard boundaries:
+
+- no UI, HTTP, database, crawler, provider SDK, or commercial imports;
+- no network access;
+- no composite score or invented weights;
+- no keyword matching or model claim presented as evidence analysis.
+
+The dependency rule is enforced by `scripts/check-boundaries.ts` and `tests/unit/boundaries.test.ts`. Metric semantics are documented in [Implemented metrics v1](../../docs/evaluator/IMPLEMENTED_METRICS_V1.md). Identical core inputs produce identical outputs; commercial state is not part of the input or output.

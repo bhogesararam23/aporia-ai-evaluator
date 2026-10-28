@@ -1,13 +1,17 @@
 # Test Organization
 
-**Status: Test structure guidance; the repository currently contains documentation only.**
+**Status: Implemented for local v0.1.**
 
-Proposed suites:
-- unit: pure core functions and domain invariants;
-- integration: persistence, API, queue, and source retrieval;
-- evaluator-gold: human-reviewed benchmark cases and metric regression;
-- provider-contracts: request/response schema fixtures and provider-specific errors;
-- security: SSRF, tenant isolation, upload limits, prompt injection, secrets, and publication authorization;
-- end-to-end: achievement intake through evidence-linked report and retest.
+The automated suite runs with Node's built-in test runner over TypeScript sources:
 
-A failing test must not be removed merely to make CI green. Changes to verdicts, attribution, or metric formulae require a regression case and a methodology/ADR review. Tests that call a live provider must be separately labeled, budget-limited, and excluded from deterministic unit-test assumptions.
+- `tests/unit/` — pure core, validation, evidence, metrics, website parsing, reporting/CSV, security helpers, routing, views, configuration, logger, and boundary checks.
+- `tests/integration/` — configuration/database, migrations, schema triggers, repositories, HTTP security, project/entity/claim workflows, query-set/run/import workflows, HTML upload/audit, report generation and immutability, and accessibility structure.
+- `tests/helpers/` — isolated in-memory/temporary fixtures and HTTP client helpers. These are test-only and are never shipped as application or demo records.
+
+Commands and current results are in [Testing and verification](../docs/TESTING.md). Important rules:
+
+- Use real SQLite transactions and real HTTP form submissions for boundary behavior.
+- Preserve failed, unavailable, and contradictory cases in fixtures.
+- Do not create production seed data from test fixtures.
+- Add a regression test for every defect, metric change, verdict change, eligibility change, or security fix.
+- Do not remove a failing test to make the suite green.
