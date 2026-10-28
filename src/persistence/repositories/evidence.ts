@@ -314,6 +314,17 @@ export function recordEvidence(
   });
 }
 
+export function getRelationship(
+  db: DatabaseSync,
+  projectId: string,
+  relationshipId: string,
+): RelationshipRecord | null {
+  const row = db
+    .prepare('SELECT * FROM evidence_relationships WHERE project_id = ? AND id = ?')
+    .get(projectId, relationshipId);
+  return row === undefined ? null : mapRelationship(row);
+}
+
 export function supersedeRelationship(
   db: DatabaseSync,
   projectId: string,
