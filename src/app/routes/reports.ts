@@ -9,6 +9,7 @@ import {
   listReports,
   type ReportRecord,
 } from '../../persistence/repositories/reports.ts';
+import { appendAuditEvent } from '../../persistence/audit.ts';
 import { generateReport } from '../reportingService.ts';
 import { csvResponse, htmlResponse, jsonResponse, redirectWithNotice } from '../http/responses.ts';
 import { writeContext, type RequestContext, type RouteDefinition } from '../http/types.ts';
@@ -47,6 +48,18 @@ function snapshotOf(report: ReportRecord): ReportSnapshot {
     throw new AppError('INTERNAL_ERROR', 'The stored report snapshot is not readable.');
   }
   return snapshot as ReportSnapshot;
+}
+
+function recordReportExport(context: RequestContext, report: ReportRecord, format: string): void {
+  appendAuditEvent(context.deps.db, {
+    projectId: report.projectId,
+    actor: context.deps.config.operator,
+    action: 'report.exported',
+    entityType: 'report',
+    entityId: report.id,
+    details: { format, reportNumber: report.reportNumber },
+    at: context.now,
+  });
 }
 
 function reportsListPage(
@@ -208,6 +221,7 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      recordReportExport(context, report, 'json');
       return jsonResponse(
         snapshotOf(report),
         200,
@@ -225,6 +239,7 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      recordReportExport(context, report, 'metrics_csv');
       return csvResponse(
         metricsCsv(snapshotOf(report)),
         `aporia-report-${String(report.reportNumber)}-metrics.csv`,
@@ -241,6 +256,7 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      recordReportExport(context, report, 'observations_csv');
       return csvResponse(
         observationsCsv(snapshotOf(report)),
         `aporia-report-${String(report.reportNumber)}-observations.csv`,
@@ -257,6 +273,7 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      recordReportExport(context, report, 'findings_csv');
       return csvResponse(
         findingsCsv(snapshotOf(report)),
         `aporia-report-${String(report.reportNumber)}-findings.csv`,
