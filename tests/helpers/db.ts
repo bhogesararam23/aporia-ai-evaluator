@@ -375,3 +375,69 @@ export function insertCitation(
   );
   return id;
 }
+
+export function insertPropositionAssessment(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    propositionId?: string;
+    version?: number;
+    label?: string;
+    rationale?: string;
+    evidenceSnapshot?: readonly string[];
+  } = {},
+): string {
+  const id = options.id ?? 'pasm_1';
+  db.prepare(
+    `INSERT INTO proposition_assessments
+      (id, project_id, proposition_id, version, label, rationale, method, reviewer,
+       evidence_snapshot_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'HUMAN', ?, ?, ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.propositionId ?? 'prp_1',
+    options.version ?? 1,
+    options.label ?? 'SUPPORTED_WITHIN_SCOPE',
+    options.rationale ?? 'The release artifact supports the proposition.',
+    TEST_ACTOR,
+    JSON.stringify(options.evidenceSnapshot ?? ['rel_1']),
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertObservationAssessment(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    observationId?: string;
+    dimension?: string;
+    version?: number;
+    label?: string;
+    rationale?: string;
+    attributionRole?: string | null;
+  } = {},
+): string {
+  const id = options.id ?? 'oasm_1';
+  db.prepare(
+    `INSERT INTO observation_assessments
+      (id, project_id, observation_id, dimension, version, label, rationale, reviewer,
+       attribution_role, details_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.observationId ?? 'obs_1',
+    options.dimension ?? 'PRESENCE',
+    options.version ?? 1,
+    options.label ?? 'MENTIONED',
+    options.rationale ?? 'The answer names the entity.',
+    TEST_ACTOR,
+    options.attributionRole ?? null,
+    TEST_TIME,
+  );
+  return id;
+}
