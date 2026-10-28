@@ -1,9 +1,16 @@
 # API and orchestration boundary
 
-**Status: Planned package — not yet implemented.**
+**Status: Not implemented as a separate process for local v0.1.**
 
-This application boundary is reserved for authentication, authorization, input validation, job scheduling, quota checks, and report access. It sequences work but must not be the source of truth for claim/evidence scoring.
+Local v0.1 does not expose a public or multi-user API. Its HTTP request pipeline, validation, CSRF/Host/Origin checks, transaction orchestration, and report access live inside the single local process under `src/app/http` and `src/app/routes`.
 
-The API may check whether a user is allowed to start a job before dispatch. Once authorized, the job specification passed to the evaluator must be plan-neutral. Keep provider credentials server-side; never put credentials in client payloads or queue messages.
+The boundary rules still apply to any future API:
 
-Every protected route must verify tenant/project access on the server. Public publication, attribution changes, deletion, and connector writes require explicit authorization and an audit event. Follow API and job contracts in docs/technical/API_AND_JOB_CONTRACTS.md.
+- Authenticate and authorize every project/report/upload access server-side.
+- Validate requests and apply bounded limits before work starts.
+- Keep evaluator scoring out of route handlers.
+- Pass plan-neutral job specifications to the evaluator; commercial state must never affect verdicts or metrics.
+- Keep provider credentials out of client payloads, queue messages, and logs.
+- Audit publication, deletion, attribution changes, exports, and connector writes.
+
+No quota, job queue, background worker, or public API exists in this milestone. See [Security and privacy](../../docs/security/SECURITY_PRIVACY.md) and [API and job contract guidance](../../docs/technical/API_AND_JOB_CONTRACTS.md).

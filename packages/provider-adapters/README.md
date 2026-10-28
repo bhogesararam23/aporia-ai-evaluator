@@ -1,17 +1,16 @@
 # Provider Adapters
 
-**Status: Planned package — no provider adapter is implemented by this documentation baseline.**
+**Status: Not implemented. This is intentional for local core v0.1.**
 
-Each adapter isolates one external AI/search provider. It owns provider-specific authentication, request schema, model/tool selection, response parsing, citation extraction, rate-limit interpretation, retries, and capability declarations.
+No AI/search provider is called, configured, mocked, scraped, or advertised as supported. Provider/model/interface fields in a manual run are operator-supplied labels. There are no API keys, provider SDKs, capability records, or live tests in this milestone.
 
-Requirements:
-- implement the shared contract defined in docs/technical/PROVIDER_ADAPTERS.md;
-- preserve raw observations where permitted and never fabricate citations;
-- distinguish success, partial result, unsupported action, policy rejection, timeout, rate limit, and provider outage;
-- never translate provider failure into an incorrect/negative factual verdict;
-- declare known costs, limits, regional restrictions, data handling constraints, and last-tested date;
-- include fixtures and tests for malformed/empty/partial responses;
-- do not import commercial tier or billing logic;
-- do not scrape/circumvent consumer interfaces unless a specifically reviewed, authorized method is permitted.
+Before an adapter is added, the project must establish:
 
-The project must not advertise a provider as supported solely because its name appears in configuration.
+- an officially supported access route and current terms review;
+- a versioned capability declaration (models, grounding, citation metadata, locales, limits, costs, retention);
+- provider-specific fixtures and deterministic contract tests;
+- a separate live-test process with budgets and credentials;
+- an ADR and security review for the outbound network boundary;
+- explicit preservation of the rule that provider unavailability is not a negative factual verdict.
+
+See [Provider adapter contract](../../docs/technical/PROVIDER_ADAPTERS.md), ADR-004, ADR-005, and ADR-010.

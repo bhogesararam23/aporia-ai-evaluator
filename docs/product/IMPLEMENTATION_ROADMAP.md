@@ -3,6 +3,10 @@
 - Status: Proposed sequencing, not a delivery commitment
 - Date: 2026-10-28
 
+## Implementation note — 2026-10-29
+
+Local core v0.1 implements the Phase 1 slice in a deliberately narrower form: claim intake and decomposition, local evidence provenance, human evidence relationships and assessments, approved query sets, manual observation capture/import, separate metrics, local HTML analysis, and immutable reports. Safe URL fetching and a search-grounded provider adapter remain intentionally unimplemented because this milestone prohibits remote access and provider integrations. Phases 2–6 and website publication remain future work. See [Implementation Status](../IMPLEMENTATION_STATUS.md) and [Known Limitations](../KNOWN_LIMITATIONS.md).
+
 ## Guiding strategy
 
 Prove that Aporia can generate a useful, evidence-linked report before building broad provider coverage or a complex business dashboard. Prioritize the correctness of evidence and attribution. The order below is a dependency sequence, not a promise of dates.

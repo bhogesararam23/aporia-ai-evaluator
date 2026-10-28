@@ -1,15 +1,18 @@
 # Evidence Registry
 
-**Status: Planned package — no persistence code is implemented yet.**
+**Status: Implemented for local v0.1 in `src/persistence`.**
 
-This package will store or access source records, evidence items, claim relationships, provenance, review events, and snapshots using interfaces that can be implemented with the chosen database/object store.
+SQLite persistence and repositories store project-owned sources, evidence excerpts, typed relationships, claims/revisions/propositions, assessments, query sets, runs, observations, citations, local HTML snapshots, reports, and audit events.
 
-Requirements:
-- tenant/project authorization enforced at every access boundary;
-- distinguish user-supplied sources from independently discovered sources;
-- preserve contradictions and source independence status;
-- keep a source locator, retrieval date, and version reference for material findings;
-- support correction and supersession without silently rewriting historic reports;
-- apply defined retention and deletion rules;
-- do not treat a URL, repository ownership, or structured-data field as proof of factual truth;
-- keep invoice/plan data and commercial customer notes out of evaluator-domain records.
+Implemented controls include:
+
+- forward-only, checksummed migrations and foreign keys;
+- project-scoped repository access;
+- append-only revisions, evidence/source rows, assessments, audits, and report snapshots;
+- one-way supersession for evidence relationships and runs/reports;
+- only one active evidence relationship per evidence/proposition pair;
+- approved query-set and finalized-run immutability;
+- project deletion cascade and local export;
+- no plan, invoice, subscription, or commercial state in evaluator records.
+
+Source URLs are locators, not proof of truth or independence. User-supplied and self-published sources are distinguished from independent sources; duplicates do not create corroboration. See [Local schema](../../docs/technical/LOCAL_SCHEMA.md) and [Known limitations](../../docs/KNOWN_LIMITATIONS.md).

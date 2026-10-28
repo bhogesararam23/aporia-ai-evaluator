@@ -5,12 +5,18 @@ This set defines the intended product, evaluation methodology, trust model, safe
 ## Start and operate
 - [Root agent instructions](../AGENTS.md) — mandatory entry point for future agents.
 - [Product Requirements](product/PRODUCT_REQUIREMENTS.md) — users, problems, requirements, acceptance criteria, non-functional requirements, and exclusions.
+- [Implementation Status](IMPLEMENTATION_STATUS.md) — implemented capabilities, requirement mapping, verified gaps, and maturity state.
+- [Testing and Verification](TESTING.md) — commands, suites, exact local results, and checks not run.
+- [Known Limitations](KNOWN_LIMITATIONS.md) — product, evaluator-validity, platform, and accessibility boundaries.
 - [User Journeys](product/USER_JOURNEYS.md) — achievement records, AI disagreement, website readiness, and monitoring.
 - [Implementation Roadmap](product/IMPLEMENTATION_ROADMAP.md) — dependency-ordered delivery phases and exit criteria.
 - [Product Governance and Boundaries](business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md) — product promises and separation from evaluator verdicts.
 
 ## Technical design
 - [System Architecture](technical/SYSTEM_ARCHITECTURE.md) — components, data flows, trust boundaries, and deployment separation.
+- [Local Core Architecture](technical/LOCAL_CORE_ARCHITECTURE.md) — implemented module layout, request flow, boundaries, security posture, and absences.
+- [Local Schema](technical/LOCAL_SCHEMA.md) — SQLite tables, migrations, triggers, immutability, and deletion behavior.
+- [Local HTTP Route Map](technical/HTTP_ROUTE_MAP.md) — implemented pages, actions, scoping, and error behavior.
 - [Module Boundaries](technical/MODULE_BOUNDARIES.md) — enforceable dependency directions, package rules, and future CI requirements.
 - [Data Model](technical/DATA_MODEL.md) — entities, relationships, lifecycle, provenance, retention, and versioning.
 - [API and Job Contracts](technical/API_AND_JOB_CONTRACTS.md) — normalized request/response, job state, idempotency, and error semantics.
@@ -20,6 +26,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 
 ## Evaluator science
 - [Evaluator Methodology](evaluator/EVALUATOR_METHODOLOGY.md) — claim decomposition, evidence assessment, answer evaluation, reproducibility, and adjudication.
+- [Implemented Metrics v1](evaluator/IMPLEMENTED_METRICS_V1.md) — exact numerators, denominators, exclusions, unknowns, and evidence rule precedence.
 - [Metrics and Scoring](evaluator/METRICS_AND_SCORING.md) — formulas, denominators, interpretation, aggregation, and anti-gaming controls.
 - [Benchmarking and Validation](evaluator/BENCHMARKING_AND_VALIDATION.md) — gold sets, human review, validity, reliability, calibration, and release gates.
 
@@ -27,10 +34,12 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Claim and Attribution Trust Model](trust/CLAIM_AND_ATTRIBUTION_TRUST.md) — evidence status, source quality, identity, authorship, roles, disputes, and corrections.
 - [Safety Policy](safety/SAFETY_POLICY.md) — abuse cases, allowed/disallowed uses, refusal distinctions, review, and mitigations.
 - [Security and Privacy](security/SECURITY_PRIVACY.md) — threat model, tenant isolation, SSRF, uploads, credentials, retention, and deletion.
+- [Local Security Test Matrix](security/LOCAL_SECURITY_TEST_MATRIX.md) — implemented local controls, evidence, and residual limits.
 - [Observability, Cost, and Incidents](operations/OBSERVABILITY_COST_INCIDENTS.md) — run logging, reliability, budget guardrails, alerts, and response.
 
 ## Project governance and agents
 - [Agent Operating Protocol](agents/AGENT_OPERATING_PROTOCOL.md) — session rules, file ownership, verification, ADR requirements, and transparency.
+- [Local Operations Runbook](operations/LOCAL_RUNBOOK.md) — start/stop, configuration, backup, deletion, failures, and upgrades.
 - [Session Report Template](agents/SESSION_REPORT_TEMPLATE.md) — mandatory end-of-session report.
 - [ADR Index](agents/ADR_INDEX.md) — sequential architecture decisions and lifecycle.
 - [Contributing](governance/CONTRIBUTING.md) — change workflow.
@@ -39,6 +48,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Glossary](governance/GLOSSARY.md) — shared vocabulary.
 - [Primary References](research/REFERENCES.md) — external documentation and evaluation foundations.
 - [Documentation Foundation Session](agents/sessions/2026-10-28-documentation-foundation.md) — scope, decisions, outputs, validation, and follow-up.
+- [Local Core v0.1 Session](agents/sessions/2026-10-29-local-core-v0.1.md) — implementation, ADRs, tests, browser verification, CI, risks, and handoff.
 
 ## How to use the documents
 

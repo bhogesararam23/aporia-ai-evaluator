@@ -11,6 +11,12 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 | [ADR-005](adrs/ADR-005-no-cache-or-citation-guarantees.md) | Do not promise provider caching or citations | Accepted for initial baseline | 2026-10-28 | Report only observed, provider-supported states. |
 | [ADR-006](adrs/ADR-006-claim-level-attribution.md) | Model attribution at claim and role level | Accepted for initial baseline | 2026-10-28 | Distinguish identity, contribution, authorship, and achievement evidence. |
 | [ADR-007](adrs/ADR-007-separate-evaluator-core-from-commercial-concerns.md) | Separate evaluator core from commercial concerns | Accepted for initial baseline | 2026-10-28 | Commercial access and billing must not affect factual verdicts or formulas. |
+| [ADR-008](adrs/ADR-008-local-first-single-package-typescript.md) | Implement local core v0.1 as a single-package TypeScript application | Proposed | 2026-10-28 | One Node 24 package with internal module boundaries, SQLite, and server-rendered HTML. |
+| [ADR-009](adrs/ADR-009-deterministic-evidence-aggregation.md) | Derive evidence status deterministically from human-recorded relationships | Proposed | 2026-10-28 | Human relations plus a pure, versioned precedence rule; explicit human conclusions remain visible. |
+| [ADR-010](adrs/ADR-010-manual-observation-capture.md) | Use manually captured observations as the only v0.1 answer source | Proposed | 2026-10-28 | No provider calls or fake adapters; structured manual capture, explicit unknowns, and immutable finalized runs. |
+| [ADR-011](adrs/ADR-011-local-html-only-analysis.md) | Analyze only user-supplied HTML locally | Proposed | 2026-10-28 | Parse supplied HTML without network access; mark network-dependent checks unavailable. |
+| [ADR-012](adrs/ADR-012-loopback-single-operator-security.md) | Adopt a loopback-only, single-operator security posture for v0.1 | Proposed | 2026-10-28 | No remote binding or accounts; CSRF, host validation, CSP, body limits, and explicit local-only limits. |
+| [ADR-013](adrs/ADR-013-immutable-report-snapshots.md) | Store immutable report snapshots and render exports from them | Proposed | 2026-10-28 | Reports and JSON/CSV exports derive only from stored snapshots; corrections create new reports. |
 
 ## ADR lifecycle
 
@@ -20,3 +26,7 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 - **Superseded:** replaced by a later ADR, with a link to its successor.
 
 Accepted does not mean implemented. Implementation and test status must be recorded separately. Never renumber historical ADRs to make the sequence appear continuous; unused identifiers may be reserved if a record is withdrawn, with a note in the index.
+
+## Implementation status
+
+As of 2026-10-29, ADR-008 through ADR-013 are implemented in local core v0.1 and validated by the repository test suite. Their status remains **Proposed** pending project-owner review and acceptance. Implementation is not equivalent to owner approval. See [Implementation Status](../IMPLEMENTATION_STATUS.md) for capability and test evidence.
