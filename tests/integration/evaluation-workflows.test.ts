@@ -369,3 +369,30 @@ test('local HTML audit is stored, escaped, and reports unavailable network check
     await server.close();
   }
 });
+
+test('clones an approved query set into a new draft version', async () => {
+  const server = await startTestServer();
+  try {
+    const project = await createProject(server, 'Clone project');
+    const set = await createApprovedSet(server, project);
+    const setPath = `${project.path}/query-sets/${set.setId}`;
+    const detail = await getPage(server, setPath, project.cookie);
+    assert.match(detail.text, /Approved/);
+    const cloned = await postForm(
+      server,
+      `${setPath}/clone`,
+      project.cookie,
+      csrfFrom(detail.text),
+      {},
+    );
+    assert.equal(cloned.status, 303);
+    const clonePath = pathOf(locationOf(cloned));
+    assert.notEqual(clonePath, setPath);
+    const clone = await getPage(server, clonePath, project.cookie);
+    assert.match(clone.text, /Core questions v2/);
+    assert.match(clone.text, /Draft/);
+    assert.match(clone.text, /What is Aporia\?/);
+  } finally {
+    await server.close();
+  }
+});
