@@ -37,7 +37,8 @@ This matrix records what is actually implemented and verified in this repository
 | Deletion and export control | Implemented / Validated | Explicit JSON export and typed-name project deletion with cascade disclosure | Project workflow tests |
 | Server-rendered UI | Implemented / Validated | Complete claim/evidence/query/run/audit/report workflows, empty/error states, forms | HTTP, workflow, and accessibility tests |
 | Local security controls | Implemented / Validated | Loopback binding, Host/Origin/CSRF, CSP, body/upload limits, escaping, safe URLs, parameterized SQL | Config, security, body, HTTP, view, audit tests |
-| Documentation and runbook | Implemented / Validated | Architecture, schema, metrics, testing, limitations, operations, README | Link check and manual review |
+| Documentation and runbook | Implemented / Validated | Architecture, schema, metrics, testing, limitations, operations, README | Link check, docs tests, and manual review |
+| CI quality gate | Implemented / Validated | GitHub Actions runs `npm ci` and `npm run check` on Node 24 | Hosted run 40773185352 succeeded at `38d3006` |
 
 ## 2. Product requirement mapping
 

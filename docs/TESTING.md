@@ -97,7 +97,7 @@ The suite explicitly covers:
 
 ## 7. CI
 
-The repository is intended to run the same gate in `.github/workflows/ci.yml` using Node 24 and `npm ci`, `npm run check`. The workflow was added in this milestone; its first hosted run must be observed before claiming it is green. If branch or token permissions block the workflow, that is reported rather than assumed.
+The repository runs the same gate in `.github/workflows/ci.yml` using Node 24 and `npm ci`, `npm run check`. The first hosted run was [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) at commit `38d3006` on branch `feat/aporia-local-core-v0.1`: **success**, with install, typecheck, lint, formatting, boundaries, and tests passing. The session report records any later run.
 
 ## 8. Adding tests
 
