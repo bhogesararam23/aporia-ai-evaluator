@@ -399,7 +399,7 @@ export function listPropositionEvidence(
        JOIN evidence_items e ON e.id = er.evidence_id AND e.project_id = er.project_id
        JOIN sources s ON s.id = e.source_id AND s.project_id = e.project_id
        WHERE er.project_id = ? AND er.proposition_id = ?
-       ORDER BY (er.superseded_by IS NULL) DESC, er.created_at ASC, er.id ASC`,
+       ORDER BY (er.superseded_by IS NULL) DESC, er.created_at ASC, er.rowid ASC`,
     )
     .all(projectId, propositionId)
     .map((row) => ({
@@ -448,7 +448,7 @@ export function activeRelationshipsForProposition(
        JOIN evidence_items e ON e.id = er.evidence_id AND e.project_id = er.project_id
        JOIN sources s ON s.id = e.source_id AND s.project_id = e.project_id
        WHERE er.project_id = ? AND er.proposition_id = ? AND er.superseded_by IS NULL
-       ORDER BY er.created_at ASC, er.id ASC`,
+       ORDER BY er.created_at ASC, er.rowid ASC`,
     )
     .all(projectId, propositionId)
     .map((row) => ({
