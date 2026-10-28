@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { EntityInput, ProjectInput } from '../../core/inputs.ts';
+import type { EntityInput, ProjectInput, ProjectUpdateInput } from '../../core/inputs.ts';
 import type { EntityType, IdentityStatus } from '../../core/vocabulary.ts';
 import { AppError } from '../../errors.ts';
 import { appendAuditEvent } from '../audit.ts';
@@ -278,6 +278,36 @@ export function createProject(
     }
   });
   return getProjectOrThrow(db, projectId);
+}
+
+export function updateProject(
+  db: DatabaseSync,
+  projectId: string,
+  input: ProjectUpdateInput,
+  context: WriteContext,
+): ProjectDetail {
+  return withTransaction(db, () => {
+    const existing = getProjectOrThrow(db, projectId);
+    db.prepare(
+      'UPDATE projects SET name = ?, description = ?, primary_domain = ?, updated_at = ? WHERE id = ?',
+    ).run(
+      input.name,
+      input.description ?? null,
+      input.primaryDomain ?? null,
+      context.at,
+      projectId,
+    );
+    appendAuditEvent(db, {
+      projectId,
+      actor: context.actor,
+      action: 'project.updated',
+      entityType: 'project',
+      entityId: projectId,
+      details: { previousName: existing.project.name, name: input.name },
+      at: context.at,
+    });
+    return getProjectOrThrow(db, projectId);
+  });
 }
 
 export function listEntities(db: DatabaseSync, projectId: string): EntityRecord[] {

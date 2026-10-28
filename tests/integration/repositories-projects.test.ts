@@ -13,6 +13,7 @@ import {
   listProjects,
   setTargetEntity,
   updateEntity,
+  updateProject,
 } from '../../src/persistence/repositories/projects.ts';
 import type { WriteContext } from '../../src/persistence/repositories/context.ts';
 import { createTestDatabase, TEST_TIME } from '../helpers/db.ts';
@@ -253,6 +254,40 @@ test('missing projects and deletion behave predictably', () => {
     assert.equal(deleteProject(db, detail.project.id), 'To delete');
     assert.equal(getProject(db, detail.project.id), null);
     assert.throws(() => deleteProject(db, detail.project.id), /Project not found/);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('updates a project profile and preserves its target entity', () => {
+  const db = createTestDatabase();
+  try {
+    const detail = createProject(
+      db,
+      {
+        name: 'Original name',
+        description: 'Original description.',
+        primaryDomain: 'https://example.com/',
+        targetEntity: { name: 'Aporia', type: 'PROJECT_ARTIFACT' },
+      },
+      CONTEXT,
+    );
+    const updated = updateProject(
+      db,
+      detail.project.id,
+      {
+        name: 'Updated name',
+        description: 'Updated description.',
+        primaryDomain: 'https://updated.example/',
+      },
+      { actor: 'Ram', at: '2026-10-28T13:00:00.000Z' },
+    );
+    assert.equal(updated.project.name, 'Updated name');
+    assert.equal(updated.project.description, 'Updated description.');
+    assert.equal(updated.project.primaryDomain, 'https://updated.example/');
+    assert.equal(updated.project.targetEntityId, detail.project.targetEntityId);
+    assert.equal(updated.targetEntity?.canonicalName, 'Aporia');
+    assert.equal(listAuditEvents(db, detail.project.id)[0]?.action, 'project.updated');
   } finally {
     closeDatabase(db);
   }
