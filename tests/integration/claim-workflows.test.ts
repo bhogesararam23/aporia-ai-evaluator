@@ -260,3 +260,91 @@ test('rejects invalid propositions without losing the claim page', async () => {
     await server.close();
   }
 });
+
+test('disputes a review, then creates a corrected revision', async () => {
+  const server = await startTestServer();
+  try {
+    const project = await createProject(server);
+    const newClaim = await getPage(server, `${project.projectPath}/claims/new`, project.cookie);
+    const claim = await postForm(
+      server,
+      `${project.projectPath}/claims`,
+      project.cookie,
+      csrfFrom(newClaim.text),
+      {
+        text: 'The artifact contains feature F in the stated release.',
+        locale: 'en',
+      },
+    );
+    const claimPath = pathOf(locationOf(claim));
+    const page = await getPage(server, claimPath, project.cookie);
+    const proposition = await postForm(
+      server,
+      `${claimPath}/propositions`,
+      project.cookie,
+      csrfFrom(page.text),
+      {
+        text: 'The artifact contains feature F.',
+        evidenceRequirements: 'A primary artifact.',
+      },
+    );
+    assert.equal(proposition.status, 303);
+    const afterProposition = await getPage(server, claimPath, project.cookie);
+    const review = await postForm(
+      server,
+      `${claimPath}/status`,
+      project.cookie,
+      csrfFrom(afterProposition.text),
+      {
+        to: 'UNDER_REVIEW',
+      },
+    );
+    assert.equal(review.status, 303);
+
+    const reviewed = await getPage(server, claimPath, project.cookie);
+    const missingReason = await postForm(
+      server,
+      `${claimPath}/status`,
+      project.cookie,
+      csrfFrom(reviewed.text),
+      {
+        to: 'DISPUTED',
+      },
+    );
+    assert.equal(missingReason.status, 422);
+    assert.match(await missingReason.text(), /dispute reason is required/i);
+
+    const disputed = await postForm(
+      server,
+      `${claimPath}/status`,
+      project.cookie,
+      csrfFrom(reviewed.text),
+      {
+        to: 'DISPUTED',
+        reason: 'The source refers to a different release.',
+      },
+    );
+    assert.equal(disputed.status, 303);
+    const afterDispute = await getPage(server, claimPath, project.cookie);
+    assert.match(afterDispute.text, /Disputed/);
+
+    const revised = await postForm(
+      server,
+      `${claimPath}/revisions`,
+      project.cookie,
+      csrfFrom(afterDispute.text),
+      {
+        text: 'The artifact contains feature F in the corrected release.',
+        locale: 'en',
+        note: 'Corrected release scope.',
+      },
+    );
+    assert.equal(revised.status, 303);
+    const afterRevision = await getPage(server, claimPath, project.cookie);
+    assert.match(afterRevision.text, /Submitted/);
+    assert.match(afterRevision.text, /v2/);
+    assert.match(afterRevision.text, /corrected release/);
+  } finally {
+    await server.close();
+  }
+});
