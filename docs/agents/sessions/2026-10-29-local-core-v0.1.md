@@ -158,8 +158,9 @@ No external provider documentation or data was required for implementation. The 
 - Pushed checkpoints include `38d3006` and the final code/documentation checkpoint `4dae6ce0e58ba20e422b4915851b9d71466ca261` at https://github.com/bhogesararam23/aporia-ai-evaluator/tree/feat/aporia-local-core-v0.1.
 - The branch reached 100 commits at the final checkpoint; the session-report update adds one final documentation commit after it.
 - CI: success at `38d3006` (run 40773185352) and at the final checkpoint `4dae6ce` (run 40775144790).
-- Pull request: not created. No merge, release, or deployment is claimed.
-- The commit that adds this report is not self-referential; the final branch head after the handoff will be listed in the next session update or repository history.
+- Pull request: [#2](https://github.com/bhogesararam23/aporia-ai-evaluator/pull/2), base `main`, head `feat/aporia-local-core-v0.1`.
+- This snapshot records the PR as open and requested for merge. The merge commit SHA and post-merge CI/state are visible in the pull request and repository history; this report is not rewritten after publication.
+- No release or deployment is claimed. The merge is an owner-requested integration of the validated local milestone, not a production release.
 
 ## 10. Handoff
 
