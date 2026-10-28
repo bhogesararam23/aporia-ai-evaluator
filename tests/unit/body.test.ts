@@ -123,3 +123,25 @@ test('accepts an empty body with no content type', async () => {
   assert.equal(parsed.fields.size, 0);
   assert.equal(parsed.file, null);
 });
+
+test('rejects multiple uploaded files', async () => {
+  const boundary = 'aporia-boundary';
+  const body = [
+    `--${boundary}\r\nContent-Disposition: form-data; name="_csrf"\r\n\r\ntoken\r\n`,
+    `--${boundary}\r\nContent-Disposition: form-data; name="first"; filename="one.html"\r\nContent-Type: text/html\r\n\r\n<html>1</html>\r\n`,
+    `--${boundary}\r\nContent-Disposition: form-data; name="second"; filename="two.html"\r\nContent-Type: text/html\r\n\r\n<html>2</html>\r\n`,
+    `--${boundary}--\r\n`,
+  ].join('');
+  await assert.rejects(
+    parseRequestBody(
+      request(body, {
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': String(Buffer.byteLength(body)),
+      }),
+      LIMITS,
+    ),
+    (error: unknown) =>
+      error instanceof AppError &&
+      (error.code === 'INVALID_INPUT' || error.code === 'PAYLOAD_TOO_LARGE'),
+  );
+});
