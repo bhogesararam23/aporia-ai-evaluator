@@ -48,8 +48,8 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 | Integration: configuration and database | `config.test.ts`, `db.test.ts`, `migrations.test.ts` | Loopback-only config, WAL/pragmas, transactions/savepoints, checksummed migrations, rollback |
 | Integration: schema | `schema-*.test.ts` | Foreign keys, immutable revisions, status transitions, frozen query sets/runs, append-only assessments, report supersession |
 | Integration: repositories | `repositories-*.test.ts` | CRUD/scoping, evidence supersession, run finalization, project export data, cross-project rejection |
-| Integration: HTTP workflows | `project-workflows.test.ts`, `claim-workflows.test.ts`, `evaluation-workflows.test.ts` | Real form submissions, CSRF, XSS escaping, query-set approval, observation/import, assessment, finalization, reports, upload |
-| Integration: safety and accessibility | `accessibility.test.ts`, `report-immutability.test.ts`, `audit-upload.test.ts` | Labels/structure across every page, immutable snapshots, file extension and mixed-input rejection |
+| Integration: HTTP workflows | `project-workflows.test.ts`, `claim-workflows.test.ts`, `evaluation-workflows.test.ts` | Real form submissions, CSRF, XSS escaping, project/entity editing, claim disputes/revisions, query-set approval/cloning, observation/import, assessment, finalization, reports, upload, report export headers, download audit events |
+| Integration: safety and accessibility | `accessibility.test.ts`, `report-immutability.test.ts`, `audit-upload.test.ts`, `http-security.test.ts` | Labels/structure across every page, immutable snapshots, file extension, encoding and mixed-input rejection, asset traversal, CSRF token presence, no seeded records |
 | Architecture and policy | `boundaries.test.ts`, `docs-links.test.ts`, `no-network.test.ts` | Layer boundaries, relative documentation links, no external network/provider client code |
 
 Most tests use in-memory SQLite and temporary data directories. No test writes to the production `data/` directory. Test fixtures are isolated from the shipped application; the application starts with no seeded projects, claims, runs, or reports.
@@ -60,7 +60,7 @@ Most tests use in-memory SQLite and temporary data directories. No test writes t
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **251 passing tests, 0 failing**.
+- `npm test`: **264 passing tests, 0 failing**.
 - Automated browser verification: performed against a live loopback server after the suite. The empty state, project creation, claim creation, and empty report generation succeeded. The browser initially exposed an opaque `Origin: null` form submission that the origin check rejected; the server now accepts opaque origins while still requiring a valid synchronizing CSRF token, and a unit test covers this.
 - Visual checks: home empty state, project creation form, project overview, claim page, and empty report in the browser’s dark color scheme at desktop width. No console errors remained after the origin fix except the expected browser 403 from the pre-fix attempt.
 
