@@ -115,7 +115,7 @@ Alternatives rejected: multi-package workspace/provider stubs, mock LLMs, remote
 - `npm run lint` — passed repeatedly.
 - `npm run format:check` — passed.
 - `npm run check:boundaries` — passed.
-- `npm test` — **264 tests passed, 0 failed** at the final local run before this report.
+- `npm test` — **266 tests passed, 0 failed** at the final local run before this report.
 - `npm start` against a temporary data directory — server started on loopback, applied six migrations.
 - Browser verification via Chrome DevTools MCP:
   - empty home state;
