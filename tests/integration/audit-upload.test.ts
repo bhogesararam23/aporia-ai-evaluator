@@ -94,3 +94,29 @@ test('rejects non-HTML file extensions and mixed input', async () => {
     await server.close();
   }
 });
+
+test('rejects an uploaded HTML file that is not valid UTF-8', async () => {
+  const server = await startTestServer();
+  try {
+    const project = await createProject(server);
+    const form = await getPage(server, `${project.path}/audits/new`, project.cookie);
+    const data = new FormData();
+    data.set('_csrf', csrfFrom(form.text));
+    data.set('label', 'Invalid encoding');
+    data.set(
+      'htmlFile',
+      new Blob([new Uint8Array([0xff, 0xfe, 0xfd])], { type: 'text/html' }),
+      'invalid.html',
+    );
+    const response = await fetch(`${server.url}${project.path}/audits`, {
+      method: 'POST',
+      headers: { cookie: project.cookie, origin: server.url },
+      body: data,
+      redirect: 'manual',
+    });
+    assert.equal(response.status, 422);
+    assert.match(await response.text(), /valid UTF-8/);
+  } finally {
+    await server.close();
+  }
+});
