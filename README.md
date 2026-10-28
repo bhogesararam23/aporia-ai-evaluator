@@ -54,3 +54,9 @@ The documents describe the intended system and controls. Anything requiring vali
 ## License and governance
 
 No license is declared by this documentation-only baseline. Before publishing implementation code for external reuse, the project owner should choose and add an explicit license. Contributor and agent work must follow [Contributing](docs/governance/CONTRIBUTING.md), [Definition of Done](docs/governance/DEFINITION_OF_DONE.md), and the [agent operating protocol](docs/agents/AGENT_OPERATING_PROTOCOL.md).
+
+## Engineering operating standard
+
+Aporia uses explicit product invariants, accountable decision rights, evidence-based prioritization, scoped work items, and risk-proportionate quality gates. See the [Engineering Operating Model](docs/governance/ENGINEERING_OPERATING_MODEL.md), [Work Intake and Delivery Standard](docs/governance/WORK_INTAKE_AND_DELIVERY.md), and [Quality Gates](docs/governance/QUALITY_GATES.md).
+
+**Maturity statement:** this repository documents the product and intended engineering controls. Do not describe it as production-ready, independently audited, or backed by functioning CI/release controls unless implementation and verification evidence exists.

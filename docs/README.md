@@ -45,3 +45,14 @@ This set defines the intended product, evaluation methodology, trust model, safe
 Product Requirements states what outcomes are required. System Architecture and Module Boundaries state how components should be separated. Evaluator Methodology and Metrics state how claims and AI responses are assessed. Trust, Safety, Security, and Operations state what must not be compromised. ADRs record consequential decisions and rationale.
 
 A requirement is not implemented merely because it is documented. Link each implemented requirement to code, tests, or observable operational evidence before declaring it complete.
+
+## Engineering governance
+
+- [Engineering Operating Model](governance/ENGINEERING_OPERATING_MODEL.md) — decision rights, product invariants, prioritization, and lifecycle.
+- [Work Intake and Delivery](governance/WORK_INTAKE_AND_DELIVERY.md) — issue framing, triage, acceptance criteria, and handoff.
+- [Quality Gates](governance/QUALITY_GATES.md) — risk-based verification and release readiness.
+- [Query Design and Answerability](evaluator/QUERY_DESIGN_AND_ANSWERABILITY.md) — intent coverage and explicit unknown states.
+- [Reporting Specification](evaluator/REPORTING_SPECIFICATION.md) — evidence-linked, reproducible reports.
+- [Remediation and Retesting](evaluator/REMEDIATION_AND_LONGITUDINAL_RETESTING.md) — corrective actions and repeat measurement.
+- [External Reputation Research](trust/EXTERNAL_REPUTATION_RESEARCH.md) — source independence and reputation evidence.
+- [Website-Only Evaluation Scope](product/WEBSITE_ONLY_EVALUATION_SCOPE.md) — boundaries and unresolved decisions for website-only audits.
