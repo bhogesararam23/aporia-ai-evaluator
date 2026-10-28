@@ -188,6 +188,7 @@ export function dateTimeField(options: {
 }): Html {
   const error = issueFor(options.issues ?? [], options.name);
   const id = `field-${options.name}`;
+  const helpText = options.help ?? 'Entered in this computer’s local time; stored as UTC.';
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
       <label for="${id}"
@@ -199,12 +200,10 @@ export function dateTimeField(options: {
         type="datetime-local"
         value="${options.value ?? ''}"
         ${options.required ? html`required` : ''}
-        ${describedBy(options.name, options.help ?? null, error)}
+        ${describedBy(options.name, helpText, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       />
-      <p class="field-help" id="${id}-help">
-        ${options.help ?? 'Entered in this computer’s local time; stored as UTC.'}
-      </p>
+      <p class="field-help" id="${id}-help">${helpText}</p>
       ${error === null ? '' : html`<p class="field-error" id="${id}-error">${error}</p>`}
     </div>
   `;
