@@ -539,10 +539,15 @@ function observationBlock(
               )}
             `
           : open
-            ? html`<p class="small muted">
-                This status is excluded from answer-level denominators. Refusals and errors are not
-                factual negatives.
-              </p>`
+            ? observation.voidedAt !== null
+              ? html`<p class="small muted">
+                  This observation was voided. Its original answer is retained for history and
+                  excluded from denominators.
+                </p>`
+              : html`<p class="small muted">
+                  This status is excluded from answer-level denominators. Refusals and errors are
+                  not factual negatives.
+                </p>`
             : html`<p class="small muted">
                 This run is ${run.run.status.toLowerCase()}; assessments and citations are frozen.
               </p>`
