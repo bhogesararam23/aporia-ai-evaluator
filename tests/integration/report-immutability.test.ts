@@ -223,3 +223,32 @@ test('reports preserve the snapshot after underlying records change', async () =
     await server.close();
   }
 });
+
+test('an empty project produces a complete honest report', async () => {
+  const server = await startTestServer();
+  try {
+    const project = await createProject(server);
+    const reportPath = await generate(server, project, 'Empty baseline');
+    const view = await getPage(server, reportPath, project.cookie);
+    assert.equal(view.response.status, 200);
+    for (const heading of [
+      '1. Scope',
+      '2. Method',
+      '3. Coverage',
+      '4. Claims and evidence',
+      '5. Website and HTML discoverability',
+      '6. Manual AI answer runs and metrics',
+      '7. Change over time',
+      '8. Suggested next steps',
+      '9. Limitations',
+    ]) {
+      assert.ok(view.text.includes(heading), heading);
+    }
+    assert.match(view.text, /No claims were recorded in this project/);
+    assert.match(view.text, /No local HTML audit was included/);
+    assert.match(view.text, /No finalized manual run is included/);
+    assert.match(view.text, /No composite score is calculated/);
+  } finally {
+    await server.close();
+  }
+});
