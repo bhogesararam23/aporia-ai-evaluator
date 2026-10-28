@@ -155,6 +155,36 @@ export const SOURCE_INDEPENDENCE_LABELS: Record<SourceIndependence, string> = {
   UNKNOWN: 'Unknown',
 };
 
+export const SOURCE_ACCESS_ROUTES = [
+  'MANUAL_ENTRY',
+  'PASTED_EXCERPT',
+  'LOCAL_FILE',
+  'OTHER',
+] as const;
+export type SourceAccessRoute = (typeof SOURCE_ACCESS_ROUTES)[number];
+
+export const SOURCE_ACCESS_ROUTE_LABELS: Record<SourceAccessRoute, string> = {
+  MANUAL_ENTRY: 'Entered manually',
+  PASTED_EXCERPT: 'Pasted excerpt',
+  LOCAL_FILE: 'Local file',
+  OTHER: 'Other',
+};
+
+export const EVIDENCE_EXTRACTION_METHODS = [
+  'MANUAL_ENTRY',
+  'PASTED_TEXT',
+  'LOCAL_FILE',
+  'OTHER',
+] as const;
+export type EvidenceExtractionMethod = (typeof EVIDENCE_EXTRACTION_METHODS)[number];
+
+export const EVIDENCE_EXTRACTION_METHOD_LABELS: Record<EvidenceExtractionMethod, string> = {
+  MANUAL_ENTRY: 'Entered manually',
+  PASTED_TEXT: 'Pasted text',
+  LOCAL_FILE: 'Local file',
+  OTHER: 'Other',
+};
+
 export const EVIDENCE_RELATION_LABELS: Record<EvidenceRelation, string> = {
   SUPPORTS: 'Supports',
   CONTRADICTS: 'Contradicts',
