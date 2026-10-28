@@ -260,6 +260,11 @@ test('query sets, manual runs, assessments, finalization, and reports work end t
     assert.equal(findings.status, 200);
     assert.match(await findings.text(), /OBSERVATION_ASSESSMENT/);
 
+    const missingReport = await fetch(`${server.url}${project.path}/reports/rep_missing`, {
+      headers: { cookie: project.cookie },
+    });
+    assert.equal(missingReport.status, 404);
+
     const activity = await getPage(server, `${project.path}/activity`, project.cookie);
     assert.match(activity.text, /report.exported/);
   } finally {
