@@ -60,7 +60,7 @@ Most tests use in-memory SQLite and temporary data directories. No test writes t
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **264 passing tests, 0 failing**.
+- `npm test`: **266 passing tests, 0 failing**.
 - Automated browser verification: performed against a live loopback server after the suite. The empty state, project creation, claim creation, and empty report generation succeeded. The browser initially exposed an opaque `Origin: null` form submission that the origin check rejected; the server now accepts opaque origins while still requiring a valid synchronizing CSRF token, and a unit test covers this.
 - Visual checks: home empty state, project creation form, project overview, claim page, and empty report in the browser’s dark color scheme at desktop width. No console errors remained after the origin fix except the expected browser 403 from the pre-fix attempt.
 
