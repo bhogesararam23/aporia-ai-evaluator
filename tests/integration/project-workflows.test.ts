@@ -182,3 +182,38 @@ test('shows the activity log and rejects cross-project route IDs', async () => {
     await server.close();
   }
 });
+
+test('edits a project profile and records the change', async () => {
+  const server = await startTestServer();
+  try {
+    const form = await getPage(server, '/projects/new');
+    const created = await postForm(server, '/projects', form.cookie, csrfFrom(form.text), {
+      name: 'Original project name',
+    });
+    const projectPath = pathOf(locationOf(created));
+    const project = { cookie: form.cookie, projectPath };
+    const edit = await getPage(server, `${project.projectPath}/edit`, project.cookie);
+    assert.equal(edit.response.status, 200);
+    const token = csrfFrom(edit.text);
+    const updated = await postForm(server, `${project.projectPath}/edit`, project.cookie, token, {
+      name: 'Renamed project',
+      description: 'Updated by the operator.',
+      primaryDomain: 'https://updated.example/',
+    });
+    assert.equal(updated.status, 303);
+    const overview = await getPage(server, project.projectPath, project.cookie);
+    assert.match(overview.text, /Renamed project/);
+    assert.match(overview.text, /Updated by the operator/);
+    const activity = await getPage(server, `${project.projectPath}/activity`, project.cookie);
+    assert.match(activity.text, /project\.updated/);
+
+    const invalid = await postForm(server, `${project.projectPath}/edit`, project.cookie, token, {
+      name: 'Still valid',
+      primaryDomain: 'javascript:alert(1)',
+    });
+    assert.equal(invalid.status, 422);
+    assert.match(await invalid.text(), /Only HTTP and HTTPS URLs are allowed/);
+  } finally {
+    await server.close();
+  }
+});

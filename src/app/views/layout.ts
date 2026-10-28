@@ -3,6 +3,7 @@ import { html, type Html } from './html.ts';
 
 const NOTICES: Record<string, string> = {
   'project-created': 'Project created.',
+  'project-updated': 'Project profile updated.',
   'project-deleted': 'Project and its local records were deleted.',
   'entity-created': 'Entity added.',
   'entity-updated': 'Entity updated.',

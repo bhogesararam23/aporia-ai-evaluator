@@ -2,6 +2,7 @@ import {
   validateConfirmationName,
   validateEntityInput,
   validateProjectInput,
+  validateProjectUpdateInput,
 } from '../../core/inputs.ts';
 import {
   CLAIM_STATUS_LABELS,
@@ -25,6 +26,7 @@ import {
   listEntities,
   setTargetEntity,
   updateEntity,
+  updateProject,
 } from '../../persistence/repositories/projects.ts';
 import { listQuerySets } from '../../persistence/repositories/querySets.ts';
 import { listReports } from '../../persistence/repositories/reports.ts';
@@ -138,6 +140,48 @@ function projectForm(options: {
           ${submitButton(options.submitLabel)}
           <a class="button button-secondary" href="/">Cancel</a>
         </div>
+      </form>
+    </div>
+  `;
+}
+
+function projectEditForm(options: {
+  values: Values;
+  issues: readonly ValidationIssue[];
+  action: string;
+  csrfToken: string;
+}): Html {
+  return html`
+    <div class="form-narrow">
+      ${errorSummary(options.issues)}
+      <form method="post" action="${options.action}" novalidate>
+        ${csrfField(options.csrfToken)}
+        ${textField({
+          name: 'name',
+          label: 'Project name',
+          value: valueOf(options.values, 'name'),
+          issues: options.issues,
+          required: true,
+          maxLength: 200,
+        })}
+        ${textareaField({
+          name: 'description',
+          label: 'Description',
+          value: valueOf(options.values, 'description'),
+          issues: options.issues,
+          rows: 3,
+          maxLength: 4000,
+        })}
+        ${textField({
+          name: 'primaryDomain',
+          label: 'Primary site URL (optional)',
+          value: valueOf(options.values, 'primaryDomain'),
+          issues: options.issues,
+          type: 'url',
+          maxLength: 2048,
+          help: 'A URL you control or are authorized to discuss. Aporia does not fetch it.',
+        })}
+        <div class="form-actions">${submitButton('Save project profile')}</div>
       </form>
     </div>
   `;
@@ -331,6 +375,7 @@ export const projectRoutes: RouteDefinition[] = [
           html`
             <a class="button button-primary" href="/projects/${projectId}/claims/new">Add claim</a>
             <a class="button" href="/projects/${projectId}/sources/new">Add source</a>
+            <a class="button" href="/projects/${projectId}/edit">Edit project</a>
             <a class="button" href="/projects/${projectId}/reports">Reports</a>
           `,
         )}
@@ -737,6 +782,58 @@ export const projectRoutes: RouteDefinition[] = [
       const entityId = context.params['entityId'] ?? '';
       setTargetEntity(context.deps.db, projectId, entityId, writeContext(context));
       return redirectWithNotice(`/projects/${projectId}/entities`, 'target-set');
+    },
+  },
+  {
+    method: 'GET',
+    path: '/projects/:projectId/edit',
+    handler: (context) => {
+      const projectId = context.params['projectId'] ?? '';
+      const detail = getProjectOrThrow(context.deps.db, projectId);
+      const values = new Map([
+        ['name', detail.project.name],
+        ['description', detail.project.description ?? ''],
+        ['primaryDomain', detail.project.primaryDomain ?? ''],
+      ]);
+      const body = html`
+        ${pageHeader('Edit project profile', 'Changes are recorded in the local audit trail. The target entity is managed separately.')}
+        <section class="card">
+          ${projectEditForm({
+            values,
+            issues: [],
+            action: `/projects/${projectId}/edit`,
+            csrfToken: context.csrfToken,
+          })}
+        </section>
+      `;
+      return htmlResponse(page('Edit project', body, { projectId, current: 'overview' }));
+    },
+  },
+  {
+    method: 'POST',
+    path: '/projects/:projectId/edit',
+    handler: (context) => {
+      const projectId = context.params['projectId'] ?? '';
+      getProjectOrThrow(context.deps.db, projectId);
+      const result = validateProjectUpdateInput(
+        Object.fromEntries(context.fields.entries()) as Record<string, unknown>,
+      );
+      if (!result.ok) {
+        const body = html`
+          ${pageHeader('Edit project profile', 'Correct the highlighted fields and submit again.')}
+          <section class="card">
+            ${projectEditForm({
+              values: context.fields,
+              issues: result.issues,
+              action: `/projects/${projectId}/edit`,
+              csrfToken: context.csrfToken,
+            })}
+          </section>
+        `;
+        return htmlResponse(page('Edit project', body, { projectId, current: 'overview' }), 422);
+      }
+      updateProject(context.deps.db, projectId, result.value, writeContext(context));
+      return redirectWithNotice(`/projects/${projectId}`, 'project-updated');
     },
   },
   {
