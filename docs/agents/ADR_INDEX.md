@@ -17,6 +17,10 @@ ADRs are append-only decision records. Identifiers are sequential and never reus
 | [ADR-011](adrs/ADR-011-local-html-only-analysis.md) | Analyze only user-supplied HTML locally | Proposed | 2026-10-28 | Parse supplied HTML without network access; mark network-dependent checks unavailable. |
 | [ADR-012](adrs/ADR-012-loopback-single-operator-security.md) | Adopt a loopback-only, single-operator security posture for v0.1 | Proposed | 2026-10-28 | No remote binding or accounts; CSRF, host validation, CSP, body limits, and explicit local-only limits. |
 | [ADR-013](adrs/ADR-013-immutable-report-snapshots.md) | Store immutable report snapshots and render exports from them | Proposed | 2026-10-28 | Reports and JSON/CSV exports derive only from stored snapshots; corrections create new reports. |
+| [ADR-014](adrs/ADR-014-metrics-v2-intent-coverage.md) | Measure observed answer coverage by query intent group | Proposed | 2026-10-30 | Coverage v2 groups repeated query intents, makes untested groups and partial assessment visible, and preserves v1 snapshots. |
+| [ADR-015](adrs/ADR-015-evidence-labels-recorded-relationships.md) | Evidence labels describe recorded relationships, not verified truth | Proposed | 2026-10-30 | Clarify contradiction, support, and independence language; no credibility score or independent-verification claim. |
+| [ADR-016](adrs/ADR-016-local-achievement-records-and-approval.md) | Store local achievement records with immutable revisions and explicit approval | Proposed | 2026-10-30 | Structured project-scoped records, evidence-linked claims, contributor roles, drafts, approvals, and safe local HTML/JSON-LD exports; no publication. |
+| [ADR-017](adrs/ADR-017-validated-local-backup-and-restore.md) | Use validated local backup directories and guarded restore | Proposed | 2026-10-30 | Consistent `VACUUM INTO` snapshots, manifests with hashes/counts, validation, safety backups, and offline atomic restore. |
 
 ## ADR lifecycle
 
