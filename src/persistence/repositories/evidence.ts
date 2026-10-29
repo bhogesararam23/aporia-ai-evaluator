@@ -219,6 +219,33 @@ export function listSources(db: DatabaseSync, projectId: string): SourceRecord[]
     .map((row) => mapSource(row));
 }
 
+export interface ProjectEvidenceSummary {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly sourceTitle: string;
+  readonly locator: string;
+  readonly excerptDigest: string;
+}
+
+export function listProjectEvidence(db: DatabaseSync, projectId: string): ProjectEvidenceSummary[] {
+  return db
+    .prepare(
+      `SELECT e.id, e.source_id, s.title AS source_title, e.locator, e.excerpt_digest
+       FROM evidence_items e
+       JOIN sources s ON s.id = e.source_id
+       WHERE e.project_id = ?
+       ORDER BY s.title ASC, e.created_at ASC, e.id ASC`,
+    )
+    .all(projectId)
+    .map((row) => ({
+      id: stringValue(row, 'id'),
+      sourceId: stringValue(row, 'source_id'),
+      sourceTitle: stringValue(row, 'source_title'),
+      locator: stringValue(row, 'locator'),
+      excerptDigest: stringValue(row, 'excerpt_digest'),
+    }));
+}
+
 export function getSource(
   db: DatabaseSync,
   projectId: string,
