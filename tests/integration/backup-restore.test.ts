@@ -315,3 +315,23 @@ test('digest, count and schema mismatches abort before touching the destination'
     temp.remove();
   }
 });
+
+test('restore refuses a backup directory that is the destination data directory', async () => {
+  const temp = tempDir();
+  try {
+    const destination = join(temp.path, 'destination');
+    seedDatabase(join(destination, 'aporia.db'), 'Existing');
+    await assert.rejects(
+      () =>
+        restoreBackup({
+          backupDirectory: destination,
+          dataDir: destination,
+          replace: true,
+          confirmation: basename(destination),
+        }),
+      /must not be the destination/,
+    );
+  } finally {
+    temp.remove();
+  }
+});
