@@ -16,6 +16,7 @@ import {
 } from '../persistence/repositories/reports.ts';
 import { getRunOrThrow, listRuns } from '../persistence/repositories/runs.ts';
 import { getWebsiteAudit, listWebsiteAudits } from '../persistence/repositories/websiteAudits.ts';
+import { exportAchievements } from '../persistence/repositories/achievements.ts';
 import type { WriteContext } from '../persistence/repositories/context.ts';
 import { buildReportSnapshot } from '../reporting/snapshot.ts';
 import type {
@@ -408,6 +409,7 @@ export function exportProject(
       return audit === null ? [] : [audit];
     }),
     reports,
+    achievements: exportAchievements(db, projectId),
     auditEvents: listAuditEvents(db, projectId, { limit: 500 }),
     auditEventCount: countAuditEvents(db, projectId),
   };

@@ -153,22 +153,32 @@ export function createQuerySet(
     );
   }
   const id = newId('qst');
-  db.prepare(
-    `INSERT INTO query_sets
-      (id, project_id, name, version, status, description, locale, approved_by, approved_at,
-       approval_note, supersedes_id, created_at, updated_at)
-     VALUES (?, ?, ?, 1, 'DRAFT', ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
-  ).run(id, projectId, input.name, input.description ?? null, input.locale, context.at, context.at);
-  appendAuditEvent(db, {
-    projectId,
-    actor: context.actor,
-    action: 'query_set.created',
-    entityType: 'query_set',
-    entityId: id,
-    details: { name: input.name, version: 1 },
-    at: context.at,
+  return withTransaction(db, () => {
+    db.prepare(
+      `INSERT INTO query_sets
+        (id, project_id, name, version, status, description, locale, approved_by, approved_at,
+         approval_note, supersedes_id, created_at, updated_at)
+       VALUES (?, ?, ?, 1, 'DRAFT', ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
+    ).run(
+      id,
+      projectId,
+      input.name,
+      input.description ?? null,
+      input.locale,
+      context.at,
+      context.at,
+    );
+    appendAuditEvent(db, {
+      projectId,
+      actor: context.actor,
+      action: 'query_set.created',
+      entityType: 'query_set',
+      entityId: id,
+      details: { name: input.name, version: 1 },
+      at: context.at,
+    });
+    return getQuerySetOrThrow(db, projectId, id);
   });
-  return getQuerySetOrThrow(db, projectId, id);
 }
 
 export function addQuery(

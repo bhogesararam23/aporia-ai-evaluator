@@ -1,7 +1,7 @@
-# Local HTTP Route Map (v0.1)
+# Local HTTP Route Map (v0.2)
 
 - Status: Implemented
-- Date: 2026-10-29
+- Date: 2026-10-30
 - Server: loopback-only `node:http`; no separate public API
 - Authentication: none; local single-operator only
 - CSRF: every POST requires a synchronizer token in `_csrf`; GETs do not mutate state
@@ -75,6 +75,16 @@ All project routes are scoped by `projectId` and resolve records only within tha
 | GET | `/projects/:projectId/reports/:reportId/metrics.csv` | Metrics CSV; audits the export |
 | GET | `/projects/:projectId/reports/:reportId/findings.csv` | Findings CSV; audits the export |
 | GET | `/projects/:projectId/reports/:reportId/observations.csv` | Observation evidence CSV; audits the export |
+| GET | `/projects/:projectId/achievements` | Achievement record list and draft/approval state |
+| GET | `/projects/:projectId/achievements/new` | Create-achievement form from project claims and evidence |
+| POST | `/projects/:projectId/achievements` | Create a draft achievement with revision 1 |
+| GET | `/projects/:projectId/achievements/:achievementId` | Current revision preview, claims, contributors, evidence, contradictions, approval and history |
+| GET | `/projects/:projectId/achievements/:achievementId/revisions/new` | New-revision form prefilled from the current revision |
+| POST | `/projects/:projectId/achievements/:achievementId/revisions` | Create a new immutable revision; approval does not carry forward |
+| GET | `/projects/:projectId/achievements/:achievementId/revisions/:revisionId` | Historical revision preview |
+| POST | `/projects/:projectId/achievements/:achievementId/approve` | Approve the current revision with a note and exact title; audits the approval |
+| GET | `/projects/:projectId/achievements/:achievementId/export.html` | Approved current revision HTML; audits the export; 409 when unapproved |
+| GET | `/projects/:projectId/achievements/:achievementId/export.jsonld` | Approved current revision JSON-LD; audits the export; 409 when unapproved |
 
 ## Response and failure behavior
 
@@ -82,8 +92,9 @@ All project routes are scoped by `projectId` and resolve records only within tha
 - Validation failure returns 422 with escaped field errors and preserved values (except file inputs).
 - Missing scoped records return 404; invalid state changes return 409; forbidden host/origin/CSRF returns 403; oversized bodies return 413; unsupported content types return 415.
 - HTML responses receive CSP, `nosniff`, frame denial, no-referrer, permissions restrictions, and no-store. JSON/CSV downloads also receive no-store and an attachment filename.
+- Achievement approval failures return 422 with preserved values; an unapproved or non-current export returns 409; downloads are attachments and are audited only after generation succeeds.
 - Internal errors return a generic page with a request ID; no stack trace is shown.
 
 ## Absent routes
 
-There are no provider-call, remote-fetch, publication, OAuth, billing, analytics, or public-sharing endpoints. See [Known Limitations](../KNOWN_LIMITATIONS.md).
+There are no provider-call, remote-fetch, publication, OAuth, billing, analytics, public-sharing, or HTTP backup/restore endpoints. See [Known Limitations](../KNOWN_LIMITATIONS.md).

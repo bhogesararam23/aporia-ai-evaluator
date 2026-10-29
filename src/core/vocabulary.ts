@@ -20,27 +20,29 @@ export const PROPOSITION_STATUSES = [
 export type PropositionStatus = (typeof PROPOSITION_STATUSES)[number];
 
 export const PROPOSITION_STATUS_LABELS: Record<PropositionStatus, string> = {
-  SUPPORTED_WITHIN_SCOPE: 'Supported within scope',
-  PARTIALLY_SUPPORTED: 'Partially supported',
-  CONTRADICTED: 'Contradicted',
-  INSUFFICIENT_EVIDENCE: 'Insufficient evidence',
-  CONFLICTING_EVIDENCE: 'Conflicting evidence',
+  SUPPORTED_WITHIN_SCOPE: 'Support recorded within scope',
+  PARTIALLY_SUPPORTED: 'Partial support recorded',
+  CONTRADICTED: 'Contradiction recorded',
+  INSUFFICIENT_EVIDENCE: 'Insufficient recorded evidence',
+  CONFLICTING_EVIDENCE: 'Conflicting evidence recorded',
   NOT_ASSESSED: 'Not assessed',
-  UNAVAILABLE: 'Unavailable',
+  UNAVAILABLE: 'Evidence unavailable',
 };
 
 export const PROPOSITION_STATUS_DESCRIPTIONS: Record<PropositionStatus, string> = {
   SUPPORTED_WITHIN_SCOPE:
-    'The inspected evidence sufficiently supports the bounded proposition under the stated criteria. This is not universal proof.',
+    'At least one reviewer-recorded supporting relationship exists, with no recorded contradiction or qualifier, within the stated scope. This summarizes human records; it is not independent verification or universal proof.',
   PARTIALLY_SUPPORTED:
-    'Some components or conditions are supported, while qualifiers, scope, or other components remain unresolved.',
-  CONTRADICTED: 'At least one credible recorded source materially conflicts with the proposition.',
+    'Recorded support coexists with a recorded qualifier, or only qualifiers are recorded. Conditions or scope remain unresolved; this is not independent verification.',
+  CONTRADICTED:
+    'At least one reviewer-recorded contradiction exists, with no recorded support. This is a recorded relationship, not an Aporia verification that the proposition is false.',
   INSUFFICIENT_EVIDENCE:
-    'Available evidence does not support a confident conclusion. This does not mean the proposition is false.',
+    'The recorded relationships do not decide the proposition: they are contextual, do not address it, or otherwise leave it unresolved. This is not a factual negative.',
   CONFLICTING_EVIDENCE:
-    'Credible recorded sources support and contradict the proposition, and the conflict remains unresolved.',
-  NOT_ASSESSED: 'The proposition has not been evaluated.',
-  UNAVAILABLE: 'The assessment could not be completed for technical, access, or policy reasons.',
+    'Reviewer-recorded support and contradiction coexist. The conflict remains unresolved unless a human assessment documents an adjudication.',
+  NOT_ASSESSED: 'No evidence relationships have been recorded for this proposition.',
+  UNAVAILABLE:
+    'The evidence could not be inspected reliably. This is not support or contradiction.',
 };
 
 export const CLAIM_STATUSES = [
@@ -125,7 +127,7 @@ export type SourceType = (typeof SOURCE_TYPES)[number];
 export const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   PRIMARY_ARTIFACT: 'Primary artifact',
   REPRODUCIBLE_RESULT: 'Reproducible result',
-  INDEPENDENT_SOURCE: 'Independent source',
+  INDEPENDENT_SOURCE: 'Independent source (recorded)',
   SECONDARY_REPORT: 'Secondary report',
   SELF_PUBLISHED: 'Self-published',
   UNATTRIBUTED: 'Unattributed',
@@ -137,7 +139,7 @@ export const SOURCE_TYPE_DESCRIPTIONS: Record<SourceType, string> = {
     'A repository, release, paper, test log, official record, or demonstration that directly bears on the proposition.',
   REPRODUCIBLE_RESULT: 'A result others can inspect or repeat under documented conditions.',
   INDEPENDENT_SOURCE:
-    'A source assessed as not dependent on the claim-maker, with direct access to the facts.',
+    'A source the reviewer recorded as not dependent on the claim-maker, with direct access to the facts. Aporia has not verified the independence or credibility of the source.',
   SECONDARY_REPORT:
     'Reporting that cites primary evidence; still secondary to the underlying artifact.',
   SELF_PUBLISHED: 'A description published by the claim-maker or an affiliated party.',
@@ -149,10 +151,21 @@ export const SOURCE_INDEPENDENCE = ['INDEPENDENT', 'SELF_PUBLISHED', 'RELATED', 
 export type SourceIndependence = (typeof SOURCE_INDEPENDENCE)[number];
 
 export const SOURCE_INDEPENDENCE_LABELS: Record<SourceIndependence, string> = {
-  INDEPENDENT: 'Independent',
-  SELF_PUBLISHED: 'Self-published / affiliated',
-  RELATED: 'Related or syndicated',
-  UNKNOWN: 'Unknown',
+  INDEPENDENT: 'Recorded as independent',
+  SELF_PUBLISHED: 'Self-published / affiliated (recorded)',
+  RELATED: 'Related or syndicated (recorded)',
+  UNKNOWN: 'Independence unknown',
+};
+
+export const SOURCE_INDEPENDENCE_DESCRIPTIONS: Record<SourceIndependence, string> = {
+  INDEPENDENT:
+    'The reviewer recorded this source as independent of the claim-maker. Aporia did not verify that relationship, the source’s credibility, or its accuracy.',
+  SELF_PUBLISHED:
+    'The reviewer recorded this source as published by the claim-maker or an affiliated party.',
+  RELATED:
+    'The reviewer recorded this source as related, syndicated, or sharing an origin with another source.',
+  UNKNOWN:
+    'Independence has not been recorded. Unknown is not independent and is not a negative finding.',
 };
 
 export const SOURCE_ACCESS_ROUTES = [
@@ -195,12 +208,15 @@ export const EVIDENCE_RELATION_LABELS: Record<EvidenceRelation, string> = {
 };
 
 export const EVIDENCE_RELATION_DESCRIPTIONS: Record<EvidenceRelation, string> = {
-  SUPPORTS: 'The content materially increases support for the exact proposition.',
-  CONTRADICTS: 'The content materially conflicts with the proposition.',
-  QUALIFIES: 'The content supports the proposition only under conditions or a narrower scope.',
-  CONTEXTUALIZES: 'Useful background, but neither direct support nor contradiction.',
-  DOES_NOT_ADDRESS: 'The source is not probative for this proposition.',
-  UNAVAILABLE: 'The content could not be inspected reliably.',
+  SUPPORTS:
+    'The reviewer recorded that the content materially increases support for the exact proposition.',
+  CONTRADICTS: 'The reviewer recorded that the content materially conflicts with the proposition.',
+  QUALIFIES:
+    'The reviewer recorded that the content supports the proposition only under conditions or a narrower scope.',
+  CONTEXTUALIZES:
+    'The reviewer recorded useful background that is neither direct support nor contradiction.',
+  DOES_NOT_ADDRESS: 'The reviewer recorded that the source is not probative for this proposition.',
+  UNAVAILABLE: 'The reviewer recorded that the content could not be inspected reliably.',
 };
 
 export const QUERY_INTENTS = [

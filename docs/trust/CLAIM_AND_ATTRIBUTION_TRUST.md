@@ -51,6 +51,28 @@ Use the controlled claim-status labels described in Evaluator Methodology. Every
 
 Do not call a person, company, or project “verified” without specifying what property was verified and what did not get verified. Example: “account control was verified using provider X on date Y” is narrower and more honest than “the creator is verified.”
 
+### 5.1 Recorded relationships are not independent verification
+
+Every evidence relation and source-independence value is entered by a human reviewer. Aporia does
+not retrieve the source, authenticate the reviewer, verify the source's independence, or score its
+credibility. The interface therefore says **recorded** where the record is the basis:
+
+- `CONTRADICTED` is displayed as "Contradiction recorded". It means a reviewer recorded at least one
+  contradictory relationship and no supporting relationship; it is not an Aporia finding that the
+  proposition is false.
+- `SUPPORTED_WITHIN_SCOPE` is displayed as "Support recorded within scope". It summarizes recorded
+  supporting relationships within the stated scope; it is not independent corroboration or proof.
+- `CONFLICTING_EVIDENCE` is displayed as "Conflicting evidence recorded" and remains unresolved unless
+  a human assessment adjudicates it.
+- A source marked `INDEPENDENT` is displayed as "Recorded as independent": the reviewer recorded that
+  judgment. Aporia did not verify the relationship or the source's credibility. `UNKNOWN` is not
+  independent, and neither value is a negative finding about the source.
+
+The derived rule emits a standing caveat with every status. Human proposition assessments remain
+separate and are labeled by reviewer and method. No credibility score, source rank, or
+"independently verified" badge exists. A primary source may be authoritative about what it published
+without independently confirming the truth of that content.
+
 ## 6. Identity and authorship
 
 Aporia should distinguish:

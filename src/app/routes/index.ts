@@ -8,6 +8,7 @@ import { querySetRoutes } from './querySets.ts';
 import { runRoutes } from './runs.ts';
 import { auditRoutes } from './audits.ts';
 import { reportRoutes } from './reports.ts';
+import { achievementRoutes } from './achievements.ts';
 
 export const routes: RouteDefinition[] = [
   ...homeRoutes,
@@ -18,5 +19,6 @@ export const routes: RouteDefinition[] = [
   ...runRoutes,
   ...auditRoutes,
   ...reportRoutes,
+  ...achievementRoutes,
   ...staticRoutes,
 ];

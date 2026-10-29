@@ -8,9 +8,9 @@ Aporia does **not** promise that any provider will crawl, index, retain, recomme
 
 ## Project status
 
-**Local core v0.1 is implemented and locally validated.** It is a single-operator, loopback-only application with durable SQLite storage, a complete claim-to-report workflow, local HTML analysis, manual AI-answer capture, transparent metrics, and immutable reports.
+**Local core v0.2 is implemented and locally validated.** It is a single-operator, loopback-only application with durable SQLite storage, a complete claim-to-report workflow, local HTML analysis, manual AI-answer capture, transparent metrics v2, immutable reports, evidence-linked achievement records with explicit approval and safe local HTML/JSON-LD export, and validated offline backup/restore.
 
-**Not implemented and intentionally out of scope for this milestone:** provider/LLM/search integrations, API keys, remote URL fetching, crawling, publishing, accounts, multi-tenancy, OAuth, billing, analytics, background jobs, and seeded demo data. It is not production-ready, independently audited, or validated against a provider. See [Known Limitations](docs/KNOWN_LIMITATIONS.md) and [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
+**Not implemented and intentionally out of scope for this milestone:** provider/LLM/search integrations, API keys, remote URL fetching, crawling, remote publishing or public achievement pages, accounts, multi-tenancy, OAuth, billing, analytics, background jobs, and seeded demo data. Achievement records and approved exports are local files; they are not published. The application is not production-ready, independently audited, or validated against a provider. See [Known Limitations](docs/KNOWN_LIMITATIONS.md) and [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
 
 The documentation baseline remains the requirements source of truth. Implementation status is tracked in the repository, not inferred from the presence of a specification.
 
@@ -53,9 +53,11 @@ npm run dev
 - **Query sets:** versioned, reviewable, approved/frozen sets and clone-for-retest versions.
 - **Manual runs:** declared provider/model/interface/grounding/locale/region conditions; exact prompt snapshots; raw answers entered or imported by JSON; citation metadata with unavailable states; open/finalized/cancelled lifecycle.
 - **Assessments:** separate presence, fidelity, citation-support, and attribution assessments with append-only versions and reviewer rationale.
-- **Metrics:** mention rate, target-source and any-source citation rates, citation support, claim fidelity, attribution correctness, observed answer-level coverage, explicit numerators/denominators/exclusions, and `null` unknowns. No composite score.
+- **Metrics v2:** mention rate, target-source and any-source citation rates, citation support, claim fidelity, attribution correctness, and observed answer-level coverage by query-intent group, with repeated intents counted once, untested and partially assessed groups visible, explicit numerators/denominators/exclusions, and `null` unknowns. No composite score; stored v1 reports remain readable.
 - **Local HTML audits:** paste or upload HTML; inspect title, robots meta, canonical, JSON-LD alignment, headings, author/date signals, links, alt text, and parser issues. No network request, script execution, or crawler is used. Network-dependent checks are reported as unavailable.
 - **Reports:** immutable snapshots built from persisted records, with scope, method, coverage, claims/evidence, audits, runs, metric definitions/exclusions, comparisons, remediation suggestions, limitations, and unavailable checks. JSON, metrics CSV, findings CSV, observations CSV, and local audit JSON exports; export actions are audited.
+- **Achievement records:** project-scoped immutable revisions built from real claims, current claim evidence states, contributor roles and support states, dates, project details, selected sources/excerpts, and unresolved contradictions. Draft previews; explicit current-revision approval bound to the content hash; revision history; approved HTML and schema.org JSON-LD downloads checked against visible content. No publication route.
+- **Backup and restore:** `npm run backup` creates a validated, consistent SQLite snapshot and manifest; `npm run restore` validates before replacement, requires explicit overwrite confirmation, creates a safety backup, and rolls back on failure. Backups are local and unencrypted.
 - **Data control:** project JSON export, typed-name deletion, local audit trail, and no telemetry or provider calls.
 
 ## Commands
@@ -69,6 +71,8 @@ npm run lint           # ESLint
 npm run format:check   # Prettier check
 npm run check:boundaries
 npm run check          # all gates in sequence
+npm run backup -- --data-dir ./data    # validated local backup
+npm run restore -- <backup-dir> --data-dir ./data   # stop the server first
 ```
 
 See [Testing and verification](docs/TESTING.md) for suite coverage, exact local results, and checks that were not run.
@@ -80,8 +84,10 @@ Browser
   -> node:http loopback server (Host/Origin/CSRF/body limits)
   -> app routes and core input validation
   -> SQLite repositories and append-only audit events
-  -> evaluator core (pure evidence rule + metrics v1)
-  -> immutable report snapshot -> HTML / JSON / CSV exports
+  -> evaluator core (pure evidence rule + metrics v2)
+  -> immutable report snapshot and achievement revisions
+  -> HTML / JSON / CSV / achievement HTML + JSON-LD exports
+  -> offline validated backup/restore
 ```
 
 - `src/core` contains no I/O, database, HTTP, UI, or commercial imports.
@@ -95,9 +101,9 @@ Read [Local core architecture](docs/technical/LOCAL_CORE_ARCHITECTURE.md) and [L
 
 ## Evidence and metric semantics
 
-The evaluator does not use keyword matching, language models, or arbitrary weights. A human records supporting, contradicting, qualifying, contextual, unaddressed, or unavailable evidence. A documented precedence rule summarizes those relationships. Human assessments are separate and append-only. Reports show rule output, human conclusions, disagreement, rationale, and caveats.
+The evaluator does not use keyword matching, language models, or arbitrary weights. A human records supporting, contradicting, qualifying, contextual, unaddressed, or unavailable evidence. A documented precedence rule summarizes those relationships. Human assessments are separate and append-only. Reports show rule output, human conclusions, disagreement, rationale, and caveats. Labels such as “Contradiction recorded” and “Recorded as independent” describe reviewer records; they are not independent verification, a credibility score, or proof that a source is trustworthy.
 
-Answer metrics are defined in [Implemented metrics v1](docs/evaluator/IMPLEMENTED_METRICS_V1.md). Eligibility excludes provider/capture errors, refusals, abstentions, timeouts, blocked access, and voided records. Those states remain visible as coverage and exclusion reasons; they are never negative mentions or negative factual verdicts. There is no composite “AI score.”
+Answer metrics are defined in [Implemented metrics v2](docs/evaluator/IMPLEMENTED_METRICS_V2.md); v1 remains readable for stored reports. Coverage uses query-intent groups, so repeated prompts for one intent count once and untested groups are visible. Eligibility excludes provider/capture errors, refusals, abstentions, timeouts, blocked access, and voided records. Those states remain visible as coverage and exclusion reasons; they are never negative mentions or negative factual verdicts. There is no composite “AI score.”
 
 ## Documentation
 
@@ -108,7 +114,8 @@ Answer metrics are defined in [Implemented metrics v1](docs/evaluator/IMPLEMENTE
 - [Local core architecture](docs/technical/LOCAL_CORE_ARCHITECTURE.md)
 - [Local schema](docs/technical/LOCAL_SCHEMA.md)
 - [Evaluator methodology](docs/evaluator/EVALUATOR_METHODOLOGY.md)
-- [Implemented metrics v1](docs/evaluator/IMPLEMENTED_METRICS_V1.md)
+- [Implemented metrics v2](docs/evaluator/IMPLEMENTED_METRICS_V2.md)
+- [Implemented metrics v1 (historical)](docs/evaluator/IMPLEMENTED_METRICS_V1.md)
 - [Reporting specification](docs/evaluator/REPORTING_SPECIFICATION.md)
 - [Claim and attribution trust model](docs/trust/CLAIM_AND_ATTRIBUTION_TRUST.md)
 - [Safety policy](docs/safety/SAFETY_POLICY.md)

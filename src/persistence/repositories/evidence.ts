@@ -177,37 +177,39 @@ export function createSource(
     throw new AppError('NOT_FOUND', 'Project not found.');
   }
   const id = newId('src');
-  db.prepare(
-    `INSERT INTO sources
-      (id, project_id, title, canonical_uri, publisher, author, source_type, access_route,
-       retrieved_at, publication_date, language, independence, notes, access_status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_CHECKED', ?)`,
-  ).run(
-    id,
-    projectId,
-    input.title,
-    input.canonicalUri ?? null,
-    input.publisher ?? null,
-    input.author ?? null,
-    input.sourceType,
-    input.accessRoute,
-    input.retrievedAt,
-    input.publicationDate ?? null,
-    input.language,
-    input.independence,
-    input.notes ?? null,
-    context.at,
-  );
-  appendAuditEvent(db, {
-    projectId,
-    actor: context.actor,
-    action: 'source.created',
-    entityType: 'source',
-    entityId: id,
-    details: { title: input.title, sourceType: input.sourceType },
-    at: context.at,
+  return withTransaction(db, () => {
+    db.prepare(
+      `INSERT INTO sources
+        (id, project_id, title, canonical_uri, publisher, author, source_type, access_route,
+         retrieved_at, publication_date, language, independence, notes, access_status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_CHECKED', ?)`,
+    ).run(
+      id,
+      projectId,
+      input.title,
+      input.canonicalUri ?? null,
+      input.publisher ?? null,
+      input.author ?? null,
+      input.sourceType,
+      input.accessRoute,
+      input.retrievedAt,
+      input.publicationDate ?? null,
+      input.language,
+      input.independence,
+      input.notes ?? null,
+      context.at,
+    );
+    appendAuditEvent(db, {
+      projectId,
+      actor: context.actor,
+      action: 'source.created',
+      entityType: 'source',
+      entityId: id,
+      details: { title: input.title, sourceType: input.sourceType },
+      at: context.at,
+    });
+    return getSourceOrThrow(db, projectId, id);
   });
-  return getSourceOrThrow(db, projectId, id);
 }
 
 export function listSources(db: DatabaseSync, projectId: string): SourceRecord[] {
@@ -215,6 +217,33 @@ export function listSources(db: DatabaseSync, projectId: string): SourceRecord[]
     .prepare('SELECT * FROM sources WHERE project_id = ? ORDER BY created_at DESC, id DESC')
     .all(projectId)
     .map((row) => mapSource(row));
+}
+
+export interface ProjectEvidenceSummary {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly sourceTitle: string;
+  readonly locator: string;
+  readonly excerptDigest: string;
+}
+
+export function listProjectEvidence(db: DatabaseSync, projectId: string): ProjectEvidenceSummary[] {
+  return db
+    .prepare(
+      `SELECT e.id, e.source_id, s.title AS source_title, e.locator, e.excerpt_digest
+       FROM evidence_items e
+       JOIN sources s ON s.id = e.source_id
+       WHERE e.project_id = ?
+       ORDER BY s.title ASC, e.created_at ASC, e.id ASC`,
+    )
+    .all(projectId)
+    .map((row) => ({
+      id: stringValue(row, 'id'),
+      sourceId: stringValue(row, 'source_id'),
+      sourceTitle: stringValue(row, 'source_title'),
+      locator: stringValue(row, 'locator'),
+      excerptDigest: stringValue(row, 'excerpt_digest'),
+    }));
 }
 
 export function getSource(

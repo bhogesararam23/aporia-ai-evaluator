@@ -1,8 +1,8 @@
 # Local Operations Runbook
 
-- Scope: local core v0.1 on a single operator workstation
+- Scope: local core v0.2 on a single operator workstation
 - Status: Implemented, not a production operations plan
-- Date: 2026-10-29
+- Date: 2026-10-30
 
 This runbook covers starting, inspecting, backing up, and removing local data. It does not cover remote hosting, multi-user access, provider credentials, or public publication.
 
@@ -34,22 +34,56 @@ Configuration is read from environment variables. `.env` is optional; `npm start
 
 Do not put real secrets in `.env`, source, fixtures, data exports, or reports. v0.1 has no provider credentials.
 
-## 3. Data location and backup
+## 3. Data location, backup and restore
 
 The database is a SQLite file in `APORIA_DATA_DIR`:
 
 - `aporia.db`
 - `aporia.db-wal` and `aporia.db-shm` while the server is running and WAL mode is active.
 
-**Backup procedure:** stop the server, then copy the database file and any sidecars into a protected local location. Copying while the server is running can produce an inconsistent snapshot unless a proper SQLite-aware backup tool is used. v0.1 does not implement an automated backup.
+### Create a validated backup
 
-**Restore procedure:** stop the server, preserve the current data directory, place the backup in the configured data directory, and start the server. Do not edit migration rows or the database schema manually.
+```bash
+npm run backup -- --data-dir ./data
+# or choose the output directory
+npm run backup -- --data-dir ./data --output ./protected/backup-2026-10-30
+```
 
-Data may contain personal or sensitive material. Backups and exports are subject to the same access controls as the original local data; v0.1 provides only operating-system file permissions.
+`npm run backup` uses SQLite `VACUUM INTO` on a read-only source connection, so the backup is a consistent single file and the source journal is not rewritten. It then reopens the copy and validates `PRAGMA integrity_check`, foreign keys, the applied migration identities, every application table count, report snapshot readability and per-project report numbering, and achievement approval hashes. The manifest records the database SHA-256, byte length, schema version, migration identities, table counts and validation results. A backup directory is written only after those checks pass; a failed attempt is removed. An existing output directory is never overwritten.
+
+Verify a backup at any later point without restoring it:
+
+```bash
+npm run backup:verify -- ./protected/backup-2026-10-30
+```
+
+The verifier checks the manifest, digest, schema identity, integrity, foreign keys, table counts and report consistency and prints the recorded project, report and achievement counts.
+
+The backup is an unencrypted local directory (`aporia.db`, `manifest.json`, `README.txt`). It can contain claims, evidence, answers and personal data; protect it like the original database. There is no scheduled backup, retention policy, or encryption at rest.
+
+### Restore
+
+**Stop the Aporia server before restoring.** The restore command opens and replaces the database file.
+
+```bash
+# Restore into an empty data directory
+npm run restore -- ./protected/backup-2026-10-30 --data-dir ./data
+
+# Replace existing data: both flags are required
+npm run restore -- ./protected/backup-2026-10-30 --data-dir ./data \
+  --replace --confirm backup-2026-10-30
+```
+
+Restore validates the manifest digest, byte length, migration identities, integrity, foreign keys, table counts and report consistency before touching the destination. It refuses to overwrite a database that contains projects unless `--replace` is present and `--confirm` exactly matches the backup directory name. Before replacing, it creates a validated safety backup under `<data-dir>/backups/pre-restore-<timestamp>` (or a raw copy when the existing database cannot be read). Replacement uses a synced temporary file and an atomic rename; if replacement or post-restore verification fails, the safety copy is restored and the original failure is reported.
+
+The backup schema must match the running application's migrations exactly. Restoring a backup from a different schema is refused rather than silently migrated. After a successful restore, the command reopens the destination and verifies the manifest counts and report consistency. Start the server and inspect the restored records before relying on them.
+
+Data may contain personal or sensitive material. Backups and exports are subject to the same access controls as the original local data; the application provides only operating-system file permissions.
 
 ## 4. Reset, export, and deletion
 
-- **Export** from a project overview: “Export project JSON”. Export actions are recorded as audit events and include claims, sources, evidence, query sets, runs, raw observations, local HTML snapshots, reports, and recent audit events.
+- **Export** from a project overview: “Export project JSON”. Export actions are recorded as audit events and include claims, sources, evidence, query sets, runs, raw observations, local HTML snapshots, reports, achievement records and their revisions/approvals, and recent audit events.
+- **Achievement records** are created and revised from the project's claims and evidence. A revision is a draft until an operator explicitly approves the current revision with a note and the exact title. Approved current revisions can be downloaded as HTML and JSON-LD from the achievement page; the download is audited and is not a publication action.
 - **Delete** from a project overview: type the exact project name on the confirmation page. Deletion cascades through project-owned records, including local audit events. This is disclosed in the UI and runbook. It cannot be undone from within the application.
 - **Fresh development instance:** stop the server, move or remove the configured data directory, and restart. This is destructive; use a separate data directory rather than deleting a directory you do not recognize.
 - **Reports** are immutable snapshots. To “correct” a report, generate a new one; the previous report is marked superseded and remains available.
@@ -86,9 +120,9 @@ Aporia cannot revoke copies made outside its data directory.
 
 ## 7. Upgrade and rollback
 
-- Back up the data directory before upgrading code.
+- Back up the data directory before upgrading code with `npm run backup -- --data-dir <dir>`.
 - Apply migrations by starting the new revision; never edit an applied migration.
-- There are no down migrations. Rollback means restoring the pre-upgrade database backup and running the earlier code revision.
+- There are no down migrations. Rollback means restoring the pre-upgrade database backup and running the earlier code revision. Restore requires the backup schema to match the earlier code's migrations exactly.
 - Re-run `npm run check` after any dependency or Node upgrade. The `node:sqlite` API is experimental and must be revalidated.
 - Report snapshots store method and template versions, so older reports remain interpretable after an evaluator change.
 

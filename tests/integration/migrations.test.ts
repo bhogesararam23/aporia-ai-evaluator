@@ -55,6 +55,22 @@ test('rejects an edited migration that was already applied', () => {
   }
 });
 
+test('rejects a renamed migration that was already applied', () => {
+  const db = openDatabase(':memory:');
+  try {
+    const sql = 'CREATE TABLE example (id TEXT PRIMARY KEY) STRICT;';
+    runMigrations(db, [migration(1, 'initial', sql)]);
+    assert.throws(
+      () => runMigrations(db, [migration(1, 'renamed', sql)]),
+      (error: unknown) =>
+        error instanceof MigrationError && /applied as "initial"/.test(error.message),
+      'a renamed applied migration was accepted because only its SQL checksum was compared',
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
 test('rejects a database whose applied migration is missing from the directory', () => {
   const db = openDatabase(':memory:');
   try {

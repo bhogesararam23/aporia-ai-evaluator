@@ -435,6 +435,10 @@ export const projectRoutes: RouteDefinition[] = [
                 <dt>Reports</dt>
                 <dd>${detail.counts.reports}</dd>
               </div>
+              <div class="stat">
+                <dt>Achievements</dt>
+                <dd>${detail.counts.achievements}</dd>
+              </div>
             </dl>
             <p class="small muted">
               ${plural(entities.length, 'entity', 'entities')} · no external provider or network
@@ -911,6 +915,7 @@ export const projectRoutes: RouteDefinition[] = [
     handler: (context) => {
       const projectId = context.params['projectId'] ?? '';
       getProjectOrThrow(context.deps.db, projectId);
+      const exported = exportProject(context.deps.db, projectId, context.now);
       appendAuditEvent(context.deps.db, {
         projectId,
         actor: context.deps.config.operator,
@@ -920,7 +925,6 @@ export const projectRoutes: RouteDefinition[] = [
         details: { format: 'json' },
         at: context.now,
       });
-      const exported = exportProject(context.deps.db, projectId, context.now);
       return jsonResponse(exported, 200, `aporia-project-${projectId}.json`);
     },
   },
@@ -935,8 +939,9 @@ export const projectRoutes: RouteDefinition[] = [
         <div class="card stack">
           <p>
             Deleting <strong>${detail.project.name}</strong> removes its claims, sources, evidence,
-            query sets, runs, observations, local HTML snapshots, reports, and audit events from
-            this database. Exported files elsewhere are not affected.
+            query sets, runs, observations, local HTML snapshots, achievement records and their
+            approvals, reports, and audit events from this database. Exported files elsewhere are
+            not affected.
           </p>
           <form method="post" action="/projects/${projectId}/delete">
             ${csrfField(context.csrfToken)}

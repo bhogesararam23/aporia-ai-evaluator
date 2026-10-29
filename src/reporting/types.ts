@@ -20,7 +20,7 @@ import type {
 } from '../core/vocabulary.ts';
 
 export const REPORT_SCHEMA_VERSION = 'report-snapshot-v1';
-export const REPORT_TEMPLATE_VERSION = 'report-template-v1';
+export const REPORT_TEMPLATE_VERSION = 'report-template-v2';
 
 export interface ReportProjectInput {
   readonly id: string;

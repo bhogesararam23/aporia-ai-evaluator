@@ -340,6 +340,11 @@ function evidenceDisplay(
   }
   return html`
     <div class="stack">
+      <p class="small muted">
+        These relationships and the derived status summarize what a reviewer recorded. They are not
+        independent verification of the source, its credibility, or the proposition. “Recorded as
+        independent” means the reviewer recorded that judgment; Aporia did not check it.
+      </p>
       ${rows.map(
         (row) => html`
           <article class="finding ${row.relationship.supersededBy === null ? '' : 'muted'}">

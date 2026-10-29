@@ -1,5 +1,19 @@
 # Security, Privacy, and Data Governance
 
+## 0. Implemented local-core controls (v0.2)
+
+The local core is a single-user, loopback-only application. It is not the target platform described below, and none of the platform controls should be assumed present.
+
+- `APORIA_HOST` accepts only `127.0.0.1` or `::1`; the server refuses other bindings.
+- The process makes no outbound network calls, uses no provider credentials, and has no authentication provider, billing, or remote integration.
+- State-changing forms require a session CSRF synchronizer token; requests are checked against the configured host and origin. Responses set a restrictive Content-Security-Policy, nosniff, frame denial, and no-referrer headers.
+- User content is escaped in server-rendered HTML. Achievement JSON-LD escapes `<` so user text cannot break out of the script element, and only inactive HTTP(S) URLs become links.
+- Achievement approval is bound to the SHA-256 content hash of the current immutable revision. Approval and export events are audited; export is refused until the current revision is approved.
+- Backup uses a read-only `VACUUM INTO` snapshot plus a manifest of digest, byte length, schema, migration identities, table counts, and report consistency. Restore validates before touching destination data, creates a safety backup, replaces atomically, and rolls back on failure. Backup files are unencrypted and must be protected by OS permissions.
+- There is no user authentication. Anyone who can reach the loopback port can act as the operator; stop the application or restrict OS access when that is not acceptable.
+
+Evidence for these controls, and their residual limits, is tracked in [Local Security Test Matrix](LOCAL_SECURITY_TEST_MATRIX.md).
+
 ## 1. Security objectives
 
 Protect account access, project boundaries, private uploads, provider credentials, evidence integrity, report confidentiality, and availability. The platform accepts arbitrary URLs and files; both must be treated as attacker-controlled input. Security controls are requirements, not claims of current implementation.

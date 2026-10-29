@@ -17,6 +17,7 @@ import {
   GROUNDING_MODE_LABELS,
   OBSERVATION_STATUSES,
   OBSERVATION_STATUS_LABELS,
+  QUERY_INTENT_LABELS,
   type AssessmentDimension,
 } from '../../core/vocabulary.ts';
 import type { RunMetrics } from '../../core/metrics.ts';
@@ -659,12 +660,97 @@ function metricsSection(metrics: RunMetrics): Html {
       <section class="card">
         <h2>Coverage</h2>
         <dl class="definition-list">
-          ${definitionRow('Queries planned', html`${metrics.coverage.plannedQueries}`)}
-          ${definitionRow('Queries tested', html`${metrics.coverage.testedQueries}`)}
-          ${definitionRow('Queries untested', html`${metrics.coverage.untestedQueries}`)}
+          ${definitionRow('Query rows planned', html`${metrics.coverage.plannedQueries}`)}
+          ${definitionRow('Query rows tested', html`${metrics.coverage.testedQueries}`)}
+          ${definitionRow('Query rows untested', html`${metrics.coverage.untestedQueries}`)}
+          ${definitionRow('Intent groups planned', html`${metrics.coverage.plannedIntents ?? '—'}`)}
+          ${definitionRow('Intent groups tested', html`${metrics.coverage.testedIntents ?? '—'}`)}
+          ${definitionRow('Intent groups untested', html`${metrics.coverage.untestedIntents ?? '—'}`)}
+          ${definitionRow('Intent groups partially assessed', html`${metrics.coverage.partialAssessmentIntents ?? '—'}`)}
           ${definitionRow('Observations recorded', html`${metrics.coverage.observationsRecorded}`)}
           ${definitionRow('Eligible completed observations', html`${metrics.coverage.eligibleObservations}`)}
         </dl>
+        ${
+          metrics.coverage.byIntent === undefined
+            ? html`<p class="small muted">
+                This run was calculated under metrics-v1, which counted query rows. Generate a new
+                report to use intent-group coverage.
+              </p>`
+            : html`
+                <div class="table-wrap">
+                  <table>
+                    <caption>
+                      Coverage by query intent group. Repeated queries for one intent count once.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Intent</th>
+                        <th scope="col">Query rows tested / untested</th>
+                        <th scope="col">Eligible observations</th>
+                        <th scope="col">Presence assessed</th>
+                        <th scope="col">Unassessed eligible</th>
+                        <th scope="col">Mentioned</th>
+                        <th scope="col">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${metrics.coverage.byIntent.map(
+                        (intent) => html`
+                          <tr>
+                            <th scope="row">${QUERY_INTENT_LABELS[intent.intent]}</th>
+                            <td>${intent.testedQueries} / ${intent.untestedQueries}</td>
+                            <td>${intent.eligibleObservations}</td>
+                            <td>${intent.presenceAssessed}</td>
+                            <td>
+                              ${intent.unassessedEligibleObservations}
+                              ${intent.partialAssessment ? html` <span class="badge">partial</span>` : ''}
+                            </td>
+                            <td>${intent.mentioned}</td>
+                            <td>
+                              ${statusBadge(humanize(intent.status), intent.status === 'TESTED_COVERED' ? 'good' : intent.status === 'UNTESTED' || intent.status === 'TESTED_UNASSESSED' ? 'warn' : 'neutral')}
+                            </td>
+                          </tr>
+                        `,
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <details class="small">
+                  <summary>Query rows in this run</summary>
+                  <div class="table-wrap">
+                    <table>
+                      <caption>
+                        Per-query detail; these rows are not the coverage unit.
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Query</th>
+                          <th scope="col">Intent</th>
+                          <th scope="col">Eligible</th>
+                          <th scope="col">Assessed</th>
+                          <th scope="col">Mentioned</th>
+                          <th scope="col">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${metrics.coverage.byQuery.map(
+                          (query) => html`
+                            <tr>
+                              <td class="mono">${query.queryId}</td>
+                              <td>${QUERY_INTENT_LABELS[query.intent]}</td>
+                              <td>${query.eligibleObservations}</td>
+                              <td>${query.presenceAssessed}</td>
+                              <td>${query.mentioned}</td>
+                              <td>${humanize(query.status)}</td>
+                            </tr>
+                          `,
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              `
+        }
         <p class="small muted">
           Excluded observations are reported with reasons; provider errors are not negative answers.
         </p>

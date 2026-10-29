@@ -113,6 +113,7 @@ export function insertSource(
     title?: string;
     sourceType?: string;
     independence?: string;
+    canonicalUri?: string | null;
   } = {},
 ): string {
   const id = options.id ?? 'src_1';
@@ -120,12 +121,13 @@ export function insertSource(
     `INSERT INTO sources
       (id, project_id, title, canonical_uri, publisher, author, source_type, access_route,
        retrieved_at, publication_date, language, independence, notes, access_status, created_at)
-     VALUES (?, ?, ?, NULL, NULL, NULL, ?, 'MANUAL_ENTRY', ?, NULL, 'en', ?, NULL,
+     VALUES (?, ?, ?, ?, NULL, NULL, ?, 'MANUAL_ENTRY', ?, NULL, 'en', ?, NULL,
        'NOT_CHECKED', ?)`,
   ).run(
     id,
     options.projectId ?? 'prj_1',
     options.title ?? 'Release archive',
+    options.canonicalUri ?? null,
     options.sourceType ?? 'PRIMARY_ARTIFACT',
     TEST_TIME,
     options.independence ?? 'INDEPENDENT',
@@ -486,6 +488,8 @@ export function insertReport(
     reportNumber?: number;
     title?: string;
     supersededBy?: string | null;
+    /** Failure fixtures can store a snapshot that `snapshotOf` must reject. */
+    snapshotJson?: string;
   } = {},
 ): string {
   const id = options.id ?? 'rep_1';
@@ -495,13 +499,14 @@ export function insertReport(
        methodology_version, metrics_version, evidence_rule_version, snapshot_json,
        superseded_by_report_id, created_at)
      VALUES (?, ?, ?, ?, ?, 'report-snapshot-v1', 'methodology-2026-10-28', 'metrics-v1',
-       'evidence-aggregation-v1', '{"schemaVersion":"report-snapshot-v1"}', ?, ?)`,
+       'evidence-aggregation-v1', ?, ?, ?)`,
   ).run(
     id,
     options.projectId ?? 'prj_1',
     options.reportNumber ?? 1,
     options.title ?? 'Evaluation report 1',
     TEST_TIME,
+    options.snapshotJson ?? '{"schemaVersion":"report-snapshot-v1"}',
     options.supersededBy ?? null,
     TEST_TIME,
   );

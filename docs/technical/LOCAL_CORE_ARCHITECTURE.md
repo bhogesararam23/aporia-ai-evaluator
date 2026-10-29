@@ -1,8 +1,8 @@
-# Local Core Architecture (v0.1)
+# Local Core Architecture (v0.2)
 
 - Status: Implemented and locally validated
-- Date: 2026-10-29
-- Related: ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-013
+- Date: 2026-10-30
+- Related: ADR-008 through ADR-017
 - Scope: the runnable local application in this repository, not a production or multi-user architecture
 
 ## 1. Purpose and constraints
@@ -35,19 +35,21 @@ src/
     validation.ts           text, URL, timestamp, locale, and range validation
     inputs.ts               boundary validators for every workflow input
     evidence.ts             deterministic evidence aggregation and human/rule resolution
-    metrics.ts              metrics v1 definitions and calculations
+    metrics.ts              metrics v2 definitions and calculations; v1 snapshots remain readable
+    achievements.ts         achievement draft validation, support states and canonical revision content
     versions.ts             methodology, rule, and metric versions
   persistence/              SQLite, migrations, repositories, audit events
-    migrations/             six forward, checksummed SQL migrations
-    repositories/           project, entity, claim, evidence, query set, run, audit, report
+    migrations/             seven forward, checksummed SQL migrations
+    backup.ts               consistent snapshot, manifest validation, safety backup and restore
+    repositories/           project, entity, claim, evidence, query set, run, audit, report, achievement
   website/                  local-only HTML analysis; no network access
-  reporting/                immutable snapshot construction and JSON/CSV serialization
+  reporting/                immutable snapshot construction, JSON/CSV, and achievement HTML/JSON-LD exports
   app/                      HTTP, validation orchestration, views, and workflows
     http/                   request pipeline, router, sessions, CSRF, body limits, responses
-    routes/                 home, projects, entities, claims, sources, query sets, runs, audits, reports
-    views/                  escaped HTML rendering, accessible components, report rendering
+    routes/                 home, projects, entities, claims, sources, query sets, runs, audits, achievement records, reports
+    views/                  escaped HTML rendering, accessible components, achievement preview, report rendering
     importObservations.ts   atomic JSON observation import validation
-    reportingService.ts     maps persisted records to reporting input and stores snapshots
+    reportingService.ts     maps persisted records to reporting input and stores snapshots; project export
     runMetrics.ts           maps a stored run to core metrics input
   assets/app.css            local stylesheet, light/dark, print support
 ```
@@ -154,7 +156,17 @@ CSV output is RFC 4180 quoted and protects against spreadsheet formula injection
 
 Network-dependent checks are always returned as unavailable with a reason. They are never reported as passed or clean.
 
-## 10. Security posture
+## 10. Achievement records and local exports
+
+An achievement record is a project-scoped sequence of immutable revisions. A revision snapshots the title, summary, project details, optional dates, linked claims with their recorded evidence states and human-assessment summaries, contributor roles and support states, selected sources and evidence locators/digests, and unresolved contradictions. The content is canonicalized and hashed; changing any field requires a new revision.
+
+The preview is rendered from the stored revision, not from live claims or sources. A revision is a draft until an operator explicitly approves the current revision with a note and the exact revision title. Approval is a separate append-only row bound to the revision content hash; a trigger refuses a stale revision or a mismatched hash, and a new revision is unapproved again. Approved current revisions can be downloaded as standalone HTML and schema.org CreativeWork JSON-LD. Both are generated from one structured view; the HTML escapes every user value, the JSON-LD escapes `<` inside its script element, and a consistency check refuses output whose title, summary, project, contributors, dates, evidence URLs or approval metadata are not visible. There is no publication route, destination control, or remote write.
+
+## 11. Backup and restore
+
+`src/persistence/backup.ts` creates a read-only `VACUUM INTO` snapshot and validates the copy before writing a manifest. The manifest records the database digest and byte length, applied migration identities, every application table count, report snapshot readability and report numbering, achievement approval hashes, the integrity result and foreign-key status. Restore verifies the manifest and the same invariants before touching the destination; it requires an exact-schema match, refuses an unflagged overwrite, creates a pre-restore safety backup, and replaces through a synced temporary file with rollback on failure. The CLI scripts are thin wrappers; there is no HTTP restore endpoint.
+
+## 12. Security posture
 
 ADR-012 defines the local single-operator posture. In summary:
 
@@ -167,21 +179,23 @@ ADR-012 defines the local single-operator posture. In summary:
 - parameterized SQL;
 - no user-controlled filesystem path or static path;
 - no external network client, provider SDK, credentials, or secrets;
+- achievement HTML/JSON-LD exports use the same escaping and safe-URL rules, plus a structured-versus-visible consistency refusal;
+- backup/restore is offline-only, validates before replacement, requires explicit overwrite confirmation, and keeps a safety copy;
 - local data and exports under the operator's control, with an explicit typed-confirmation delete.
 
 There is no authentication. Anyone with access to the local operating-system account and data directory can read the database. Reports and exports may contain sensitive material.
 
-## 11. What is intentionally absent
+## 13. What is intentionally absent
 
 - Provider SDKs, API keys, LLM calls, search APIs, and provider capability claims.
 - Remote URL fetching, crawling, robots.txt retrieval, sitemap retrieval, and live link checking.
-- Achievement-page publication, structured-data publishing, CMS adapters, and public routes.
+- Achievement-page publication, remote structured-data publication, CMS adapters, and public routes; local achievement records and approved downloads exist.
 - Accounts, multi-tenancy, roles, OAuth, billing, analytics, and background workers.
 - Scheduled retesting, alerting, and benchmark calibration.
-- A dedicated achievement or review-event table; review history is represented by append-only assessments and audit events.
+- A dedicated review-event table; review history is represented by append-only assessments, revision rows and audit events. Achievement records, revisions, links and approvals are implemented.
 
 These exclusions are product and safety decisions, not hidden missing pieces. Reports and the UI state the applicable unavailable states.
 
-## 12. Verification
+## 14. Verification
 
 The implementation is exercised by unit, schema, repository, HTTP, workflow, accessibility, and report-immutability tests. See [Testing](../TESTING.md) and [Implementation Status](../IMPLEMENTATION_STATUS.md). Browser verification was performed locally against a loopback server using real form submissions; the visual check covered the empty state, project creation, claim creation, and empty report generation.

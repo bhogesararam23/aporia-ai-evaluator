@@ -12,6 +12,10 @@ import {
   recordEvidence,
   recordPropositionAssessment,
 } from '../../src/persistence/repositories/evidence.ts';
+import {
+  approveAchievement,
+  createAchievement,
+} from '../../src/persistence/repositories/achievements.ts';
 import { createEntity, createProject } from '../../src/persistence/repositories/projects.ts';
 import {
   addQuery,
@@ -194,7 +198,7 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       },
       context,
     );
-    recordEvidence(
+    const evidence = recordEvidence(
       server.db,
       project.project.id,
       source.id,
@@ -322,6 +326,39 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       'Accessibility report',
       context,
     );
+    const achievement = createAchievement(
+      server.db,
+      project.project.id,
+      {
+        title: 'An accessible achievement record',
+        summary: 'A record used to check the achievement pages.',
+        projectName: 'Accessibility project',
+        projectDescription: 'A real test project.',
+        projectUrl: 'https://example.com/',
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        claimIds: [claim.claim.id],
+        contributors: [
+          {
+            name: 'Ram',
+            role: 'AUTHOR',
+            contribution: 'Built the project.',
+            supportState: 'EVIDENCE_LINKED',
+            evidenceNote: 'Artifact README.',
+          },
+        ],
+        sourceIds: [source.id],
+        evidenceIds: [evidence.evidence.id],
+      },
+      context,
+    );
+    approveAchievement(
+      server.db,
+      project.project.id,
+      achievement.id,
+      { confirmation: 'An accessible achievement record', note: 'Reviewed the record.' },
+      context,
+    );
 
     const form = await getPage(server, '/projects/new');
     const cookie = cookieFrom(form.response);
@@ -347,6 +384,10 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       `/projects/${project.project.id}/audits/${audit.id}`,
       `/projects/${project.project.id}/reports`,
       `/projects/${project.project.id}/reports/${generated.report.id}`,
+      `/projects/${project.project.id}/achievements`,
+      `/projects/${project.project.id}/achievements/new`,
+      `/projects/${project.project.id}/achievements/${achievement.id}`,
+      `/projects/${project.project.id}/achievements/${achievement.id}/revisions/new`,
       `/projects/${project.project.id}/activity`,
       `/projects/${project.project.id}/delete`,
     ];
