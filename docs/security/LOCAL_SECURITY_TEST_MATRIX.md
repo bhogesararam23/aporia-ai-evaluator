@@ -1,7 +1,7 @@
-# Local Security Control and Test Matrix (v0.1)
+# Local Security Control and Test Matrix (v0.2)
 
 - Status: Implemented for the local single-operator scope
-- Date: 2026-10-29
+- Date: 2026-10-30
 - Scope: loopback application with no accounts, remote API, provider credentials, or public publishing
 - Not a penetration test, audit, compliance certification, or production security review
 
@@ -26,6 +26,11 @@
 | Secret/log hygiene | No secrets required; logger redacts sensitive keys; no request bodies/cookies logged | `logger.test.ts` | Host/OS access can read local data and logs |
 | Project deletion | Explicit typed-name confirmation; cascade disclosed | `project-workflows.test.ts`, schema tests | Backup copies/exports are outside control |
 | Audit trail | Append-only local events for mutations and exports | Audit/schema and workflow tests | Not tamper-evident against filesystem access; deletion removes events |
+| Achievement exports | HTML values escaped; JSON-LD `<` escaped inside the script element; structured data checked against visible content; only HTTP(S) URLs without credentials become links | `achievement-export.test.ts` | A downloaded file is outside Aporia once saved; the export cannot guarantee indexing or citation |
+| Achievement approval boundary | Only the current revision can be approved; hash-bound, unique, CSRF-protected; unapproved/non-current exports return 409; downloads audited | Repository and `achievement-workflows.test.ts` | A local operator can approve; this is not identity, legal, or independent review |
+| Achievement project scope | Claim, source and evidence links must belong to the project; deletion cascades all achievement rows | Schema/repository tests | The local operator can read the whole database directly |
+| Backup/restore | Offline `VACUUM INTO` snapshot; digest, migration, integrity, foreign-key, count and report checks; overwrite confirmation; safety backup and rollback | `backup-restore.test.ts`, `backup-cli.test.ts` | Unencrypted; a writer who can replace both database and manifest defeats the digest; restore requires the server stopped |
+| Migration identity | Applied migration name and checksum are compared; edits and renames are refused | `migrations.test.ts` | A deliberate forward migration is still an owner decision; no down migrations |
 
 ## Not tested
 
@@ -35,5 +40,7 @@
 - Antivirus/malware scanning, PDF or office document parsers (not supported).
 - Screen-reader, mobile, Safari, Firefox, macOS, Linux, or load testing.
 - Penetration testing, fuzzing, formal threat modeling, or compliance review.
+- Backup encryption/key management, scheduled backups, remote copies, or restore while the server is running.
+- A malicious writer who can rewrite both the database and its manifest; the digest is corruption detection, not an authenticity proof.
 
 See [Security and Privacy](SECURITY_PRIVACY.md), ADR-012, [Known Limitations](../KNOWN_LIMITATIONS.md), and [Testing](../TESTING.md).
