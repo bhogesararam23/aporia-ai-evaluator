@@ -236,3 +236,50 @@ test('the project export includes achievement records and revisions', async () =
     await server.close();
   }
 });
+
+test('achievement creation requires the session CSRF token', async () => {
+  const server = await startTestServer();
+  try {
+    seed(server);
+    const page = await getPage(server, '/projects/prj_1/achievements/new');
+    const response = await postForm(
+      server,
+      '/projects/prj_1/achievements',
+      page.cookie,
+      csrfFrom(page.text),
+      { ...fields(), _csrf: '' },
+    );
+
+    assert.equal(response.status, 403);
+    const count = server.db.prepare('SELECT COUNT(*) AS count FROM achievements').get();
+    assert.equal(count?.['count'], 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test('an approved revision cannot be approved twice', async () => {
+  const server = await startTestServer();
+  try {
+    seed(server);
+    const draft = await createDraft(server);
+    await approve(server, draft.id, draft.cookie, 'A documented achievement');
+    const formPage = await getPage(server, '/projects/prj_1/achievements/new', draft.cookie);
+    const repeated = await postForm(
+      server,
+      `/projects/prj_1/achievements/${draft.id}/approve`,
+      draft.cookie,
+      csrfFrom(formPage.text),
+      { note: 'A second approval attempt.', confirmation: 'A documented achievement' },
+    );
+
+    assert.equal(repeated.status, 422);
+    assert.match(await repeated.text(), /already approved/);
+    const approvals = server.db
+      .prepare('SELECT COUNT(*) AS count FROM achievement_approvals')
+      .get();
+    assert.equal(approvals?.['count'], 1);
+  } finally {
+    await server.close();
+  }
+});
