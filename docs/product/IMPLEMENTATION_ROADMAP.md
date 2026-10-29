@@ -3,6 +3,10 @@
 - Status: Proposed sequencing, not a delivery commitment
 - Date: 2026-10-28
 
+## Implementation note — 2026-10-30
+
+Local core v0.2 keeps the v0.1 slice and adds the local half of Phase 2 without crossing the publication boundary: versioned intent-group coverage (metrics v2), corrected evidence wording, atomic record/audit writes, immutable local achievement revisions with evidence-linked claims, contributor roles, unresolved contradictions, hash-bound operator approval, validated HTML and JSON-LD downloads, and validated offline backup/restore. Sitemap generation, crawler/indexing verification, deployment packages, remote website changes, and actual publication remain unimplemented, as do safe URL fetching and provider adapters. See [Implementation Status](../IMPLEMENTATION_STATUS.md), [Local Core Architecture](../technical/LOCAL_CORE_ARCHITECTURE.md), and [Known Limitations](../KNOWN_LIMITATIONS.md).
+
 ## Implementation note — 2026-10-29
 
 Local core v0.1 implements the Phase 1 slice in a deliberately narrower form: claim intake and decomposition, local evidence provenance, human evidence relationships and assessments, approved query sets, manual observation capture/import, separate metrics, local HTML analysis, and immutable reports. Safe URL fetching and a search-grounded provider adapter remain intentionally unimplemented because this milestone prohibits remote access and provider integrations. Phases 2–6 and website publication remain future work. See [Implementation Status](../IMPLEMENTATION_STATUS.md) and [Known Limitations](../KNOWN_LIMITATIONS.md).
