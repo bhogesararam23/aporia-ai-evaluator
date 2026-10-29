@@ -1,7 +1,9 @@
 # System Architecture
 
-- Status: Proposed initial architecture
+- Status: Target architecture. The implemented local core is separate and narrower.
 - Design drivers: Evidence fidelity, testability, provider independence, and separation of evaluator logic from commercial concerns.
+
+> Implementation note (2026-10-30): this document describes the intended multi-service system. Local core v0.2 implements a single-process, loopback-only SQLite application with no application API, authentication provider, source-discovery service, provider adapter, cloud storage, website deployment, or publication service. Its actual module layout, request flow, achievements, exports, backup and restore behavior live in [Local Core Architecture](LOCAL_CORE_ARCHITECTURE.md).
 
 ## 1. Architecture principles
 
