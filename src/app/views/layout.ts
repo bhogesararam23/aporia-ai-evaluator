@@ -33,6 +33,10 @@ const NOTICES: Record<string, string> = {
   'audit-created': 'Local HTML audit recorded.',
   'report-generated': 'Report snapshot generated.',
   'project-exported': 'Project export prepared.',
+  'achievement-created': 'Achievement record created as a draft.',
+  'achievement-revision-created': 'New achievement revision created; approval is required again.',
+  'achievement-approved': 'Revision approved for local publication. Nothing was published.',
+  'achievement-exported': 'Achievement export prepared locally.',
 };
 
 export function noticeMessage(code: string | null): string | null {
@@ -63,6 +67,7 @@ const PROJECT_LINKS = [
   { key: 'query-sets', label: 'Query sets', suffix: '/query-sets' },
   { key: 'runs', label: 'Runs', suffix: '/runs' },
   { key: 'audits', label: 'HTML audits', suffix: '/audits' },
+  { key: 'achievements', label: 'Achievements', suffix: '/achievements' },
   { key: 'reports', label: 'Reports', suffix: '/reports' },
   { key: 'activity', label: 'Activity', suffix: '/activity' },
 ] as const;

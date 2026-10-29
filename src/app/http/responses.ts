@@ -51,6 +51,17 @@ export function csvResponse(body: string, filename: string): AppResponse {
   };
 }
 
+export function downloadResponse(body: string, contentType: string, filename: string): AppResponse {
+  return {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+    body,
+  };
+}
+
 export function textResponse(body: string, status = 200): AppResponse {
   return {
     status,
