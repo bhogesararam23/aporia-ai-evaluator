@@ -98,6 +98,12 @@ export function runMigrations(
     if (existing === undefined) {
       continue;
     }
+    if (existing.name !== migration.name) {
+      throw new MigrationError(
+        `Migration ${migration.version} was applied as "${existing.name}" but the file is named ` +
+          `"${migration.name}". Restore the applied filename and add a new migration for any change.`,
+      );
+    }
     const expected = checksum(migration.sql);
     if (existing.checksum !== expected) {
       throw new MigrationError(
