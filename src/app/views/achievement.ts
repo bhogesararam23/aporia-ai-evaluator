@@ -15,6 +15,7 @@ import {
   errorSummary,
   externalUrl,
   formatDateTime,
+  pageHeader,
   statusBadge,
   submitButton,
   textField,
@@ -305,6 +306,10 @@ export function achievementPreview(options: AchievementPreviewOptions): Html {
   const approval = revision.approval;
   return html`
     <div class="stack">
+      ${pageHeader(
+        'Achievement record',
+        `Revision ${revision.revisionNumber}${current ? ' (current)' : ' (historical)'}. Nothing has been published by Aporia.`,
+      )}
       ${errorSummary(options.approvalIssues)}
       <div class="notice" role="status">
         ${
