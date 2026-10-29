@@ -22,7 +22,17 @@ import {
 } from '../../src/persistence/backup.ts';
 import { closeDatabase, openDatabase } from '../../src/persistence/db.ts';
 import { loadMigrations, runMigrations } from '../../src/persistence/migrate.ts';
-import { insertClaimWithProposition, insertProject, insertReport } from '../helpers/db.ts';
+import {
+  approveAchievement,
+  createAchievement,
+} from '../../src/persistence/repositories/achievements.ts';
+import {
+  insertClaimWithProposition,
+  insertEvidenceWithRelation,
+  insertProject,
+  insertReport,
+  insertSource,
+} from '../helpers/db.ts';
 
 const MIGRATIONS = join(import.meta.dirname, '../../src/persistence/migrations');
 const NOW = '2026-10-30T12:00:00.000Z';
@@ -36,7 +46,12 @@ function fileHash(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function seedDatabase(path: string, projectName = 'Aporia', reportSnapshot?: string): void {
+function seedDatabase(
+  path: string,
+  projectName = 'Aporia',
+  reportSnapshot?: string,
+  withAchievement = false,
+): void {
   mkdirSync(dirname(path), { recursive: true });
   const db = openDatabase(path);
   try {
@@ -44,6 +59,44 @@ function seedDatabase(path: string, projectName = 'Aporia', reportSnapshot?: str
     insertProject(db, { name: projectName });
     insertClaimWithProposition(db);
     insertReport(db, reportSnapshot === undefined ? {} : { snapshotJson: reportSnapshot });
+    if (withAchievement) {
+      insertSource(db);
+      insertEvidenceWithRelation(db);
+      const context = { actor: 'Ram', at: NOW };
+      const achievement = createAchievement(
+        db,
+        'prj_1',
+        {
+          title: 'A recorded achievement',
+          summary: 'A record carried through backup and restore.',
+          projectName: 'Aporia',
+          projectDescription: undefined,
+          projectUrl: undefined,
+          startDate: '2026-01-01',
+          endDate: '2026-02-01',
+          claimIds: ['clm_1'],
+          contributors: [
+            {
+              name: 'Ram',
+              role: 'AUTHOR',
+              contribution: 'Built the project.',
+              supportState: 'EVIDENCE_LINKED',
+              evidenceNote: 'Release archive.',
+            },
+          ],
+          sourceIds: ['src_1'],
+          evidenceIds: ['evd_1'],
+        },
+        context,
+      );
+      approveAchievement(
+        db,
+        'prj_1',
+        achievement.id,
+        { confirmation: 'A recorded achievement', note: 'Reviewed the recorded evidence.' },
+        context,
+      );
+    }
   } finally {
     closeDatabase(db);
   }
@@ -146,6 +199,71 @@ test('a backup restores into an empty data directory', async () => {
       );
     } finally {
       closeDatabase(db);
+    }
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a backup carries achievement records, revisions and approvals intact', async () => {
+  const temp = tempDir();
+  try {
+    const source = join(temp.path, 'aporia.db');
+    seedDatabase(source, 'Achievement project', undefined, true);
+    const sourceDb = openDatabase(source);
+    let expectedHash: string;
+    let expectedRevisionId: string;
+    try {
+      const revision = sourceDb
+        .prepare('SELECT id, content_hash FROM achievement_revisions ORDER BY revision_number LIMIT 1')
+        .get();
+      expectedHash = String(revision?.['content_hash']);
+      expectedRevisionId = String(revision?.['id']);
+    } finally {
+      closeDatabase(sourceDb);
+    }
+
+    const backupDir = join(temp.path, 'backup-1');
+    const result = await createBackup(source, backupDir, { now: () => NOW });
+    assert.equal(result.manifest.tableCounts.achievements, 1);
+    assert.equal(result.manifest.tableCounts.achievement_revisions, 1);
+    assert.equal(result.manifest.tableCounts.achievement_approvals, 1);
+    assert.equal(result.manifest.tableCounts.achievement_claims, 1);
+    assert.equal(result.manifest.tableCounts.achievement_contributors, 1);
+    assert.equal(
+      result.manifest.tableCounts.achievement_evidence,
+      2,
+      'one source row and one excerpt row',
+    );
+
+    const destination = join(temp.path, 'destination');
+    await restoreBackup({
+      backupDirectory: backupDir,
+      dataDir: destination,
+      replace: false,
+      confirmation: '',
+    });
+
+    const restored = openDatabase(join(destination, 'aporia.db'));
+    try {
+      const achievement = restored.prepare('SELECT current_revision_id FROM achievements').get();
+      assert.equal(achievement?.['current_revision_id'], expectedRevisionId);
+      const revision = restored
+        .prepare('SELECT title, content_hash FROM achievement_revisions')
+        .get();
+      assert.equal(revision?.['title'], 'A recorded achievement');
+      assert.equal(revision?.['content_hash'], expectedHash);
+      const approval = restored
+        .prepare('SELECT note, content_hash FROM achievement_approvals')
+        .get();
+      assert.equal(approval?.['note'], 'Reviewed the recorded evidence.');
+      assert.equal(approval?.['content_hash'], expectedHash);
+      const contributors = restored
+        .prepare('SELECT COUNT(*) AS count FROM achievement_contributors')
+        .get();
+      assert.equal(contributors?.['count'], 1);
+    } finally {
+      closeDatabase(restored);
     }
   } finally {
     temp.remove();
