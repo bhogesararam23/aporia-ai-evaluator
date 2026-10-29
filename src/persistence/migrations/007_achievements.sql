@@ -91,6 +91,10 @@ CREATE TABLE achievement_evidence (
   source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
   evidence_id TEXT REFERENCES evidence_items(id) ON DELETE SET NULL,
   ordinal INTEGER NOT NULL CHECK (ordinal > 0),
+  source_title TEXT NOT NULL CHECK (length(source_title) BETWEEN 1 AND 500),
+  source_url TEXT,
+  evidence_locator TEXT,
+  evidence_excerpt_digest TEXT,
   note TEXT CHECK (note IS NULL OR length(note) <= 2000),
   UNIQUE(revision_id, ordinal)
 ) STRICT;
