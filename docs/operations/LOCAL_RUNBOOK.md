@@ -51,6 +51,14 @@ npm run backup -- --data-dir ./data --output ./protected/backup-2026-10-30
 
 `npm run backup` uses SQLite `VACUUM INTO` on a read-only source connection, so the backup is a consistent single file and the source journal is not rewritten. It then reopens the copy and validates `PRAGMA integrity_check`, foreign keys, the applied migration identities, every application table count, report snapshot readability and per-project report numbering, and achievement approval hashes. The manifest records the database SHA-256, byte length, schema version, migration identities, table counts and validation results. A backup directory is written only after those checks pass; a failed attempt is removed. An existing output directory is never overwritten.
 
+Verify a backup at any later point without restoring it:
+
+```bash
+npm run backup:verify -- ./protected/backup-2026-10-30
+```
+
+The verifier checks the manifest, digest, schema identity, integrity, foreign keys, table counts and report consistency and prints the recorded project, report and achievement counts.
+
 The backup is an unencrypted local directory (`aporia.db`, `manifest.json`, `README.txt`). It can contain claims, evidence, answers and personal data; protect it like the original database. There is no scheduled backup, retention policy, or encryption at rest.
 
 ### Restore
