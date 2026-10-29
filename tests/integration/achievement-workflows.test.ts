@@ -91,11 +91,7 @@ test('the list is empty until a record exists and never leaks across projects', 
     const other = await getPage(server, '/projects/prj_2/achievements', draft.cookie);
     assert.match(other.text, /No achievement records/);
     assert.doesNotMatch(other.text, /A documented achievement/);
-    const refused = await getPage(
-      server,
-      `/projects/prj_2/achievements/${draft.id}`,
-      draft.cookie,
-    );
+    const refused = await getPage(server, `/projects/prj_2/achievements/${draft.id}`, draft.cookie);
     assert.equal(refused.response.status, 404);
   } finally {
     await server.close();

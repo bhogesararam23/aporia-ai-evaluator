@@ -215,7 +215,9 @@ test('a backup carries achievement records, revisions and approvals intact', asy
     let expectedRevisionId: string;
     try {
       const revision = sourceDb
-        .prepare('SELECT id, content_hash FROM achievement_revisions ORDER BY revision_number LIMIT 1')
+        .prepare(
+          'SELECT id, content_hash FROM achievement_revisions ORDER BY revision_number LIMIT 1',
+        )
         .get();
       expectedHash = String(revision?.['content_hash']);
       expectedRevisionId = String(revision?.['id']);
