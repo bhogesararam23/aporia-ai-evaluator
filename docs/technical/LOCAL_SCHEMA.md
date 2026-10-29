@@ -57,7 +57,7 @@ Triggers:
 
 ### `sources`, `evidence_items`, `evidence_relationships` (`003_sources_evidence.sql`)
 
-- `sources` stores title, optional canonical URL, publisher, author, source type, access route, retrieval time, publication date, language, independence assessment, notes, access status (`NOT_CHECKED` by default), and timestamp.
+- `sources` stores title, optional canonical URL, publisher, author, source type, access route, retrieval time, publication date, language, independence assessment, notes, access status (`NOT_CHECKED` by default), and timestamp. Source type and independence are reviewer-recorded labels, not properties Aporia verified.
 - `evidence_items` stores locator, excerpt, extraction method, extraction time, fixed `USER_SUPPLIED` provenance, SHA-256 excerpt digest, and timestamp.
 - `evidence_relationships` stores relation, rationale, reviewer, creation time, and one-way supersession fields.
 

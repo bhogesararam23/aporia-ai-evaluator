@@ -57,7 +57,12 @@ Precedence:
 7. Only `UNAVAILABLE` edges → `UNAVAILABLE`.
 8. Only `CONTEXTUALIZES`/`DOES_NOT_ADDRESS` (optionally with unavailable) → `INSUFFICIENT_EVIDENCE`.
 
-The output contains counts, distinct-source counts, rationale, and caveats for duplicate sources, self-published-only support, unknown independence, unreadable material, and contextual-only material. No source type is weighted.
+The output contains counts, distinct-source counts, rationale, and caveats for duplicate sources, self-published-only support, unknown independence, unreadable material, and contextual-only material. No source type is weighted. Every derived status also carries the standing caveat that it summarizes human-recorded relationships and does not independently verify the sources or the proposition.
+
+Display labels state the provenance (ADR-015): `CONTRADICTED` reads "Contradiction recorded",
+`SUPPORTED_WITHIN_SCOPE` reads "Support recorded within scope", and a source marked `INDEPENDENT`
+reads "Recorded as independent". These are reviewer records, not Aporia verification. There is no
+credibility score or source-quality weight.
 
 A human can record an append-only proposition assessment with any controlled status and rationale. The UI and report show the human conclusion as primary and the rule output alongside it. Disagreement is surfaced. Neither conclusion deletes the other.
 

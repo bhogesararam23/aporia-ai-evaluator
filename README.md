@@ -95,7 +95,7 @@ Read [Local core architecture](docs/technical/LOCAL_CORE_ARCHITECTURE.md) and [L
 
 ## Evidence and metric semantics
 
-The evaluator does not use keyword matching, language models, or arbitrary weights. A human records supporting, contradicting, qualifying, contextual, unaddressed, or unavailable evidence. A documented precedence rule summarizes those relationships. Human assessments are separate and append-only. Reports show rule output, human conclusions, disagreement, rationale, and caveats.
+The evaluator does not use keyword matching, language models, or arbitrary weights. A human records supporting, contradicting, qualifying, contextual, unaddressed, or unavailable evidence. A documented precedence rule summarizes those relationships. Human assessments are separate and append-only. Reports show rule output, human conclusions, disagreement, rationale, and caveats. Labels such as “Contradiction recorded” and “Recorded as independent” describe reviewer records; they are not independent verification, a credibility score, or proof that a source is trustworthy.
 
 Answer metrics are defined in [Implemented metrics v2](docs/evaluator/IMPLEMENTED_METRICS_V2.md); v1 remains readable for stored reports. Coverage uses query-intent groups, so repeated prompts for one intent count once and untested groups are visible. Eligibility excludes provider/capture errors, refusals, abstentions, timeouts, blocked access, and voided records. Those states remain visible as coverage and exclusion reasons; they are never negative mentions or negative factual verdicts. There is no composite “AI score.”
 
