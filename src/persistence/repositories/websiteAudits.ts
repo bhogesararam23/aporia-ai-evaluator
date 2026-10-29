@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { AppError } from '../../errors.ts';
 import { appendAuditEvent } from '../audit.ts';
+import { withTransaction } from '../db.ts';
 import { newId } from '../ids.ts';
 import { jsonValue, numberValue, nullableStringValue, stringValue, type Row } from '../rows.ts';
 import type { WriteContext } from './context.ts';
@@ -80,43 +81,45 @@ export function createWebsiteAudit(
     throw new AppError('NOT_FOUND', 'Project not found.');
   }
   const id = newId('wsa');
-  db.prepare(
-    `INSERT INTO website_audits
-      (id, project_id, label, input_method, input_filename, content_hash, byte_length,
-       html_snapshot, audited_at, methodology_version, findings_json,
-       unavailable_checks_json, metadata_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    projectId,
-    input.label,
-    input.inputMethod,
-    input.inputFilename,
-    input.contentHash,
-    input.byteLength,
-    input.htmlSnapshot,
-    input.auditedAt,
-    input.methodologyVersion,
-    JSON.stringify(input.findings),
-    JSON.stringify(input.unavailableChecks),
-    JSON.stringify(input.metadata),
-    context.at,
-  );
-  appendAuditEvent(db, {
-    projectId,
-    actor: context.actor,
-    action: 'website_audit.created',
-    entityType: 'website_audit',
-    entityId: id,
-    details: {
-      label: input.label,
-      inputMethod: input.inputMethod,
-      contentHash: input.contentHash,
-      findingCount: input.findings.length,
-    },
-    at: context.at,
+  return withTransaction(db, () => {
+    db.prepare(
+      `INSERT INTO website_audits
+        (id, project_id, label, input_method, input_filename, content_hash, byte_length,
+         html_snapshot, audited_at, methodology_version, findings_json,
+         unavailable_checks_json, metadata_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      projectId,
+      input.label,
+      input.inputMethod,
+      input.inputFilename,
+      input.contentHash,
+      input.byteLength,
+      input.htmlSnapshot,
+      input.auditedAt,
+      input.methodologyVersion,
+      JSON.stringify(input.findings),
+      JSON.stringify(input.unavailableChecks),
+      JSON.stringify(input.metadata),
+      context.at,
+    );
+    appendAuditEvent(db, {
+      projectId,
+      actor: context.actor,
+      action: 'website_audit.created',
+      entityType: 'website_audit',
+      entityId: id,
+      details: {
+        label: input.label,
+        inputMethod: input.inputMethod,
+        contentHash: input.contentHash,
+        findingCount: input.findings.length,
+      },
+      at: context.at,
+    });
+    return getWebsiteAuditOrThrow(db, projectId, id);
   });
-  return getWebsiteAuditOrThrow(db, projectId, id);
 }
 
 export function listWebsiteAudits(db: DatabaseSync, projectId: string): WebsiteAuditSummary[] {
