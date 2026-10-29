@@ -221,12 +221,9 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      const snapshot = snapshotOf(report);
       recordReportExport(context, report, 'json');
-      return jsonResponse(
-        snapshotOf(report),
-        200,
-        `aporia-report-${String(report.reportNumber)}.json`,
-      );
+      return jsonResponse(snapshot, 200, `aporia-report-${String(report.reportNumber)}.json`);
     },
   },
   {
@@ -239,11 +236,9 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      const csv = metricsCsv(snapshotOf(report));
       recordReportExport(context, report, 'metrics_csv');
-      return csvResponse(
-        metricsCsv(snapshotOf(report)),
-        `aporia-report-${String(report.reportNumber)}-metrics.csv`,
-      );
+      return csvResponse(csv, `aporia-report-${String(report.reportNumber)}-metrics.csv`);
     },
   },
   {
@@ -256,11 +251,9 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      const csv = observationsCsv(snapshotOf(report));
       recordReportExport(context, report, 'observations_csv');
-      return csvResponse(
-        observationsCsv(snapshotOf(report)),
-        `aporia-report-${String(report.reportNumber)}-observations.csv`,
-      );
+      return csvResponse(csv, `aporia-report-${String(report.reportNumber)}-observations.csv`);
     },
   },
   {
@@ -273,11 +266,9 @@ export const reportRoutes: RouteDefinition[] = [
       if (report === null) {
         throw new AppError('NOT_FOUND', 'Report not found.');
       }
+      const csv = findingsCsv(snapshotOf(report));
       recordReportExport(context, report, 'findings_csv');
-      return csvResponse(
-        findingsCsv(snapshotOf(report)),
-        `aporia-report-${String(report.reportNumber)}-findings.csv`,
-      );
+      return csvResponse(csv, `aporia-report-${String(report.reportNumber)}-findings.csv`);
     },
   },
 ];

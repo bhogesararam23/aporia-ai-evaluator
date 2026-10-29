@@ -911,6 +911,7 @@ export const projectRoutes: RouteDefinition[] = [
     handler: (context) => {
       const projectId = context.params['projectId'] ?? '';
       getProjectOrThrow(context.deps.db, projectId);
+      const exported = exportProject(context.deps.db, projectId, context.now);
       appendAuditEvent(context.deps.db, {
         projectId,
         actor: context.deps.config.operator,
@@ -920,7 +921,6 @@ export const projectRoutes: RouteDefinition[] = [
         details: { format: 'json' },
         at: context.now,
       });
-      const exported = exportProject(context.deps.db, projectId, context.now);
       return jsonResponse(exported, 200, `aporia-project-${projectId}.json`);
     },
   },
