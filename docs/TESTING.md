@@ -1,7 +1,7 @@
 # Testing and Verification Guide
 
 - Status: Local checks passing
-- Date: 2026-10-29
+- Date: 2026-10-30
 - Runtime used: Node.js 24.13.1 on Windows x64; npm 11.8.0
 - Test runner: `node --test` with native TypeScript type stripping
 
@@ -41,9 +41,13 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 | Unit: core vocabulary and lifecycle | `tests/unit/vocabulary.test.ts`, `lifecycle.test.ts` | Controlled labels, descriptions, allowed transitions |
 | Unit: validation and inputs | `validation.test.ts`, `inputs.test.ts` | Unsafe URLs, dates, text limits, enums, reviewer fields, cross-field rules |
 | Unit: evidence rule | `evidence.test.ts` | Every precedence branch, duplicate-source caveats, human/rule disagreement |
-| Unit: metrics | `metrics.test.ts` | Denominators, exclusions, nulls, latest assessments, no composite score, determinism |
+| Unit: metrics v2 | `metrics.test.ts` | Denominators, exclusions, nulls, latest assessments, no composite score, determinism, intent-group coverage, repeated intents, untested groups, partial assessment |
 | Unit: website parsing | `website.test.ts` | Metadata, JSON-LD, noindex, visible-text mismatch, size/encoding limits, determinism, active-content inertness |
 | Unit: report snapshots and exports | `reporting-snapshot.test.ts`, `reporting-csv.test.ts` | Reproducible snapshots, comparisons, unknown states, CSV quoting/formula injection, JSON round-trip |
+| Unit: achievement validation and exports | `achievements.test.ts`, `achievement-export.test.ts` | Draft validation, contributor roles/states, claim evidence states, canonical content, HTML escaping, JSON-LD consistency, script-breakout and active-URL refusal |
+| Integration: achievements | `repositories-achievements.test.ts`, `achievement-workflows.test.ts` | Revision snapshots, claim immutability, hash-bound approval, cross-project refusal, deletion cascade, draft/approved/historical previews, CSRF, duplicate approval, HTML/JSON-LD downloads |
+| Integration: backup and restore | `backup-restore.test.ts`, `backup-cli.test.ts` | Consistent snapshots, manifest validation, corrupt/bad-report refusal, overwrite guards, safety backup, rollback, digest/count/schema mismatch, real CLI backup/restore |
+| Integration: atomicity and migration identity | `audit-atomicity.test.ts`, `migrations.test.ts` | Primary insert + audit rollback for project, claim, source, query set, run, website audit, achievement; renamed applied migration refusal |
 | Unit: HTTP and security helpers | `security.test.ts`, `body.test.ts`, `router.test.ts`, `views.test.ts` | Host/Origin/CSRF, multipart limits, route matching, HTML escaping, labels |
 | Integration: configuration and database | `config.test.ts`, `db.test.ts`, `migrations.test.ts` | Loopback-only config, WAL/pragmas, transactions/savepoints, checksummed migrations, rollback |
 | Integration: schema | `schema-*.test.ts` | Foreign keys, immutable revisions, status transitions, frozen query sets/runs, append-only assessments, report supersession |
@@ -60,7 +64,7 @@ Most tests use in-memory SQLite and temporary data directories. No test writes t
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **266 passing tests, 0 failing**.
+- `npm test`: **325 passing tests, 0 failing**.
 - Automated browser verification: performed against a live loopback server after the suite. The empty state, project creation, claim creation, and empty report generation succeeded. The browser initially exposed an opaque `Origin: null` form submission that the origin check rejected; the server now accepts opaque origins while still requiring a valid synchronizing CSRF token, and a unit test covers this.
 - Visual checks: home empty state, project creation form, project overview, claim page, and empty report in the browser’s dark color scheme at desktop width. No console errors remained after the origin fix except the expected browser 403 from the pre-fix attempt.
 
@@ -91,7 +95,7 @@ The suite explicitly covers:
 - Safari, Firefox, mobile browsers, or touch-only interaction.
 - macOS and Linux installations in this session.
 - Concurrent users, multi-tenant isolation, rate limits, load, or performance at scale.
-- Crash recovery, SQLite corruption, backup restore, or filesystem permission failures beyond the basic config checks.
+- Crash recovery or power-loss durability; restore tests cover corrupt files and deliberate failures, not every filesystem failure mode.
 - Security penetration testing, legal/privacy review, or production deployment.
 - Benchmark calibration, confidence intervals, gold-set accuracy, or public performance claims.
 
