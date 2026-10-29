@@ -120,7 +120,7 @@ function sourceFields(options: {
         value,
         label: SOURCE_INDEPENDENCE_LABELS[value],
       })),
-      help: 'Independence is a reviewer judgment, not a guarantee. Duplicate or syndicated material is not independent corroboration.',
+      help: 'Independence is a reviewer-recorded judgment, not verification of the source or its credibility. “Recorded as independent” means you recorded it; Aporia did not check it. Unknown is not independent.',
     })}
     ${textareaField({
       name: 'notes',
@@ -145,7 +145,7 @@ export const sourceRoutes: RouteDefinition[] = [
       const body = html`
         ${pageHeader(
           'Sources',
-          'Recorded source descriptors. A URL is a locator, not proof of truth or independence.',
+          'Recorded source descriptors. A source type, URL, and independence label are reviewer records — not proof of truth, credibility, or independent verification.',
           html`<a class="button button-primary" href="/projects/${projectId}/sources/new"
             >Add source</a
           >`,
@@ -168,8 +168,8 @@ export const sourceRoutes: RouteDefinition[] = [
                     <thead>
                       <tr>
                         <th scope="col">Title</th>
-                        <th scope="col">Type</th>
-                        <th scope="col">Independence</th>
+                        <th scope="col">Type (recorded)</th>
+                        <th scope="col">Independence (recorded)</th>
                         <th scope="col">Retrieved</th>
                         <th scope="col">Link</th>
                       </tr>
@@ -201,6 +201,8 @@ export const sourceRoutes: RouteDefinition[] = [
                 </div>
                 <p class="small muted">
                   Retrieval time records when you inspected the source. Aporia did not fetch it.
+                  Independence and source type are reviewer records, not verified properties; a
+                  source recorded as independent has not been checked by Aporia.
                 </p>
               `
         }

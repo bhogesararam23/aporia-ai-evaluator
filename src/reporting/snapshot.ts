@@ -494,7 +494,8 @@ function buildLimitations(
   const limitations: string[] = [
     'All AI answers in this report were manually captured by the local operator. Aporia did not call any provider, search API, or external service.',
     'Provider and model labels are operator-supplied. They were not verified against a provider interface.',
-    'Evidence classifications are human-recorded judgments. The derived proposition status is a transparent rule over those records, not an AI judgment.',
+    'Evidence classifications are human-recorded judgments. The derived proposition status is a transparent rule over those records, not an AI judgment and not independent verification of the sources or the claim.',
+    'Source independence and source type are reviewer-recorded labels, not properties Aporia verified. “Recorded as independent” does not mean a source or its credibility was checked.',
     'Metrics describe the captured sample and recorded conditions. They are not universal probabilities, provider rankings, or model-quality claims.',
     'No composite score is calculated. Evidence support, discoverability, answer presence, fidelity, citation support, attribution, and coverage remain separate.',
     'Aporia cannot guarantee indexing, caching, model memory, recommendations, or future citations.',
@@ -525,9 +526,18 @@ function buildLimitations(
       'Some propositions remain unassessed; missing evidence was not treated as contradiction.',
     );
   }
-  if (runs.some((run) => run.metrics.coverage.untestedQueries > 0)) {
+  if (
+    runs.some(
+      (run) => (run.metrics.coverage.untestedIntents ?? run.metrics.coverage.untestedQueries) > 0,
+    )
+  ) {
     limitations.push(
-      'Some query intents have no eligible completed observation and were excluded from coverage denominators.',
+      'Some query-intent groups have no eligible completed observation and were excluded from coverage denominators.',
+    );
+  }
+  if (runs.some((run) => (run.metrics.coverage.partialAssessmentIntents ?? 0) > 0)) {
+    limitations.push(
+      'Some intent groups were partially assessed: at least one eligible observation had no presence assessment, and the group remains in the denominator because another eligible observation was assessed.',
     );
   }
   if (
