@@ -1,7 +1,7 @@
 # Known Limitations and Out-of-Scope Behavior
 
-- Status: Current as of local core v0.1
-- Date: 2026-10-29
+- Status: Current as of local core v0.2
+- Date: 2026-10-30
 
 This document prevents the implementation from being mistaken for the complete product or a production-ready system. It should be updated whenever a milestone closes one of these gaps.
 
@@ -15,7 +15,7 @@ This document prevents the implementation from being mistaken for the complete p
 
 ## 2. No publication or discovery control
 
-- No achievement page is generated, published, or updated.
+- Achievement records are local structured revisions with a preview and downloadable HTML/JSON-LD after explicit approval. No achievement page is published, no remote file is written, and no canonical URL, sitemap, indexing, or provider submission exists.
 - No JSON-LD publication, sitemap submission, canonical redirect, CMS, or Git patch integration exists.
 - Local HTML analysis inspects only supplied bytes. HTTP status, effective headers, redirects, robots.txt, sitemaps, TLS, live link health, rendering, indexing, caching, model memory, and provider citations are unavailable, not passed.
 - Aporia cannot force any system to crawl, index, retain, recommend, or cite content, and does not suggest otherwise.
@@ -36,12 +36,20 @@ This document prevents the implementation from being mistaken for the complete p
 - Supporting and contradictory evidence can coexist. A `SUPPORTED_WITHIN_SCOPE` rule result is not universal proof.
 - No dedicated achievement registry, correction/appeal workflow, independent reviewer assignment, or public dispute handling exists. Audit events and append-only assessments provide a local review history.
 
+### 4.1 Achievement-record and approval limits
+
+- Contributor names, roles, contribution statements, claim support states and evidence links are operator records. They are not identity or account-control verification, ownership proof, independent corroboration, or a guarantee of sole credit.
+- Approval is a local operator action bound to one revision's content hash. It is not a publication, a legal or ethical review, an endorsement, or a guarantee that linked evidence is true.
+- HTML and JSON-LD exports are generated only from an approved current revision. Their visible and structured values are checked for consistency, but the file does not guarantee that any search engine or AI system will crawl, index, cite, retain, or recommend it.
+- There is no public page, public URL, correction portal, or remote publication path. Downloading an export is the end of the implemented workflow.
+- A new revision is a draft and requires a new approval; approval never carries forward.
+
 ## 5. Platform and operations limits
 
 - Single local operator, single process, one loopback host; no authentication, authorization, role separation, or multi-tenancy.
 - No remote access, TLS, reverse proxy, rate limiting, or production hardening.
 - SQLite via `node:sqlite` is experimental in the tested Node release. Schema and driver compatibility should be rechecked on Node upgrades.
-- No automatic backup, retention schedule, encryption at rest, secret manager, or disaster recovery. Stopping the server and copying the SQLite file/WAL/SHM is the only documented backup procedure.
+- Backup and restore are implemented as offline local commands with validation, a manifest and a pre-restore safety copy. There is no scheduled backup, retention enforcement, encryption at rest, remote backup, or disaster recovery. Backups are unencrypted and are not tamper-proof against an attacker who can rewrite both the database and its manifest.
 - Project deletion removes local records and audit events. Exported files are outside Aporia’s control.
 - The application may display sensitive claims, answers, evidence excerpts, and HTML snapshots. Reports and project exports require user judgment before sharing.
 
@@ -74,7 +82,7 @@ This document prevents the implementation from being mistaken for the complete p
 
 The following data-model concepts are documented in the baseline but are not implemented in local v0.1:
 
-- Achievement records and publication statuses;
+- public achievement pages, public URLs and publication statuses (local achievement records and approved exports exist);
 - public report sharing and unguessable links;
 - dedicated review/appeal events (local audit and assessment history are used instead);
 - provider capability records;
