@@ -66,6 +66,42 @@ async function approve(server: TestServer, id: string, cookie: string, title: st
   assert.equal(response.status, 303, await response.text());
 }
 
+test('the list is empty until a record exists and never leaks across projects', async () => {
+  const server = await startTestServer();
+  try {
+    seed(server);
+    insertProject(server.db, { id: 'prj_2', name: 'Other project' });
+    const empty = await getPage(server, '/projects/prj_1/achievements');
+    assert.equal(empty.response.status, 200);
+    assert.match(empty.text, /No achievement records/);
+    assert.match(empty.text, /Nothing is seeded or fabricated/);
+
+    const draft = await createDraft(server);
+    const listed = await getPage(server, '/projects/prj_1/achievements', draft.cookie);
+    assert.match(listed.text, /A documented achievement/);
+    assert.match(listed.text, /Achievement records in Aporia/);
+    assert.match(listed.text, /<td>1<\/td>/);
+    assert.match(listed.text, /Draft/);
+    assert.match(listed.text, new RegExp(`/projects/prj_1/achievements/${draft.id}`));
+
+    await approve(server, draft.id, draft.cookie, 'A documented achievement');
+    const approved = await getPage(server, '/projects/prj_1/achievements', draft.cookie);
+    assert.match(approved.text, /Approved for local publication/);
+
+    const other = await getPage(server, '/projects/prj_2/achievements', draft.cookie);
+    assert.match(other.text, /No achievement records/);
+    assert.doesNotMatch(other.text, /A documented achievement/);
+    const refused = await getPage(
+      server,
+      `/projects/prj_2/achievements/${draft.id}`,
+      draft.cookie,
+    );
+    assert.equal(refused.response.status, 404);
+  } finally {
+    await server.close();
+  }
+});
+
 test('a draft becomes publication-ready only after explicit approval and exports safely', async () => {
   const server = await startTestServer();
   try {
