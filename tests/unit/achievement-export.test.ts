@@ -156,3 +156,13 @@ test('an active URL is shown as text rather than a link and is omitted from cita
   assert.doesNotMatch(unsafeHtml, /href="javascript:/);
   assert.deepEqual(unsafeJson['citation'], []);
 });
+
+test('a closing script tag in user content cannot break out of the JSON-LD payload', () => {
+  const input = fixture({ title: '</script><script>alert(1)</script>' });
+  const html = renderAchievementHtml(input);
+  const { text } = scriptJson(html);
+
+  assert.equal(html.includes('</script><script>alert(1)</script>'), false);
+  assert.equal(text.includes('</script>'), false);
+  assert.match(html, /&lt;\/script&gt;/);
+});
