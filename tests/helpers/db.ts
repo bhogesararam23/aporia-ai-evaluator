@@ -113,6 +113,7 @@ export function insertSource(
     title?: string;
     sourceType?: string;
     independence?: string;
+    canonicalUri?: string | null;
   } = {},
 ): string {
   const id = options.id ?? 'src_1';
@@ -120,12 +121,13 @@ export function insertSource(
     `INSERT INTO sources
       (id, project_id, title, canonical_uri, publisher, author, source_type, access_route,
        retrieved_at, publication_date, language, independence, notes, access_status, created_at)
-     VALUES (?, ?, ?, NULL, NULL, NULL, ?, 'MANUAL_ENTRY', ?, NULL, 'en', ?, NULL,
+     VALUES (?, ?, ?, ?, NULL, NULL, ?, 'MANUAL_ENTRY', ?, NULL, 'en', ?, NULL,
        'NOT_CHECKED', ?)`,
   ).run(
     id,
     options.projectId ?? 'prj_1',
     options.title ?? 'Release archive',
+    options.canonicalUri ?? null,
     options.sourceType ?? 'PRIMARY_ARTIFACT',
     TEST_TIME,
     options.independence ?? 'INDEPENDENT',
