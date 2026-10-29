@@ -112,6 +112,9 @@ test('a draft becomes publication-ready only after explicit approval and exports
     assert.match(detail.text, /Evidence relationships recorded/);
     assert.match(detail.text, /Author/);
     assert.match(detail.text, /Release notes/);
+    assert.match(detail.text, /Source record/);
+    assert.match(detail.text, /Excerpt · /);
+    assert.match(detail.text, /README section 1/);
     assert.doesNotMatch(detail.text, /export\.html/);
 
     const refused = await getPage(

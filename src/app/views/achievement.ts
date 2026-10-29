@@ -443,6 +443,11 @@ export function achievementPreview(options: AchievementPreviewOptions): Html {
                 ${revision.evidence.map(
                   (item) => html`
                     <li>
+                      ${
+                        item.evidenceLocator === null
+                          ? html`<span class="small muted">Source record · </span>`
+                          : html`<span class="small muted">Excerpt · </span>`
+                      }
                       ${externalLink(item.sourceTitle, item.sourceUrl)}
                       ${item.evidenceLocator === null ? '' : html` · ${item.evidenceLocator}`}
                       ${
