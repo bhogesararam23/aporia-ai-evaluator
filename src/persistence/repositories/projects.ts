@@ -43,6 +43,7 @@ export interface ProjectCounts {
   readonly runs: number;
   readonly audits: number;
   readonly reports: number;
+  readonly achievements: number;
 }
 
 export interface ProjectDetail {
@@ -143,6 +144,7 @@ function countsForProject(db: DatabaseSync, projectId: string): ProjectCounts {
     runs: countForProject(db, 'runs', projectId),
     audits: countForProject(db, 'website_audits', projectId),
     reports: countForProject(db, 'reports', projectId),
+    achievements: countForProject(db, 'achievements', projectId),
   };
 }
 
@@ -155,7 +157,8 @@ export function listProjects(db: DatabaseSync): ProjectSummary[] {
         (SELECT COUNT(*) FROM evidence_items ev WHERE ev.project_id = p.id) AS evidence_count,
         (SELECT COUNT(*) FROM runs r WHERE r.project_id = p.id) AS run_count,
         (SELECT COUNT(*) FROM website_audits wa WHERE wa.project_id = p.id) AS audit_count,
-        (SELECT COUNT(*) FROM reports rp WHERE rp.project_id = p.id) AS report_count
+        (SELECT COUNT(*) FROM reports rp WHERE rp.project_id = p.id) AS report_count,
+        (SELECT COUNT(*) FROM achievements a WHERE a.project_id = p.id) AS achievement_count
        FROM projects p
        LEFT JOIN entities e ON e.id = p.target_entity_id
        ORDER BY p.updated_at DESC, p.name ASC`,
@@ -171,6 +174,7 @@ export function listProjects(db: DatabaseSync): ProjectSummary[] {
         runs: numberValue(row, 'run_count'),
         audits: numberValue(row, 'audit_count'),
         reports: numberValue(row, 'report_count'),
+        achievements: numberValue(row, 'achievement_count'),
       },
     }));
 }

@@ -46,6 +46,7 @@ test('creates a project with a self-declared target entity and audit trail', () 
       runs: 0,
       audits: 0,
       reports: 0,
+      achievements: 0,
     });
     assert.deepEqual(
       listAuditEvents(db, detail.project.id).map((event) => event.action),
@@ -111,6 +112,7 @@ test('lists projects with honest zero counts and target names', () => {
       runs: 0,
       audits: 0,
       reports: 0,
+      achievements: 0,
     });
     const emptyProject = projects.find((project) => project.name === 'No entity');
     assert.equal(emptyProject?.targetEntityName, null);

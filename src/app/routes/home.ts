@@ -70,6 +70,10 @@ export const homeRoutes: RouteDefinition[] = [
                             <dt>Reports</dt>
                             <dd>${project.counts.reports}</dd>
                           </div>
+                          <div class="stat">
+                            <dt>Achievements</dt>
+                            <dd>${project.counts.achievements}</dd>
+                          </div>
                         </dl>
                         <p class="small muted">
                           ${plural(project.counts.audits, 'HTML audit')} ·
