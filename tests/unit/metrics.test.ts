@@ -104,6 +104,7 @@ function exclusionCount(
 test('computes separate rates with explicit denominators and exclusions', () => {
   const metrics = computeRunMetrics(baseInput());
 
+  assert.equal(metrics.version, 'metrics-v2');
   assert.deepEqual(
     {
       numerator: metrics.mentionRate.numerator,
@@ -158,6 +159,9 @@ test('coverage distinguishes tested, untested, and unassessed query intents', ()
   assert.equal(metrics.coverage.plannedQueries, 3);
   assert.equal(metrics.coverage.testedQueries, 2);
   assert.equal(metrics.coverage.untestedQueries, 1);
+  assert.equal(metrics.coverage.plannedIntents, 3);
+  assert.equal(metrics.coverage.testedIntents, 2);
+  assert.equal(metrics.coverage.untestedIntents, 1);
   assert.deepEqual(
     metrics.coverage.byQuery.map((query) => [query.queryId, query.status]),
     [
@@ -166,6 +170,110 @@ test('coverage distinguishes tested, untested, and unassessed query intents', ()
       ['q3', 'UNTESTED'],
     ],
   );
+  assert.deepEqual(
+    metrics.coverage.byIntent?.map((intent) => [intent.intent, intent.status]),
+    [
+      ['DISCOVERY', 'TESTED_COVERED'],
+      ['FACTUAL_VERIFICATION', 'TESTED_NOT_MENTIONED'],
+      ['ATTRIBUTION', 'UNTESTED'],
+    ],
+  );
+});
+
+test('repeated queries for one intent count as one coverage group', () => {
+  const metrics = computeRunMetrics({
+    runStatus: 'FINALIZED',
+    queries: [
+      { id: 'q1', intent: 'DISCOVERY' },
+      { id: 'q2', intent: 'DISCOVERY' },
+    ],
+    observations: [observation('o1', 'q1', { assessments: [presence('MENTIONED')] })],
+  });
+
+  assert.equal(metrics.coverage.plannedQueries, 2);
+  assert.equal(metrics.coverage.untestedQueries, 1);
+  assert.equal(metrics.coverage.plannedIntents, 1);
+  assert.equal(metrics.coverage.untestedIntents, 0);
+  assert.equal(metrics.coverage.byIntent?.[0]?.queries, 2);
+  assert.equal(metrics.coverage.byIntent?.[0]?.testedQueries, 1);
+  assert.equal(metrics.coverage.byIntent?.[0]?.untestedQueries, 1);
+  assert.equal(metrics.observedAnswerCoverage.numerator, 1);
+  assert.equal(metrics.observedAnswerCoverage.denominator, 1);
+  assert.equal(metrics.observedAnswerCoverage.value, 1);
+  assert.equal(
+    exclusionCount(metrics.observedAnswerCoverage, 'QUERY_UNTESTED'),
+    0,
+    'the tested group must not be excluded because a sibling query was untested',
+  );
+});
+
+test('an entirely untested intent group is visible and excluded', () => {
+  const metrics = computeRunMetrics({
+    runStatus: 'FINALIZED',
+    queries: [
+      { id: 'q1', intent: 'DISCOVERY' },
+      { id: 'q2', intent: 'COMPARISON' },
+    ],
+    observations: [observation('o1', 'q1', { assessments: [presence('MENTIONED')] })],
+  });
+
+  assert.equal(metrics.coverage.plannedIntents, 2);
+  assert.equal(metrics.coverage.untestedIntents, 1);
+  assert.equal(metrics.observedAnswerCoverage.numerator, 1);
+  assert.equal(metrics.observedAnswerCoverage.denominator, 1);
+  assert.equal(exclusionCount(metrics.observedAnswerCoverage, 'QUERY_UNTESTED'), 1);
+  const comparison = metrics.coverage.byIntent?.find((intent) => intent.intent === 'COMPARISON');
+  assert.equal(comparison?.status, 'UNTESTED');
+  assert.equal(comparison?.eligibleObservations, 0);
+});
+
+test('partial assessment is retained in the group and made visible', () => {
+  const metrics = computeRunMetrics({
+    runStatus: 'FINALIZED',
+    queries: [
+      { id: 'q1', intent: 'DISCOVERY' },
+      { id: 'q2', intent: 'DISCOVERY' },
+    ],
+    observations: [
+      observation('o1', 'q1', { assessments: [presence('MENTIONED')] }),
+      observation('o2', 'q2'),
+    ],
+  });
+
+  const group = metrics.coverage.byIntent?.[0];
+  assert.equal(group?.status, 'TESTED_COVERED');
+  assert.equal(group?.partialAssessment, true);
+  assert.equal(group?.presenceAssessed, 1);
+  assert.equal(group?.unassessedEligibleObservations, 1);
+  assert.equal(metrics.coverage.partialAssessmentIntents, 1);
+  assert.equal(metrics.observedAnswerCoverage.denominator, 1);
+  assert.equal(metrics.observedAnswerCoverage.value, 1);
+  assert.ok(
+    metrics.observedAnswerCoverage.notes.some((note) => /without a presence assessment/.test(note)),
+  );
+});
+
+test('one mention and one non-mention in the same intent group count as covered', () => {
+  const metrics = computeRunMetrics({
+    runStatus: 'FINALIZED',
+    queries: [
+      { id: 'q1', intent: 'DISCOVERY' },
+      { id: 'q2', intent: 'DISCOVERY' },
+    ],
+    observations: [
+      observation('o1', 'q1', { assessments: [presence('MENTIONED')] }),
+      observation('o2', 'q2', { assessments: [presence('NOT_MENTIONED')] }),
+    ],
+  });
+
+  const group = metrics.coverage.byIntent?.[0];
+  assert.equal(group?.status, 'TESTED_COVERED');
+  assert.equal(group?.mentioned, 1);
+  assert.equal(group?.presenceAssessed, 2);
+  assert.equal(group?.partialAssessment, false);
+  assert.equal(metrics.observedAnswerCoverage.numerator, 1);
+  assert.equal(metrics.observedAnswerCoverage.denominator, 1);
+  assert.equal(metrics.observedAnswerCoverage.breakdown?.['COVERED'], 1);
 });
 
 test('voided observations are retained for coverage but excluded from rates', () => {

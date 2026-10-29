@@ -6,8 +6,9 @@ import { baseInput, observation, runInput } from '../helpers/reporting.ts';
 test('builds a reproducible snapshot with separate evidence conclusions', () => {
   const snapshot = buildReportSnapshot(baseInput());
   assert.equal(snapshot.schemaVersion, 'report-snapshot-v1');
+  assert.equal(snapshot.templateVersion, 'report-template-v2');
   assert.equal(snapshot.report.number, 1);
-  assert.equal(snapshot.report.metricsVersion, 'metrics-v1');
+  assert.equal(snapshot.report.metricsVersion, 'metrics-v2');
   assert.equal(snapshot.claims.length, 1);
   const first = snapshot.claims[0]?.propositions[0];
   assert.equal(first?.derivedStatus.status, 'CONFLICTING_EVIDENCE');

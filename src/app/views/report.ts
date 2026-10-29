@@ -1,10 +1,12 @@
 import type { ReportRunView, ReportSnapshot } from '../../reporting/types.ts';
+import { QUERY_INTENT_LABELS } from '../../core/vocabulary.ts';
 import { FINDING_SEVERITY_LABELS, type FindingSeverity } from '../../website/types.ts';
 import {
   assessmentBadge,
   definitionRow,
   formatDateTime,
   formatPercent,
+  humanize,
   propositionStatusBadge,
   statusBadge,
   externalUrl,
@@ -23,6 +25,51 @@ function severityTone(value: string): string {
       : value === 'UNAVAILABLE'
         ? 'neutral'
         : 'neutral';
+}
+
+function intentCoverageTable(run: ReportRunView): Html {
+  const byIntent = run.metrics.coverage.byIntent;
+  if (byIntent === undefined) {
+    return html``;
+  }
+  return html`
+    <div class="table-wrap">
+      <table class="metric-table">
+        <caption>
+          Intent-group coverage for ${run.name}; repeated queries for one intent count once.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Intent</th>
+            <th scope="col">Query rows tested / untested</th>
+            <th scope="col">Eligible observations</th>
+            <th scope="col">Presence assessed</th>
+            <th scope="col">Unassessed eligible</th>
+            <th scope="col">Mentioned</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${byIntent.map(
+            (intent) => html`
+              <tr>
+                <th scope="row">${QUERY_INTENT_LABELS[intent.intent]}</th>
+                <td class="numeric">${intent.testedQueries} / ${intent.untestedQueries}</td>
+                <td class="numeric">${intent.eligibleObservations}</td>
+                <td class="numeric">${intent.presenceAssessed}</td>
+                <td class="numeric">
+                  ${intent.unassessedEligibleObservations}
+                  ${intent.partialAssessment ? html` <span class="badge">partial</span>` : ''}
+                </td>
+                <td class="numeric">${intent.mentioned}</td>
+                <td>${humanize(intent.status)}</td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function metricTable(run: ReportRunView): Html {
@@ -75,6 +122,7 @@ function metricTable(run: ReportRunView): Html {
         </tbody>
       </table>
     </div>
+    ${intentCoverageTable(run)}
     <p class="small muted">${run.metrics.notes.join(' ')}</p>
   `;
 }

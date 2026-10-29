@@ -136,6 +136,28 @@ export interface QueryCoverage {
   readonly status: QueryCoverageStatus;
 }
 
+export type IntentCoverageStatus = QueryCoverageStatus;
+
+/**
+ * Coverage for one controlled query intent. Repeated queries with the same intent are one group.
+ * `partialAssessment` is true when some eligible observations in the group have a presence
+ * assessment and some do not; the group remains in the denominator because the documented unit
+ * enters on at least one assessed observation, and the unassessed count stays visible.
+ */
+export interface IntentCoverage {
+  readonly intent: QueryIntent;
+  readonly queries: number;
+  readonly testedQueries: number;
+  readonly untestedQueries: number;
+  readonly observations: number;
+  readonly eligibleObservations: number;
+  readonly presenceAssessed: number;
+  readonly unassessedEligibleObservations: number;
+  readonly mentioned: number;
+  readonly status: IntentCoverageStatus;
+  readonly partialAssessment: boolean;
+}
+
 export interface RunCoverage {
   readonly plannedQueries: number;
   readonly testedQueries: number;
@@ -143,6 +165,22 @@ export interface RunCoverage {
   readonly observationsRecorded: number;
   readonly observationsVoided: number;
   readonly eligibleObservations: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly plannedIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly testedIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly untestedIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly coveredIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly notMentionedIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly unassessedIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly partialAssessmentIntents?: number;
+  /** Absent in historical `metrics-v1` snapshots. */
+  readonly byIntent?: readonly IntentCoverage[];
   readonly exclusions: readonly MetricExclusion[];
   readonly byQuery: readonly QueryCoverage[];
 }
@@ -448,39 +486,91 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
 
   const testedQueries = byQuery.filter((query) => query.status !== 'UNTESTED').length;
   const untestedQueries = byQuery.length - testedQueries;
-  const coveredQueries = byQuery.filter((query) => query.status === 'TESTED_COVERED').length;
-  const assessedQueries = byQuery.filter(
-    (query) => query.status === 'TESTED_COVERED' || query.status === 'TESTED_NOT_MENTIONED',
+
+  // The documented unit is the query intent, not the query row. Repeated prompts for one intent
+  // are one group, and an entirely untested group is visible as such instead of disappearing into
+  // a list of untested query rows.
+  const intents = [...new Set(input.queries.map((query) => query.intent))];
+  const byIntent: IntentCoverage[] = intents.map((intent) => {
+    const intentQueries = byQuery.filter((query) => query.intent === intent);
+    const observations = intentQueries.reduce((sum, query) => sum + query.observations, 0);
+    const eligibleObservations = intentQueries.reduce(
+      (sum, query) => sum + query.eligibleObservations,
+      0,
+    );
+    const presenceAssessed = intentQueries.reduce((sum, query) => sum + query.presenceAssessed, 0);
+    const mentioned = intentQueries.reduce((sum, query) => sum + query.mentioned, 0);
+    const testedInGroup = intentQueries.filter((query) => query.status !== 'UNTESTED').length;
+    const untestedInGroup = intentQueries.length - testedInGroup;
+    const unassessedEligibleObservations = eligibleObservations - presenceAssessed;
+    let status: IntentCoverageStatus;
+    if (eligibleObservations === 0) {
+      status = 'UNTESTED';
+    } else if (presenceAssessed === 0) {
+      status = 'TESTED_UNASSESSED';
+    } else if (mentioned > 0) {
+      status = 'TESTED_COVERED';
+    } else {
+      status = 'TESTED_NOT_MENTIONED';
+    }
+    return {
+      intent,
+      queries: intentQueries.length,
+      testedQueries: testedInGroup,
+      untestedQueries: untestedInGroup,
+      observations,
+      eligibleObservations,
+      presenceAssessed,
+      unassessedEligibleObservations,
+      mentioned,
+      status,
+      partialAssessment: presenceAssessed > 0 && unassessedEligibleObservations > 0,
+    };
+  });
+
+  const coveredIntents = byIntent.filter((intent) => intent.status === 'TESTED_COVERED').length;
+  const notMentionedIntents = byIntent.filter(
+    (intent) => intent.status === 'TESTED_NOT_MENTIONED',
   ).length;
-  const unassessedQueries = byQuery.filter((query) => query.status === 'TESTED_UNASSESSED').length;
+  const unassessedIntents = byIntent.filter(
+    (intent) => intent.status === 'TESTED_UNASSESSED',
+  ).length;
+  const untestedIntents = byIntent.filter((intent) => intent.status === 'UNTESTED').length;
+  const includedIntents = coveredIntents + notMentionedIntents;
+  const partialAssessmentIntents = byIntent.filter((intent) => intent.partialAssessment).length;
 
   const coverageMetric: MetricResult = {
     id: 'observed_answer_coverage',
     label: 'Observed answer-level coverage',
     definition:
-      'Query intents with at least one eligible observation assessed as mentioning the target, divided by query intents with at least one eligible observation and an assessed presence result. This is observed answer-level coverage, not internal retrieval coverage.',
+      'Query-intent groups with at least one eligible observation assessed as mentioning the target, divided by query-intent groups with at least one eligible observation and an assessed presence result. Repeated queries for one intent count once. This is observed answer-level coverage, not internal retrieval coverage.',
     unit: 'query intents',
-    numerator: assessedQueries === 0 ? null : coveredQueries,
-    denominator: assessedQueries,
-    value: rate(assessedQueries === 0 ? null : coveredQueries, assessedQueries),
+    numerator: includedIntents === 0 ? null : coveredIntents,
+    denominator: includedIntents,
+    value: rate(includedIntents === 0 ? null : coveredIntents, includedIntents),
     exclusions: countExclusions([
-      ...(untestedQueries > 0
-        ? (Array.from({ length: untestedQueries }, () => 'QUERY_UNTESTED') as ExclusionReason[])
+      ...(untestedIntents > 0
+        ? (Array.from({ length: untestedIntents }, () => 'QUERY_UNTESTED') as ExclusionReason[])
         : []),
-      ...(unassessedQueries > 0
+      ...(unassessedIntents > 0
         ? (Array.from(
-            { length: unassessedQueries },
+            { length: unassessedIntents },
             () => 'QUERY_PRESENCE_UNASSESSED',
           ) as ExclusionReason[])
         : []),
     ]),
     breakdown: {
-      COVERED: coveredQueries,
-      TESTED_NOT_MENTIONED: byQuery.filter((query) => query.status === 'TESTED_NOT_MENTIONED')
-        .length,
+      COVERED: coveredIntents,
+      TESTED_NOT_MENTIONED: notMentionedIntents,
     },
     notes: [
-      'Only query intents that were actually tested and assessed enter the denominator.',
+      'The unit is the query-intent group; repeated queries for one intent count once. Per-query detail is reported separately.',
+      'Only intent groups with at least one eligible observation and an assessed presence result enter the denominator.',
+      ...(partialAssessmentIntents > 0
+        ? [
+            `${partialAssessmentIntents} intent group(s) had some eligible observations without a presence assessment; each remains in the denominator because at least one eligible observation was assessed.`,
+          ]
+        : []),
       'Answer-level presence does not establish which retrieval steps a provider performed.',
     ],
   };
@@ -504,6 +594,14 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
       observationsRecorded: input.observations.length,
       observationsVoided: voidedCount,
       eligibleObservations: eligibleCount,
+      plannedIntents: byIntent.length,
+      testedIntents: byIntent.length - untestedIntents,
+      untestedIntents,
+      coveredIntents,
+      notMentionedIntents,
+      unassessedIntents,
+      partialAssessmentIntents,
+      byIntent,
       exclusions: countExclusions(globalReasons),
       byQuery,
     },
