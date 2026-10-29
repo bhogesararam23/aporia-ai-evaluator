@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -87,4 +87,34 @@ test('both commands explain their usage without touching data', () => {
   assert.equal(restoreHelp.status, 0);
   assert.match(String(restoreHelp.stdout), /stop the Aporia server/);
   assert.match(String(restoreHelp.stdout), /--replace/);
+});
+
+test('the verify command accepts a good backup and rejects a tampered manifest', () => {
+  const temp = tempDir();
+  try {
+    const source = join(temp.path, 'source');
+    seed(source, 'Verify project');
+    const backup = join(temp.path, 'backup');
+    const created = runNode(['scripts/backup.ts', '--data-dir', source, '--output', backup]);
+    assert.equal(created.status, 0, String(created.stderr));
+
+    const verified = runNode(['scripts/verify-backup.ts', backup]);
+    assert.equal(verified.status, 0, String(verified.stderr));
+    assert.match(String(verified.stdout), /Backup verified:/);
+    assert.match(String(verified.stdout), /Achievements: 0/);
+
+    const manifestPath = join(backup, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    manifest['databaseSha256'] = '0'.repeat(64);
+    writeFileSync(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}
+`,
+    );
+    const tampered = runNode(['scripts/verify-backup.ts', backup]);
+    assert.equal(tampered.status, 1);
+    assert.match(String(tampered.stderr), /digest does not match/);
+  } finally {
+    temp.remove();
+  }
 });
