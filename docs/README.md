@@ -50,6 +50,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Primary References](research/REFERENCES.md) — external documentation and evaluation foundations.
 - [Documentation Foundation Session](agents/sessions/2026-10-28-documentation-foundation.md) — scope, decisions, outputs, validation, and follow-up.
 - [Local Core v0.1 Session](agents/sessions/2026-10-29-local-core-v0.1.md) — implementation, ADRs, tests, browser verification, CI, risks, and handoff.
+- [Local Core v0.2 Session](agents/sessions/2026-10-30-local-core-v0.2.md) — metrics v2, achievement records and exports, backup/restore, validation, limits, and handoff.
 
 ## How to use the documents
 
