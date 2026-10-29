@@ -18,7 +18,8 @@
     "check:boundaries": "node scripts/check-boundaries.ts",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:boundaries && npm test",
     "backup": "node scripts/backup.ts",
-    "restore": "node scripts/restore.ts"
+    "restore": "node scripts/restore.ts",
+    "backup:verify": "node scripts/verify-backup.ts"
   },
   "dependencies": {
     "busboy": "1.6.0",
