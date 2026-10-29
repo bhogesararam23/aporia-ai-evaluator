@@ -111,6 +111,17 @@ Stores label, input method (`PASTED`/`UPLOADED`), optional filename, SHA-256 con
 
 Stores a monotonically numbered per-project report, title, generation time, snapshot/template/methodology/metric/evidence versions, JSON snapshot, one-way supersession reference, and creation time. The snapshot and metadata are immutable. A trigger permits only the supersession reference to be set, and only once. Report numbers are unique per project.
 
+### `achievements` … (`007_achievements.sql`)
+
+- `achievements` links a project to an append-only sequence of revisions and one current revision.
+- `achievement_revisions` stores an immutable title, summary, snapshotted project details, optional dates, unresolved-contradiction JSON, content hash, creator, and timestamp. The project and dates are snapshotted so a later project edit cannot silently change a historical record.
+- `achievement_claims` snapshots each linked claim's text and revision id, the summarized recorded evidence status, a self-declared/evidence-recorded/contradiction/unresolved support state, the latest human assessment status, and the active relationship count.
+- `achievement_contributors` stores name, controlled role, contribution, a self-declared/evidence-linked/disputed support state, and an optional evidence note. It does not establish identity, ownership, or sole credit.
+- `achievement_evidence` links project sources and optional evidence items, with a note.
+- `achievement_approvals` is append-only, unique per revision, and binds the operator, timestamp, note, and the revision content hash. A trigger permits only the current revision, and only the exact stored hash.
+
+Triggers make revisions and their child rows immutable; reject a claim, source, or evidence item from another project; require a claim revision to belong to its claim; prevent project/creation identity changes; and prevent an approval of a stale revision or a mismatched hash. Project deletion cascades achievement records, revisions, child rows, and approvals.
+
 ## 4. Cross-cutting invariants
 
 - Every persisted record has a stable identifier and timestamps.
@@ -127,5 +138,6 @@ Stores a monotonically numbered per-project report, title, generation time, snap
 - There is no automatic retention schedule, backup process, or encryption at rest beyond operating-system controls.
 - The database is a single local file plus WAL/SHM files while running. Stop the server before copying it for a consistent backup.
 - No achievement, public publication, review-event, benchmark, or provider-capability tables exist in v0.1.
+- Achievement records, revisions, contributor roles, evidence links, and approval rows were added in v0.2 (`007_achievements.sql`); publication is still not implemented.
 
 See [Local operations](../operations/LOCAL_RUNBOOK.md) for backup and troubleshooting guidance.
