@@ -2,10 +2,20 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { DatabaseSync } from 'node:sqlite';
 import { createSource } from '../../src/persistence/repositories/evidence.ts';
+import { createClaim } from '../../src/persistence/repositories/claims.ts';
+import { createProject } from '../../src/persistence/repositories/projects.ts';
+import { createRun } from '../../src/persistence/repositories/runs.ts';
 import { createQuerySet } from '../../src/persistence/repositories/querySets.ts';
 import { createWebsiteAudit } from '../../src/persistence/repositories/websiteAudits.ts';
 import type { WriteContext } from '../../src/persistence/repositories/context.ts';
-import { createTestDatabase, insertProject, TEST_TIME } from '../helpers/db.ts';
+import {
+  approveQuerySet,
+  createTestDatabase,
+  insertProject,
+  insertQuery,
+  insertQuerySet,
+  TEST_TIME,
+} from '../helpers/db.ts';
 
 const CONTEXT: WriteContext = { actor: 'Ram', at: '2026-10-30T10:00:00.000Z' };
 
@@ -115,4 +125,90 @@ test('successful creation writes exactly one primary row and one audit event', (
   assert.equal(count(db, 'query_sets'), 1);
   assert.equal(count(db, 'website_audits'), 1);
   assert.equal(count(db, 'audit_events'), 3);
+});
+
+test('project creation and its audit events roll back together', () => {
+  const db = createTestDatabase();
+  forceAuditFailure(db, 'project.created');
+
+  assert.throws(
+    () =>
+      createProject(
+        db,
+        {
+          name: 'Atomic project',
+          description: undefined,
+          primaryDomain: undefined,
+          targetEntity: null,
+        },
+        CONTEXT,
+      ),
+    /forced audit failure/,
+  );
+
+  assert.equal(count(db, 'projects'), 0);
+  assert.equal(count(db, 'audit_events'), 0);
+});
+
+test('claim creation and its audit event roll back together', () => {
+  const db = createTestDatabase();
+  const projectId = insertProject(db);
+  forceAuditFailure(db, 'claim.created');
+
+  assert.throws(
+    () =>
+      createClaim(
+        db,
+        projectId,
+        {
+          text: 'A claim that must not survive a failed audit.',
+          sourceUrl: undefined,
+          intendedMeaning: undefined,
+          timeScope: undefined,
+          locale: 'en',
+        },
+        CONTEXT,
+      ),
+    /forced audit failure/,
+  );
+
+  assert.equal(count(db, 'claims'), 0);
+  assert.equal(count(db, 'claim_revisions'), 0);
+  assert.equal(count(db, 'audit_events'), 0);
+});
+
+test('run creation and its audit event roll back together', () => {
+  const db = createTestDatabase();
+  const projectId = insertProject(db);
+  insertQuerySet(db);
+  insertQuery(db);
+  approveQuerySet(db);
+  forceAuditFailure(db, 'run.created');
+
+  assert.throws(
+    () =>
+      createRun(
+        db,
+        projectId,
+        'qst_1',
+        {
+          name: 'Atomic run',
+          providerLabel: 'Manual assistant',
+          modelLabel: undefined,
+          interfaceLabel: 'Consumer interface',
+          groundingMode: 'SEARCH_GROUNDED',
+          locale: 'en',
+          region: undefined,
+          captureFrom: TEST_TIME,
+          captureTo: TEST_TIME,
+          conditions: 'Manual capture under default settings.',
+          notes: undefined,
+        },
+        CONTEXT,
+      ),
+    /forced audit failure/,
+  );
+
+  assert.equal(count(db, 'runs'), 0);
+  assert.equal(count(db, 'audit_events'), 0);
 });
