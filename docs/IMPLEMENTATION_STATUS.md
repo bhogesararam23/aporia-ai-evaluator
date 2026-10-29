@@ -1,8 +1,8 @@
-# Implementation Status — Local Core v0.1
+# Implementation Status — Local Core v0.2
 
 - Status: Implemented and locally validated; owner acceptance and release remain pending
-- Date: 2026-10-29
-- Branch: `feat/aporia-local-core-v0.1`
+- Date: 2026-10-30
+- Branch: `feat/aporia-local-core-v0.2`
 - Scope: local-first evidence evaluation without provider, cloud, crawler, or publishing integrations
 
 This matrix records what is actually implemented and verified in this repository. “Validated” means the named local check ran successfully; it does not mean an external review, production deployment, or provider validation occurred. The existing documents remain the requirements source of truth.
@@ -28,6 +28,10 @@ This matrix records what is actually implemented and verified in this repository
 | Answer assessments | Implemented / Validated | Presence, fidelity, citation support, attribution; versioned per dimension; role field | Core metrics and run workflow tests |
 | Separate metrics v1 | Implemented / Validated | Mention, target/any citation, citation support, fidelity, attribution, observed coverage; explicit denominators/exclusions | `docs/evaluator/IMPLEMENTED_METRICS_V1.md`, core metrics tests |
 | Coverage and unknowns | Implemented / Validated | Errors/refusals/timeouts excluded with reasons; null rates when no eligible units | Core and schema tests; report tests |
+| Metrics v2: intent-group coverage | Implemented / Validated | Coverage aggregates repeated queries by controlled intent, exposes untested and partially assessed groups, and preserves v1 snapshots; `src/core/metrics.ts` | `tests/unit/metrics.test.ts`, snapshot tests |
+| Recorded-evidence semantics | Implemented / Validated | Status and independence labels name reviewer records; no credibility score or independent-verification claim; standing rule caveat | Vocabulary/evidence tests, report tests |
+| Atomic primary + audit | Implemented / Validated | Project, claim, source, query set, run, website audit and achievement creation wrap the primary rows and audit event in one transaction | `tests/integration/audit-atomicity.test.ts` |
+| Migration identity | Implemented / Validated | Applied names and checksums are checked; a renamed applied migration is refused | `tests/integration/migrations.test.ts` |
 | Local HTML audit | Implemented / Validated | User-supplied paste/upload, parse5, in-document findings, network checks unavailable | Website unit tests, audit repository and upload tests |
 | HTML snapshot storage | Implemented / Validated | SHA-256, byte length, raw local snapshot, findings/unavailable/metadata; immutable | Audit schema and repository tests |
 | Immutable report snapshots | Implemented / Validated | Versioned snapshot, rendered only from stored JSON; earlier reports retained and superseded | Reporting unit, service, repository, HTTP immutability tests |
@@ -47,16 +51,16 @@ This matrix records what is actually implemented and verified in this repository
 | FR-001: accept URL, claims, intended outcome, optional evidence | Partial | Project URL, claim, time scope, intended meaning, and evidence excerpts are accepted. Evidence file upload is limited to HTML audits; arbitrary artifact upload is not implemented. |
 | FR-002: URL-only, claim-only, combined intake; no fabrication | Implemented | Empty/claim-only/URL-only data is allowed; empty states are explicit. |
 | FR-003: atomic propositions with scope/time/units/evidence needs | Implemented | Manual decomposition; no model-generated decomposition. |
-| FR-004: identity/account/project/authorship/contribution distinctions | Partial | Entity identity status, method, scope, and attribution roles exist. Account-control verification and contributor-role records separate from observations are not implemented. |
+| FR-004: identity/account/project/authorship/contribution distinctions | Partial | Entity identity status, method, scope, and achievement contributor-role records exist. Account-control verification and authenticated reviewer identity remain absent. |
 | FR-005: supported URLs/files/size limits | Partial | HTTP(S) URLs validated; HTML only for uploads; no general file ingestion. |
 | FR-006: source descriptor and provenance | Implemented | Canonical URL optional, retrieval time, type, publisher/author, language, access route, independence, digest. |
 | FR-007: evidence relations | Implemented | Supports, contradicts, qualifies, contextualizes, does not address, unavailable. |
 | FR-008: preserve contradictions and unknowns | Implemented | Coexisting active relations; rule and report preserve both; unknown states explicit. |
 | FR-009: source-linked verdict rationale | Implemented | Every relationship has a reviewer rationale; reports link evidence rows and assessment rationale. |
 | FR-010: human correction/adjudication with audit | Partial | Supersession, append-only assessments, audit events, and disputes exist. A dedicated review-event object and reviewer identity authentication do not. |
-| FR-011: generate achievement page/metadata | Not implemented | Deliberately outside local core v0.1. |
+| FR-011: generate achievement page/metadata | Partial | Local structured achievement revisions, preview, and downloadable HTML/JSON-LD after approval exist. No publication, CMS, canonical URL, sitemap, or remote write is implemented. |
 | FR-012: copy/paste, CMS, API integration | Not implemented | No publication path. |
-| FR-013: structured data/visible content consistency | Partial | Local HTML check for simple name/headline alignment; no publishing generator. |
+| FR-013: structured data/visible content consistency | Partial | Achievement exports generate JSON-LD from the same view as the visible page and refuse mismatched output; there is no remote page publication. |
 | FR-014: crawler access checks | Partial | In-document robots meta only; no live crawler/robots.txt check. |
 | FR-015: never claim caching/indexing without evidence | Implemented | All network/index/cache states are unavailable and disclosed. |
 | FR-016: provider adapters | Not implemented | Intentionally prohibited in this milestone; no fake adapters. |
@@ -79,7 +83,7 @@ This matrix records what is actually implemented and verified in this repository
 | Reproducibility | Implemented | Immutable claim revisions, run configs, query sets, raw observations, report snapshots, version IDs. |
 | Security | Implemented for local scope | SSRF is absent because there is no outbound client; local controls are tested. Not a multi-user/network security review. |
 | Privacy | Implemented for local scope | Data-local by default, export/delete, no telemetry or provider transfer. Retention policy and encryption at rest are not implemented. |
-| Reliability | Implemented / Validated | Transactions, foreign keys, triggers, checksummed migrations, explicit errors. No crash-recovery or backup automation. |
+| Reliability | Implemented / Validated | Transactions, foreign keys, triggers, checksummed migrations, explicit errors, validated backup/restore with safety copy. No crash-recovery, scheduling, retention enforcement, or encryption at rest. |
 | Explainability | Implemented | Rule counts/notes, human rationale, metric definitions/exclusions, limitations. |
 | Accessibility | Partial / locally checked | Semantic HTML, labels, skip link, text badges, keyboard-native controls, automated structural checks. No screen-reader audit. |
 | Portability | Implemented | Provider-independent core; SQLite local data. |
@@ -110,10 +114,10 @@ The ADRs remain **Proposed** in the index pending owner review; implementation d
 
 - LLM/provider/search integrations, credentials, cost accounting, or live tests.
 - Remote URL fetching, crawling, robots.txt/sitemap retrieval, link health checks, or rendered-page analysis.
-- Public achievement pages, JSON-LD publishing, sitemap generation, CMS/API publication, or rollback.
+- Public achievement pages or URLs, remote JSON-LD publication, sitemap generation, CMS/API publication, or remote rollback (local approved HTML/JSON-LD export exists).
 - User accounts, authentication, tenant isolation, roles, OAuth, billing, quotas, analytics, or scheduled jobs.
 - Benchmark/gold-set validation, calibration, confidence intervals, or composite scoring.
-- Separate achievement, citation-resolution, review-event, remediation-status, or retention tables.
+- Separate citation-resolution, review-event, remediation-status, or retention tables. Achievement revisions, links and approvals are implemented.
 - Email/notifications, attachments beyond HTML audit uploads, or PDF parsing.
 
 ## 7. Next steps
@@ -123,4 +127,4 @@ The ADRs remain **Proposed** in the index pending owner review; implementation d
 3. Implement retention/deletion policy and backup guidance beyond the local copy procedure.
 4. Add screen-reader and cross-browser testing.
 5. If provider or remote website work is authorized, add capability declarations, terms review, SSRF/network isolation, and live validation under new ADRs.
-6. Add the achievement/publication workflow only after its trust, approval, and correction controls are implemented and tested.
+6. Review the local achievement workflow and decide whether a future publication milestone is authorized; publication requires a new ADR, destination control, rollback, and correction/dispute handling.
