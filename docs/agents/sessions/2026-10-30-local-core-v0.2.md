@@ -7,7 +7,7 @@
 - Branch: `feat/aporia-local-core-v0.2`.
 - Starting commit: `d5b5505` (last pushed checkpoint before this segment).
 - Operator/context: Local principal-engineer session; no external providers, credentials, or remote services were used.
-- Session status: completed locally; CI verification is recorded after the branch push in the follow-up checkpoint.
+- Session status: completed; branch pushed and CI verified.
 
 ## 2. Objective and scope
 Intended result: a runnable local application whose evaluator coverage matches the documented intent-group methodology, whose evidence labels do not overclaim verification, whose primary records and audit events are atomic, whose achievement records are immutable, evidence-linked and explicitly approved before download, whose backup/restore path is validated and recoverable, and whose documentation states actual behavior and limits.
@@ -52,7 +52,8 @@ The application still starts with no seeded projects, claims, runs, reports, or 
 - Provider live tests: not run and not applicable; the milestone prohibits provider integrations and the application has no network client.
 - Manual review: inspected the diff and staged files before each commit; checked branch and remote before push.
 - Live local verification: started `node src/server.ts` on loopback with a fresh `APORIA_DATA_DIR` and driven through the browser and HTTP. Created a project, claim, proposition, source, evidence excerpt, achievement draft, explicit approval and both downloads; then created a backup (`schema 7`, 25 tables, achievements 1, SHA-256 `762416df…e4a59e`), verified it, restored into a fresh directory, started the application on the restored data, and confirmed the approved record, content hash, HTML download and JSON-LD download were served. All scratch data directories were removed afterward.
-- Not run: GitHub Actions result was not available at report authoring time; the branch had not yet been pushed from this segment. The post-push checkpoint records the actual result.
+- Not run at authoring: GitHub Actions result was not yet available because the branch had not been pushed from this segment. Post-push observation: run `40948115991` completed successfully for `e7061b2`; see section 9.
+- Not run: provider live tests, external publication checks, and any remote website verification, all prohibited or out of scope for this milestone.
 
 ## 7. Evidence and external sources
 No external sources were needed. The work used the repository's existing product requirements, ADRs, methodology documents, schema, and code. No web fetch, provider call, or remote API was performed.
@@ -69,11 +70,12 @@ No external sources were needed. The work used the repository's existing product
 
 ## 9. Commit and publication
 - Starting checkpoint: `d5b5505` on `origin/feat/aporia-local-core-v0.2`.
-- Branch commits at report authoring: 52 commits on `main..HEAD` (including this report's parent). The requested minimum of 50 meaningful commits is met. The branch targets 100+ but no empty, artificial or no-op commits were created to inflate the count.
+- Branch commits at report authoring: 52 commits on `main..HEAD` (including this report's parent). The requested minimum of 50 meaningful commits is met. The final post-push checkpoint brings the branch to 54 commits. The branch targets 100+ but no empty, artificial or no-op commits were created to inflate the count.
 - Files included: evaluator core, metrics/reporting, achievement schema/repository/views/routes/exports, backup/restore and CLI, tests, ADRs, documentation, version metadata.
-- Push/branch result: not yet pushed at authoring. The immediate next action is to push the feature branch and verify the destination; the follow-up checkpoint records the actual result and CI status.
+- Push/branch result: after this report was written, `git push origin feat/aporia-local-core-v0.2` fast-forwarded `d5b5505..e7061b2` to the feature branch on 2026-10-29T20:20:17Z. The destination was not `main`, and no force-push was used.
+- CI result: GitHub Actions run `40948115991` for commit `e7061b2` completed successfully (job `check`, 19s). The only annotations were runner-platform deprecation notices, not test failures.
 - Pull request URL: none created.
-- Failed or partial writes: none known. The working tree was clean before this report was written.
+- Failed or partial writes: none known. The working tree was clean before the push.
 
 ## 10. Handoff
 1. Push `feat/aporia-local-core-v0.2` to `origin`, verify it is not `main`, and inspect the pushed range.
