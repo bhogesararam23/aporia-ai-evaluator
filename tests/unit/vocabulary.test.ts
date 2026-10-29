@@ -14,8 +14,12 @@ import {
   OBSERVATION_STATUS_DESCRIPTIONS,
   PROPOSITION_STATUSES,
   PROPOSITION_STATUS_DESCRIPTIONS,
+  PROPOSITION_STATUS_LABELS,
   QUERY_INTENTS,
+  SOURCE_INDEPENDENCE_DESCRIPTIONS,
+  SOURCE_INDEPENDENCE_LABELS,
   SOURCE_TYPES,
+  SOURCE_TYPE_DESCRIPTIONS,
   assessmentLabelDisplay,
   isAssessmentLabelForDimension,
   isOneOf,
@@ -79,4 +83,22 @@ test('generic enum guard rejects unknown values', () => {
   assert.equal(isOneOf('SUPPORTS', EVIDENCE_RELATIONS), true);
   assert.equal(isOneOf('supports', EVIDENCE_RELATIONS), false);
   assert.equal(isOneOf('OTHER', EVIDENCE_RELATIONS), false);
+});
+
+test('evidence labels name recorded relationships and do not claim verification', () => {
+  assert.equal(PROPOSITION_STATUS_LABELS.CONTRADICTED, 'Contradiction recorded');
+  assert.equal(PROPOSITION_STATUS_LABELS.SUPPORTED_WITHIN_SCOPE, 'Support recorded within scope');
+  for (const status of PROPOSITION_STATUSES) {
+    assert.doesNotMatch(
+      PROPOSITION_STATUS_DESCRIPTIONS[status],
+      /credible|independently verified/i,
+      status,
+    );
+  }
+  for (const relation of EVIDENCE_RELATIONS) {
+    assert.match(EVIDENCE_RELATION_DESCRIPTIONS[relation], /reviewer recorded/, relation);
+  }
+  assert.equal(SOURCE_INDEPENDENCE_LABELS.INDEPENDENT, 'Recorded as independent');
+  assert.match(SOURCE_INDEPENDENCE_DESCRIPTIONS.INDEPENDENT, /did not verify/);
+  assert.match(SOURCE_TYPE_DESCRIPTIONS.INDEPENDENT_SOURCE, /has not verified/);
 });

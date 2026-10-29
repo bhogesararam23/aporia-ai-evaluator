@@ -49,6 +49,27 @@ test('empty evidence is explicitly not assessed', () => {
   assert.match(derived.notes[0] ?? '', /No evidence relationships/);
 });
 
+test('every derived status carries the recorded-relationship caveat', () => {
+  const scenarios: readonly EvidenceRelationshipRecord[][] = [
+    [],
+    [relationship('r1', 'SUPPORTS')],
+    [relationship('r1', 'CONTRADICTS')],
+    [relationship('r1', 'SUPPORTS', 's1'), relationship('r2', 'CONTRADICTS', 's2')],
+    [relationship('r1', 'QUALIFIES')],
+    [relationship('r1', 'UNAVAILABLE')],
+    [relationship('r1', 'CONTEXTUALIZES')],
+  ];
+  for (const scenario of scenarios) {
+    const derived = deriveEvidenceStatus(scenario);
+    assert.ok(
+      derived.notes.some((note) =>
+        /human-recorded relationships; it does not independently verify/.test(note),
+      ),
+      derived.status,
+    );
+  }
+});
+
 test('supporting evidence yields supported within scope', () => {
   const derived = deriveEvidenceStatus([
     relationship('r1', 'SUPPORTS', 's1'),

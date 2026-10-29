@@ -141,6 +141,9 @@ export function deriveEvidenceStatus(
   if (sourceCount === 0 && relationships.length > 0) {
     notes.push('No distinct source records were linked.');
   }
+  notes.push(
+    'This rule summarizes human-recorded relationships; it does not independently verify the sources or the proposition.',
+  );
 
   const rationaleParts: string[] = [];
   if (supports > 0) {
