@@ -26,7 +26,8 @@ This set defines the intended product, evaluation methodology, trust model, safe
 
 ## Evaluator science
 - [Evaluator Methodology](evaluator/EVALUATOR_METHODOLOGY.md) — claim decomposition, evidence assessment, answer evaluation, reproducibility, and adjudication.
-- [Implemented Metrics v1](evaluator/IMPLEMENTED_METRICS_V1.md) — exact numerators, denominators, exclusions, unknowns, and evidence rule precedence.
+- [Implemented Metrics v1](evaluator/IMPLEMENTED_METRICS_V1.md) — exact numerators, denominators, exclusions, unknowns, and evidence rule precedence. Historical `metrics-v1` snapshots.
+- [Implemented Metrics v2](evaluator/IMPLEMENTED_METRICS_V2.md) — current intent-group coverage, partial assessment, and the v1-to-v2 change record.
 - [Metrics and Scoring](evaluator/METRICS_AND_SCORING.md) — formulas, denominators, interpretation, aggregation, and anti-gaming controls.
 - [Benchmarking and Validation](evaluator/BENCHMARKING_AND_VALIDATION.md) — gold sets, human review, validity, reliability, calibration, and release gates.
 

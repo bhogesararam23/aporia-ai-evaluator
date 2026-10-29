@@ -1,5 +1,10 @@
 # Implemented Metrics and Evidence Rule v1
 
+> **Historical version.** `metrics-v1` is retained for interpreting stored report snapshots. New
+> reports use [`metrics-v2`](IMPLEMENTED_METRICS_V2.md), which changes only observed answer-level
+> coverage to count query-intent groups (ADR-014). The other metric definitions and the evidence rule
+> in this document remain current.
+
 - Status: Implemented and unit-tested locally; not empirically calibrated
 - Date: 2026-10-29
 - Rule version: `evidence-aggregation-v1`
