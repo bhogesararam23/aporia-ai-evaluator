@@ -10,6 +10,7 @@ import {
   listAchievements,
 } from '../../src/persistence/repositories/achievements.ts';
 import { addClaimRevision } from '../../src/persistence/repositories/claims.ts';
+import { deleteProject } from '../../src/persistence/repositories/projects.ts';
 import type { WriteContext } from '../../src/persistence/repositories/context.ts';
 import {
   createTestDatabase,
@@ -282,4 +283,86 @@ test('project export data includes every achievement revision', () => {
   assert.equal(exported.length, 1);
   assert.equal(exported[0]?.revisions.length, 2);
   assert.equal(getAchievement(db, 'prj_1', 'missing'), null);
+});
+
+test('a cross-project claim or evidence item is refused', () => {
+  const db = createTestDatabase();
+  seedAssessment(db);
+  insertProject(db, { id: 'prj_2', name: 'Other project' });
+  insertClaimWithProposition(db, {
+    projectId: 'prj_2',
+    claimId: 'clm_other',
+    revisionId: 'rev_other',
+    propositionId: 'prp_other',
+  });
+  insertSource(db, { id: 'src_other', projectId: 'prj_2' });
+  insertEvidenceWithRelation(db, {
+    projectId: 'prj_2',
+    sourceId: 'src_other',
+    evidenceId: 'evd_other',
+    relationshipId: 'rel_other',
+    propositionId: 'prp_other',
+  });
+
+  assert.throws(
+    () => createAchievement(db, 'prj_1', achievementInput({ claimIds: ['clm_other'] }), CONTEXT),
+    /Claim not found/,
+  );
+  assert.throws(
+    () =>
+      createAchievement(
+        db,
+        'prj_1',
+        achievementInput({ sourceIds: [], evidenceIds: ['evd_other'] }),
+        CONTEXT,
+      ),
+    /evidence item does not belong to this project/,
+  );
+  assert.equal(count(db, 'achievements'), 0);
+});
+
+test('the database refuses an approval whose hash does not match the revision', () => {
+  const db = createTestDatabase();
+  seedAssessment(db);
+  const achievement = createAchievement(db, 'prj_1', achievementInput(), CONTEXT);
+  const revision = achievement.currentRevision;
+  assert.ok(revision);
+
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO achievement_approvals
+            (id, revision_id, approved_by, approved_at, note, content_hash, created_at)
+           VALUES (?, ?, 'Ram', ?, 'A mismatched approval.', ?, ?)`,
+        )
+        .run('aap_bad_hash', revision.id, CONTEXT.at, '0'.repeat(64), CONTEXT.at),
+    /content hash/,
+  );
+  assert.equal(count(db, 'achievement_approvals'), 0);
+});
+
+test('deleting a project cascades achievement records and approvals', () => {
+  const db = createTestDatabase();
+  seedAssessment(db);
+  const achievement = createAchievement(db, 'prj_1', achievementInput(), CONTEXT);
+  const revision = achievement.currentRevision;
+  assert.ok(revision);
+  approveAchievement(
+    db,
+    'prj_1',
+    achievement.id,
+    { confirmation: revision.title, note: 'Approved before deletion.' },
+    CONTEXT,
+  );
+
+  deleteProject(db, 'prj_1');
+
+  assert.equal(count(db, 'achievements'), 0);
+  assert.equal(count(db, 'achievement_revisions'), 0);
+  assert.equal(count(db, 'achievement_claims'), 0);
+  assert.equal(count(db, 'achievement_contributors'), 0);
+  assert.equal(count(db, 'achievement_evidence'), 0);
+  assert.equal(count(db, 'achievement_approvals'), 0);
+  assert.equal(count(db, 'claims'), 0);
 });
