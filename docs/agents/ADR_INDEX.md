@@ -33,4 +33,4 @@ Accepted does not mean implemented. Implementation and test status must be recor
 
 ## Implementation status
 
-As of 2026-10-29, ADR-008 through ADR-013 are implemented in local core v0.1 and validated by the repository test suite. Their status remains **Proposed** pending project-owner review and acceptance. Implementation is not equivalent to owner approval. See [Implementation Status](../IMPLEMENTATION_STATUS.md) for capability and test evidence.
+As of 2026-10-30, ADR-008 through ADR-017 are implemented in local core v0.2 and validated by the repository test suite. ADR-014 records the intent-group coverage correction and the metrics-v2/historical-v1 boundary; ADR-015 records the recorded-relationship wording; ADR-016 records local achievement revisions, hash-bound approval and safe local exports; ADR-017 records validated offline backup/restore. All remain **Proposed** pending project-owner review and acceptance. Implementation is not equivalent to owner approval. See [Implementation Status](../IMPLEMENTATION_STATUS.md) for capability and test evidence.
