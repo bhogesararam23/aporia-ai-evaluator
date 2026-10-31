@@ -340,6 +340,10 @@ const ASSERTING_ATTRIBUTION_LABELS: readonly ClaimAttributionLabel[] = [
   'AMBIGUOUS',
   'COLLABORATIVE_PARTIAL',
   'FALSE_SOLE_CREDIT',
+  // A contribution asserted without naming any party is a credit claim with a missing subject. It
+  // belongs in the denominator, because leaving it out would make the rate look better than the
+  // answer was.
+  'UNATTRIBUTED',
   'INCORRECT',
 ];
 
