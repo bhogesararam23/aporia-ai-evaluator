@@ -1,11 +1,13 @@
 import {
   ANSWER_OFFSET_BASES,
+  ANSWER_STATEMENT_KINDS,
   CLAIM_CITATION_SUPPORT_LABELS,
   CLAIM_PROPOSITION_RELATIONS,
   CLAIM_RELEVANCES,
   isClaimAttributionLabel,
   isClaimFidelityLabel,
   type AnswerOffsetBasis,
+  type AnswerStatementKind,
   type ClaimCitationSupportLabel,
   type ClaimPropositionRelation,
   type ClaimRelevance,
@@ -22,6 +24,7 @@ import {
 
 export interface AnswerClaimDraftInput {
   readonly quoteText: string;
+  readonly statementKind: AnswerStatementKind;
   readonly offsetBasis: AnswerOffsetBasis;
   readonly startOffset: number | null;
   readonly endOffset: number | null;
@@ -226,6 +229,9 @@ export function validateAnswerClaimDraftInput(
   const relevance = read(enumValue(raw['relevance'], 'relevance', CLAIM_RELEVANCES));
   const basis = read(optionalEnum(raw['offsetBasis'], 'offsetBasis', ANSWER_OFFSET_BASES)) as
     AnswerOffsetBasis | undefined;
+  const declaredKind = read(
+    optionalEnum(raw['statementKind'], 'statementKind', ANSWER_STATEMENT_KINDS),
+  ) as AnswerStatementKind | undefined;
   const paraphrase = read(
     optionalText(raw['paraphrase'], 'paraphrase', { max: 2000, multiline: true }),
   );
@@ -233,6 +239,29 @@ export function validateAnswerClaimDraftInput(
 
   // A missing basis is only a safe default when the operator is not claiming a location at all.
   const resolvedBasis: AnswerOffsetBasis = basis ?? 'NOT_ESTABLISHED';
+  // Kind and basis must agree, or a paraphrase could be filed as a quotation. Deriving the kind
+  // from the basis keeps the common case simple and refuses only an explicit contradiction.
+  const derivedKind: AnswerStatementKind =
+    resolvedBasis === 'NOT_ESTABLISHED' ? 'REVIEWER_DESCRIPTION' : 'QUOTED';
+  if (declaredKind !== undefined && declaredKind !== derivedKind) {
+    issues.push({
+      field: 'statementKind',
+      message:
+        declaredKind === 'QUOTED'
+          ? 'A quoted statement must give a position in the answer. Choose an exact or normalised match basis, or record it as a reviewer description.'
+          : 'A reviewer description cannot claim a position inside the answer. Remove the position basis, or record the statement as a quote only if the answer really contained these words.',
+    });
+  }
+  const statementKind: AnswerStatementKind = declaredKind ?? derivedKind;
+  if (relevance === 'OMISSION' && statementKind !== 'REVIEWER_DESCRIPTION') {
+    // An omission is something the answer did not say. A located range would claim the answer
+    // literally contained that wording, which is a fabrication of the captured text.
+    issues.push({
+      field: 'statementKind',
+      message:
+        'A recorded omission cannot be quoted from the answer, because the answer did not say it. Record it as a reviewer description.',
+    });
+  }
   let startOffset: number | null = null;
   let endOffset: number | null = null;
   if (issues.length === 0) {
@@ -246,6 +275,7 @@ export function validateAnswerClaimDraftInput(
   }
   return valid({
     quoteText,
+    statementKind,
     offsetBasis: resolvedBasis,
     startOffset,
     endOffset,

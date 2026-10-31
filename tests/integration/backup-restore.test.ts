@@ -294,11 +294,11 @@ test('a backup carries claim-level statements, links, assessments and history in
       // The restored rows must still satisfy the quote trigger, so a later revision is writable.
       db.prepare(
         `INSERT INTO answer_claim_revisions
-          (id, project_id, claim_id, revision, quote_text, offset_basis, start_offset,
-           end_offset, relevance, supersedes_revision_id, decomposition_version, created_by,
-           created_at)
-         SELECT 'acr_2', project_id, claim_id, 2, ?, offset_basis, start_offset, end_offset,
-           relevance, id, decomposition_version, created_by, created_at
+          (id, project_id, claim_id, revision, quote_text, statement_kind, offset_basis,
+           start_offset, end_offset, relevance, supersedes_revision_id, decomposition_version,
+           created_by, created_at)
+         SELECT 'acr_2', project_id, claim_id, 2, ?, statement_kind, offset_basis,
+           start_offset, end_offset, relevance, id, decomposition_version, created_by, created_at
          FROM answer_claim_revisions WHERE id = 'acr_1'`,
       ).run('created by Ram');
     } finally {

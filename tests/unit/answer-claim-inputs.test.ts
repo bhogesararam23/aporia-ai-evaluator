@@ -155,6 +155,56 @@ test('draft validation defaults to an unestablished basis when none is claimed',
   assert.equal(result.value.startOffset, null);
 });
 
+test('a quote and a reviewer description cannot be confused', () => {
+  // Storing a paraphrase in a column called "quote" would let a later reader treat the operator's
+  // own words as evidence of what the model said.
+  const claimedQuote = validateAnswerClaimDraftInput(
+    {
+      quoteText: 'a summary in the reviewer own words',
+      relevance: 'ADDRESSES',
+      statementKind: 'QUOTED',
+    },
+    ANSWER,
+  );
+  assert.equal(claimedQuote.ok, false);
+  if (claimedQuote.ok) {
+    return;
+  }
+  assert.ok(
+    claimedQuote.issues.some((issue) => /must give a position in the answer/.test(issue.message)),
+  );
+
+  const claimedDescription = validateAnswerClaimDraftInput(
+    {
+      quoteText: 'authored the parser',
+      relevance: 'ADDRESSES',
+      offsetBasis: 'EXACT_MATCH',
+      statementKind: 'REVIEWER_DESCRIPTION',
+    },
+    ANSWER,
+  );
+  assert.equal(claimedDescription.ok, false);
+
+  const derived = validateAnswerClaimDraftInput(
+    { quoteText: 'authored the parser', relevance: 'ADDRESSES', offsetBasis: 'EXACT_MATCH' },
+    ANSWER,
+  );
+  assert.equal(derived.ok, true);
+  if (derived.ok) {
+    assert.equal(derived.value.statementKind, 'QUOTED');
+  }
+
+  const paraphrase = validateAnswerClaimDraftInput(
+    { quoteText: 'a summary in the reviewer own words', relevance: 'AMBIGUOUS' },
+    ANSWER,
+  );
+  assert.equal(paraphrase.ok, true);
+  if (paraphrase.ok) {
+    assert.equal(paraphrase.value.statementKind, 'REVIEWER_DESCRIPTION');
+    assert.equal(paraphrase.value.offsetBasis, 'NOT_ESTABLISHED');
+  }
+});
+
 test('draft validation aggregates every field problem instead of reporting one', () => {
   const result = validateAnswerClaimDraftInput(
     { quoteText: '', relevance: 'NOT_A_RELATION', offsetBasis: 'MAGIC' },
@@ -199,6 +249,32 @@ test('a revision input carries the same quote guarantee as a new claim', () => {
     ANSWER,
   );
   assert.equal(bad.ok, false);
+});
+
+test('a recorded omission cannot claim a position inside the answer', () => {
+  // An omission is something the answer did not say. Letting it carry a located range would
+  // record invented wording as if the captured answer contained it.
+  const result = validateAnswerClaimDraftInput(
+    {
+      quoteText: 'The answer never names the co-author.',
+      relevance: 'OMISSION',
+      offsetBasis: 'NORMALIZED_MATCH',
+      startOffset: 0,
+      endOffset: 10,
+    },
+    ANSWER,
+  );
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+  assert.ok(result.issues.some((issue) => /omission cannot be quoted/.test(issue.message)));
+
+  const honest = validateAnswerClaimDraftInput(
+    { quoteText: 'The funding body was not named.', relevance: 'OMISSION' },
+    ANSWER,
+  );
+  assert.equal(honest.ok, true);
 });
 
 test('proposition links require a rationale and a known relation', () => {

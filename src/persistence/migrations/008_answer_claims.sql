@@ -27,6 +27,9 @@ CREATE TABLE answer_claim_revisions (
   claim_id TEXT NOT NULL REFERENCES answer_claims(id) ON DELETE CASCADE,
   revision INTEGER NOT NULL CHECK (revision > 0),
   quote_text TEXT NOT NULL CHECK (length(quote_text) BETWEEN 1 AND 4000),
+  statement_kind TEXT NOT NULL CHECK (statement_kind IN (
+    'QUOTED', 'REVIEWER_DESCRIPTION'
+  )),
   offset_basis TEXT NOT NULL CHECK (offset_basis IN (
     'EXACT_MATCH', 'NORMALIZED_MATCH', 'NOT_ESTABLISHED'
   )),
@@ -55,6 +58,17 @@ CREATE TABLE answer_claim_revisions (
       AND start_offset >= 0
       AND end_offset > start_offset
     )
+  ),
+  -- An omission is something the answer failed to say, so it cannot be a quotation located inside
+  -- the answer. Without this rule the field name would let a recorded omission be stored as if the
+  -- answer had literally contained that wording.
+  CHECK (relevance <> 'OMISSION' OR statement_kind = 'REVIEWER_DESCRIPTION'),
+  -- A `QUOTED` revision asserts that the answer really contained these words, so it must carry a
+  -- locatable range that the trigger above can re-derive. A `REVIEWER_DESCRIPTION` is the
+  -- operator's own words and must never claim a range, so a reader cannot mistake one for the other.
+  CHECK (
+    (statement_kind = 'QUOTED' AND offset_basis IN ('EXACT_MATCH', 'NORMALIZED_MATCH'))
+    OR (statement_kind = 'REVIEWER_DESCRIPTION' AND offset_basis = 'NOT_ESTABLISHED')
   )
 ) STRICT;
 

@@ -514,6 +514,24 @@ export function insertReport(
 }
 
 /**
+ * Derive the statement kind the schema requires from the offset basis, so a fixture cannot store a
+ * paraphrase as a quotation by accident.
+ */
+function statementKindFor(
+  basis: 'EXACT_MATCH' | 'NORMALIZED_MATCH' | 'NOT_ESTABLISHED',
+  relevance: string,
+  override?: 'QUOTED' | 'REVIEWER_DESCRIPTION',
+): string {
+  if (override !== undefined) {
+    return override;
+  }
+  if (relevance === 'OMISSION') {
+    return 'REVIEWER_DESCRIPTION';
+  }
+  return basis === 'NOT_ESTABLISHED' ? 'REVIEWER_DESCRIPTION' : 'QUOTED';
+}
+
+/**
  * Insert an answer claim with one revision. The quote defaults to a verbatim slice of the fixture
  * answer text, so `EXACT_MATCH` offset checks pass without the caller computing offsets.
  */
@@ -531,6 +549,7 @@ export function insertAnswerClaim(
     startOffset?: number | null;
     endOffset?: number | null;
     relevance?: string;
+    statementKind?: 'QUOTED' | 'REVIEWER_DESCRIPTION';
     supersedesRevisionId?: string | null;
     createRevision?: boolean;
   } = {},
@@ -567,16 +586,17 @@ export function insertAnswerClaim(
   }
   db.prepare(
     `INSERT INTO answer_claim_revisions
-      (id, project_id, claim_id, revision, quote_text, offset_basis, start_offset, end_offset,
-       relevance, paraphrase, note, supersedes_revision_id, decomposition_version, created_by,
-       created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
+      (id, project_id, claim_id, revision, quote_text, statement_kind, offset_basis,
+       start_offset, end_offset, relevance, paraphrase, note, supersedes_revision_id,
+       decomposition_version, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
   ).run(
     revisionId,
     projectId,
     claimId,
     options.revision ?? 1,
     quote,
+    statementKindFor(basis, options.relevance ?? 'ADDRESSES', options.statementKind),
     basis,
     start ?? null,
     end ?? null,
@@ -607,6 +627,7 @@ export function insertAnswerClaimRevision(
     startOffset?: number | null;
     endOffset?: number | null;
     relevance?: string;
+    statementKind?: 'QUOTED' | 'REVIEWER_DESCRIPTION';
     supersedesRevisionId?: string | null;
     makeCurrent?: boolean;
   } = {},
@@ -636,16 +657,17 @@ export function insertAnswerClaimRevision(
   }
   db.prepare(
     `INSERT INTO answer_claim_revisions
-      (id, project_id, claim_id, revision, quote_text, offset_basis, start_offset, end_offset,
-       relevance, paraphrase, note, supersedes_revision_id, decomposition_version, created_by,
-       created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
+      (id, project_id, claim_id, revision, quote_text, statement_kind, offset_basis,
+       start_offset, end_offset, relevance, paraphrase, note, supersedes_revision_id,
+       decomposition_version, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
   ).run(
     revisionId,
     String(row['project_id']),
     claimId,
     options.revision ?? 2,
     quote,
+    statementKindFor(basis, options.relevance ?? 'ADDRESSES', options.statementKind),
     basis,
     start ?? null,
     end ?? null,

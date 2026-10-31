@@ -48,19 +48,30 @@ The milestone requirement is therefore a statement-level layer that:
    explicitly labelled as the operator's reading, and creation metadata. Changing a statement
    inserts a new revision and moves `answer_claims.current_revision_id`; the previous revision stays
    readable and its assessments stay attached to it.
-3. **Offsets are only claimed when they are verifiable.** `offset_basis` is a controlled value:
+3. **Offsets are only claimed when they are verifiable, and a quote is never a paraphrase.**
+   `statement_kind` separates the two kinds of text an operator records:
+   - `QUOTED` — words the captured answer contained. It must carry a locatable range, so a later
+     reader cannot mistake the operator's summary for the model's output.
+   - `REVIEWER_DESCRIPTION` — the operator's own words, used for a summary of several sentences and
+     for a recorded omission. It must never carry a range, because the answer did not contain them.
+   `offset_basis` then records how a `QUOTED` range was established:
    - `EXACT_MATCH` — the quote occurs verbatim in the raw answer and the recorded range is the
-     first verbatim occurrence, recomputed and checked at write time;
+     verbatim occurrence, recomputed and checked at write time;
    - `NORMALIZED_MATCH` — the quote matches after Unicode NFKC normalisation and whitespace
      collapsing, with the range recomputed the same way;
-   - `NOT_ESTABLISHED` — no reliable range exists, so `start_offset`/`end_offset` must be `NULL`.
-     Offsets are never inferred from an approximate or edited quote, and a mismatch between the
-     recorded range and the raw answer aborts the write.
+   - `NOT_ESTABLISHED` — no reliable range exists, which is the only basis a
+     `REVIEWER_DESCRIPTION` may use. Offsets are never inferred from an approximate or edited quote,
+     and a mismatch between the recorded range and the raw answer aborts the write.
+   Offsets count Unicode code points, not UTF-16 code units, because that is what SQL `substr()` and
+   `length()` use. Storing code-unit offsets would have made the database unable to re-verify any
+   quote from an answer containing an emoji or other astral character.
 4. **Relevance is a separate axis from truth.** `answer_claim_relevance` records, per claim
    revision: `ADDRESSES`, `PARTIALLY_ADDRESSES`, `QUALIFIES`, `CONTRADICTS`, `DOES_NOT_ADDRESS`,
    `AMBIGUOUS`, `UNRELATED`, `REFUSAL`, `ABSTENTION`, `OMISSION`, `UNAVAILABLE`, `NOT_ASSESSABLE`.
    `OMISSION` is a statement the operator records about what the answer failed to say and is
-   scored separately from an assertion. `REFUSAL` and `ABSTENTION` are never negative factual
+   scored separately from an assertion. Because an omission is by definition not something the
+   answer said, `OMISSION` requires `statement_kind = 'REVIEWER_DESCRIPTION'`, enforced by a table
+   CHECK. `REFUSAL` and `ABSTENTION` are never negative factual
    verdicts, matching the standing rule that applies to observation statuses today.
 5. **Claim-to-proposition links are their own rows.** `answer_claim_propositions` maps a claim
    revision to one proposition with a controlled relation (`SUPPORTS_TARGET`,

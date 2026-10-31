@@ -4,6 +4,9 @@ import {
   ANSWER_OFFSET_BASES,
   ANSWER_OFFSET_BASIS_DESCRIPTIONS,
   ANSWER_OFFSET_BASIS_LABELS,
+  ANSWER_STATEMENT_KINDS,
+  ANSWER_STATEMENT_KIND_DESCRIPTIONS,
+  ANSWER_STATEMENT_KIND_LABELS,
   CLAIM_ATTRIBUTION_DESCRIPTIONS,
   CLAIM_ATTRIBUTION_DISPLAY,
   CLAIM_ATTRIBUTION_LABELS,
@@ -47,6 +50,7 @@ function duplicates(values: readonly string[]): string[] {
 test('answer-claim vocabularies contain no duplicate values', () => {
   for (const list of [
     ANSWER_OFFSET_BASES,
+    ANSWER_STATEMENT_KINDS,
     CLAIM_RELEVANCES,
     CLAIM_PROPOSITION_RELATIONS,
     CLAIM_CITATION_SUPPORT_LABELS,
@@ -62,6 +66,10 @@ test('every answer-claim label has a human display string and a description', ()
   for (const value of ANSWER_OFFSET_BASES) {
     assert.ok(ANSWER_OFFSET_BASIS_LABELS[value].length > 0);
     assert.ok(ANSWER_OFFSET_BASIS_DESCRIPTIONS[value].length > 20);
+  }
+  for (const value of ANSWER_STATEMENT_KINDS) {
+    assert.ok(ANSWER_STATEMENT_KIND_LABELS[value].length > 0);
+    assert.ok(ANSWER_STATEMENT_KIND_DESCRIPTIONS[value].length > 20);
   }
   for (const value of CLAIM_RELEVANCES) {
     assert.ok(CLAIM_RELEVANCE_LABELS[value].length > 0);
@@ -93,6 +101,11 @@ test('the description maps cover exactly the declared label sets', () => {
     Object.keys(CLAIM_RELEVANCE_LABELS).sort(),
     [...CLAIM_RELEVANCES].sort(),
     'relevance labels',
+  );
+  assert.deepEqual(
+    Object.keys(ANSWER_STATEMENT_KIND_LABELS).sort(),
+    [...ANSWER_STATEMENT_KINDS].sort(),
+    'statement kind labels',
   );
   assert.deepEqual(
     Object.keys(CLAIM_PROPOSITION_RELATION_LABELS).sort(),

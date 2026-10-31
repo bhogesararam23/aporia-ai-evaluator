@@ -172,6 +172,37 @@ test('code-point offsets let a quoted answer containing an emoji be re-derived i
   }
 });
 
+test('a recorded omission cannot be stored as a located quotation', () => {
+  const db = setup();
+  try {
+    // The quote here is a real slice at a real range, so the only rule left to refuse it is the one
+    // that says an omission is a reviewer description rather than something the answer said.
+    assert.throws(
+      () =>
+        insertAnswerClaim(db, {
+          id: 'acs_1',
+          revisionId: 'acr_1',
+          relevance: 'OMISSION',
+          offsetBasis: 'EXACT_MATCH',
+          quoteText: 'Project A was created by Ram',
+          startOffset: 0,
+          endOffset: 28,
+        }),
+      /CHECK constraint failed/,
+    );
+    insertAnswerClaim(db, {
+      id: 'acs_2',
+      revisionId: 'acr_2',
+      ordinal: 2,
+      relevance: 'OMISSION',
+      offsetBasis: 'NOT_ESTABLISHED',
+      quoteText: 'The answer never named the co-author.',
+    });
+  } finally {
+    db.close();
+  }
+});
+
 test('revising a statement keeps the earlier revision and its assessments', () => {
   const db = setup();
   try {

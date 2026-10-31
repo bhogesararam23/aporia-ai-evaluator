@@ -24,6 +24,26 @@ export const ANSWER_OFFSET_BASIS_DESCRIPTIONS: Record<AnswerOffsetBasis, string>
     'No reliable range exists — for example the operator summarised several sentences, or the answer text was re-keyed rather than pasted. No offsets are stored, because a precise-looking range that cannot be re-derived would be false precision.',
 };
 
+/**
+ * Whether a stored statement text is words the answer actually contained, or the reviewer's own
+ * description. Without this split, a paraphrase recorded with no locatable range would sit in a
+ * column called "quote" and read back as if the model had said it.
+ */
+export const ANSWER_STATEMENT_KINDS = ['QUOTED', 'REVIEWER_DESCRIPTION'] as const;
+export type AnswerStatementKind = (typeof ANSWER_STATEMENT_KINDS)[number];
+
+export const ANSWER_STATEMENT_KIND_LABELS: Record<AnswerStatementKind, string> = {
+  QUOTED: 'Quoted from the answer',
+  REVIEWER_DESCRIPTION: 'Described in the reviewer’s own words',
+};
+
+export const ANSWER_STATEMENT_KIND_DESCRIPTIONS: Record<AnswerStatementKind, string> = {
+  QUOTED:
+    'These are words the captured answer contained. A range is recorded and re-checked against the raw answer, so a later reader can locate the statement in the original.',
+  REVIEWER_DESCRIPTION:
+    'These are the reviewer’s own words summarising, or pointing to the absence of, something in the answer. No range is recorded, because the answer did not contain this text. This row describes the evaluation; it is not evidence of what the model said.',
+};
+
 export const CLAIM_RELEVANCES = [
   'ADDRESSES',
   'PARTIALLY_ADDRESSES',
