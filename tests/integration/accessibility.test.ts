@@ -23,11 +23,17 @@ import {
   createQuerySet,
 } from '../../src/persistence/repositories/querySets.ts';
 import {
+  addCitation,
   addObservation,
   createRun,
   finalizeRun,
   recordObservationAssessment,
 } from '../../src/persistence/repositories/runs.ts';
+import {
+  createAnswerClaim,
+  linkAnswerClaimProposition,
+  recordAnswerClaimAssessment,
+} from '../../src/persistence/repositories/answerClaims.ts';
 import { createWebsiteAudit } from '../../src/persistence/repositories/websiteAudits.ts';
 import { generateReport } from '../../src/app/reportingService.ts';
 import { cookieFrom, getPage, startTestServer } from '../helpers/http.ts';
@@ -298,6 +304,99 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       context,
     );
     finalizeRun(server.db, project.project.id, run.run.id, context);
+    // A second run stays open so the writable statement workspace, with all of its forms, is part
+    // of the accessibility sweep rather than only its read-only rendering.
+    const openRun = createRun(
+      server.db,
+      project.project.id,
+      querySet.set.id,
+      {
+        name: 'Decomposition run',
+        providerLabel: 'Example assistant',
+        modelLabel: undefined,
+        interfaceLabel: 'Consumer interface',
+        groundingMode: 'UNKNOWN',
+        locale: 'en',
+        region: undefined,
+        captureFrom: '2026-10-28T11:00:00.000Z',
+        captureTo: '2026-10-28T11:30:00.000Z',
+        conditions: 'Manual capture.',
+        notes: undefined,
+      },
+      context,
+    );
+    const statementQuote = 'made by Ram';
+    const statementAnswer = 'The artifact exists and was made by Ram.';
+    const openObservation = addObservation(
+      server.db,
+      project.project.id,
+      openRun.run.id,
+      {
+        queryId: query.id,
+        status: 'COMPLETED',
+        capturedAt: '2026-10-28T11:10:00.000Z',
+        answerText: statementAnswer,
+        errorNote: undefined,
+        citationCapture: 'CAPTURED',
+        contextNotes: undefined,
+      },
+      context,
+    );
+    addCitation(
+      server.db,
+      project.project.id,
+      openRun.run.id,
+      openObservation.id,
+      {
+        url: 'https://example.com/artifact',
+        title: 'Artifact',
+        snippet: undefined,
+        targetOwned: true,
+      },
+      context,
+    );
+    const statement = createAnswerClaim(
+      server.db,
+      project.project.id,
+      openObservation.id,
+      {
+        quoteText: statementQuote,
+        statementKind: 'QUOTED',
+        offsetBasis: 'EXACT_MATCH',
+        startOffset: statementAnswer.indexOf(statementQuote),
+        endOffset: statementAnswer.indexOf(statementQuote) + statementQuote.length,
+        relevance: 'ADDRESSES',
+        paraphrase: undefined,
+        note: undefined,
+      },
+      context,
+    );
+    linkAnswerClaimProposition(
+      server.db,
+      project.project.id,
+      statement.id,
+      {
+        propositionId: proposition.id,
+        relation: 'SUPPORTS_TARGET',
+        rationale: 'The answer asserts what the proposition states.',
+        reviewer: 'Ram',
+      },
+      context,
+    );
+    recordAnswerClaimAssessment(
+      server.db,
+      project.project.id,
+      statement.id,
+      {
+        dimension: 'FIDELITY',
+        label: 'ACCURATE',
+        rationale: 'Matches the recorded artifact.',
+        reviewer: 'Ram',
+        attributionSubject: undefined,
+        attributionRole: undefined,
+      },
+      context,
+    );
     const analysis = analyzeHtml(
       '<html lang="en"><head><title>Artifact</title></head><body><h1>Artifact</h1></body></html>',
     );
@@ -379,6 +478,8 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       `/projects/${project.project.id}/runs`,
       `/projects/${project.project.id}/runs/new`,
       `/projects/${project.project.id}/runs/${run.run.id}`,
+      `/projects/${project.project.id}/runs/${openRun.run.id}/observations/${openObservation.id}/claims`,
+      `/projects/${project.project.id}/runs/${run.run.id}/observations/${observation.id}/claims`,
       `/projects/${project.project.id}/audits`,
       `/projects/${project.project.id}/audits/new`,
       `/projects/${project.project.id}/audits/${audit.id}`,

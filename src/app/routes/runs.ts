@@ -42,6 +42,7 @@ import {
   type ObservationRecord,
   type RunDetail,
 } from '../../persistence/repositories/runs.ts';
+import { summarizeAnswerClaims } from '../../persistence/repositories/answerClaims.ts';
 import { parseObservationImport } from '../importObservations.ts';
 import { dateTimeLocalValue, normalizeDateTimeInput } from '../forms.ts';
 import { computeMetricsForRun } from '../runMetrics.ts';
@@ -466,6 +467,7 @@ function observationBlock(
   const open = run.run.status === 'OPEN';
   const active = observation.voidedAt === null && observation.status === 'COMPLETED';
   const latest = latestAssessments(observation.assessments);
+  const claimSummary = summarizeAnswerClaims(context.deps.db, projectId, observation.id);
   return html`
     <article class="card home-grid">
       <p class="muted small">
@@ -506,6 +508,23 @@ function observationBlock(
           : ''
       }
       <h4>Answer assessments</h4>
+      ${
+        observation.answerText === null
+          ? ''
+          : html`<p class="small">
+              <a
+                href="/projects/${projectId}/runs/${run.run.id}/observations/${observation.id}/claims"
+              >
+                Statement-level review
+              </a>
+              ·
+              ${
+                claimSummary.claims === 0
+                  ? 'no statements recorded yet'
+                  : `${String(claimSummary.assessed)} of ${String(claimSummary.liveClaims)} statement(s) assessed`
+              }
+            </p>`
+      }
       ${
         latest.length === 0
           ? html`<p class="muted">No answer-level assessments recorded.</p>`

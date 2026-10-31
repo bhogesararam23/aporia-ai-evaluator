@@ -283,6 +283,44 @@ function claimsForObservation(db: DatabaseSync, observationId: string): AnswerCl
   return rows.map((row) => assembleClaim(db, row));
 }
 
+/**
+ * Statement counts for one observation, for the run overview page.
+ *
+ * Deliberately one aggregate query rather than loading the workspace: a run can hold many
+ * observations, and the overview needs only to show how much of each answer was decomposed.
+ */
+export interface AnswerClaimSummary {
+  readonly claims: number;
+  readonly liveClaims: number;
+  readonly assessed: number;
+}
+
+export function summarizeAnswerClaims(
+  db: DatabaseSync,
+  projectId: string,
+  observationId: string,
+): AnswerClaimSummary {
+  const row = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS claims,
+         SUM(CASE WHEN c.voided_at IS NULL THEN 1 ELSE 0 END) AS live_claims,
+         COUNT(DISTINCT a.id) AS assessed
+       FROM answer_claims c
+       LEFT JOIN answer_claim_assessments a ON a.claim_id = c.id
+       WHERE c.observation_id = ? AND c.project_id = ?`,
+    )
+    .get(observationId, projectId) as Row | undefined;
+  if (row === undefined) {
+    return { claims: 0, liveClaims: 0, assessed: 0 };
+  }
+  const count = (key: string): number => {
+    const value = row[key];
+    return typeof value === 'number' || typeof value === 'bigint' ? Number(value) : 0;
+  };
+  return { claims: count('claims'), liveClaims: count('live_claims'), assessed: count('assessed') };
+}
+
 export function getAnswerClaim(
   db: DatabaseSync,
   projectId: string,

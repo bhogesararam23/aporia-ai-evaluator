@@ -60,6 +60,15 @@ All project routes are scoped by `projectId` and resolve records only within tha
 | POST | `/projects/:projectId/runs/:runId/observations/:observationId/void` | Void observation with reason |
 | POST | `/projects/:projectId/runs/:runId/observations/:observationId/citations/:citationId/void` | Void citation with reason |
 | POST | `/projects/:projectId/runs/:runId/observations/:observationId/assessments` | Add observation assessment |
+| GET | `/projects/:projectId/runs/:runId/observations/:observationId/claims` | Statement workspace: captured answer, recorded statements, links, mappings, assessments, review history, and label meanings |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims` | Record a statement; a quote that cannot be located in the answer is refused with 422 and the submitted text preserved |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/:claimId/revise` | Correct a statement as a new revision; the earlier revision and its assessments are retained |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/:claimId/void` | Void a statement with a reason; it leaves the metrics and stays readable |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/:claimId/propositions` | Link a statement to a target proposition with a relation and rationale |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/propositions/:linkId/supersede` | Record a corrected proposition relationship; the earlier link is retained |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/:claimId/citations` | Map a citation from the same answer to a statement with a support assessment |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/citations/:linkId/supersede` | Record a corrected citation support assessment |
+| POST | `/projects/:projectId/runs/:runId/observations/:observationId/claims/:claimId/assessments` | Record a statement fidelity or attribution assessment as a new version |
 | POST | `/projects/:projectId/runs/:runId/finalize` | Finalize run |
 | POST | `/projects/:projectId/runs/:runId/cancel` | Cancel run with reason |
 | POST | `/projects/:projectId/runs/:runId/import` | Atomic JSON observation import |

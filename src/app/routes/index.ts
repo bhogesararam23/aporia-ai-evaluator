@@ -6,6 +6,7 @@ import { claimRoutes } from './claims.ts';
 import { sourceRoutes } from './sources.ts';
 import { querySetRoutes } from './querySets.ts';
 import { runRoutes } from './runs.ts';
+import { answerClaimRoutes } from './answerClaims.ts';
 import { auditRoutes } from './audits.ts';
 import { reportRoutes } from './reports.ts';
 import { achievementRoutes } from './achievements.ts';
@@ -17,6 +18,7 @@ export const routes: RouteDefinition[] = [
   ...sourceRoutes,
   ...querySetRoutes,
   ...runRoutes,
+  ...answerClaimRoutes,
   ...auditRoutes,
   ...reportRoutes,
   ...achievementRoutes,
