@@ -130,6 +130,26 @@ test('loads migration files in version order', (t) => {
   );
 });
 
+test('migration identity ignores the checkout line-ending style', () => {
+  const db = openDatabase(':memory:');
+  try {
+    const lf = 'CREATE TABLE example (\n  id TEXT PRIMARY KEY\n) STRICT;\n';
+    const crlf = lf.replaceAll('\n', '\r\n');
+    assert.notEqual(lf, crlf, 'the fixture must actually differ in line endings');
+    runMigrations(db, [migration(1, 'initial', lf)]);
+    // The same migration read back with Windows line endings must still be recognised as the
+    // migration that was applied, or the database would be refused at startup.
+    assert.deepEqual(runMigrations(db, [migration(1, 'initial', crlf)]), []);
+    // A real content change is still caught.
+    assert.throws(
+      () => runMigrations(db, [migration(1, 'initial', crlf + '\n-- edited\n')]),
+      (error: unknown) => error instanceof MigrationError && /has changed/.test(error.message),
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
 test('rejects invalid and duplicate migration filenames', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'aporia-migrations-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

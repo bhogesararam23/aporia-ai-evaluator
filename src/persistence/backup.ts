@@ -16,7 +16,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { APP_VERSION } from '../version.ts';
-import { loadMigrations, type Migration } from './migrate.ts';
+import { loadMigrations, migrationChecksum, type Migration } from './migrate.ts';
 
 export const BACKUP_FORMAT_VERSION = 1;
 
@@ -142,12 +142,10 @@ function migrationIdentities(migrations: readonly Migration[]): MigrationIdentit
   return migrations.map((migration) => ({
     version: migration.version,
     name: migration.name,
-    checksum: checksumOf(migration.sql),
+    // The same identity function the migration runner uses, so a manifest cannot disagree with
+    // `schema_migrations` about what a migration's content is.
+    checksum: migrationChecksum(migration.sql),
   }));
-}
-
-function checksumOf(sql: string): string {
-  return createHash('sha256').update(sql, 'utf8').digest('hex');
 }
 
 function assertTables(db: DatabaseSync): void {

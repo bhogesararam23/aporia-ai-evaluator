@@ -56,8 +56,21 @@ export function loadMigrations(directory: string): Migration[] {
   return migrations;
 }
 
+/**
+ * Migration identity is computed over line-feed-normalised SQL.
+ *
+ * `.gitattributes` declares `* text=auto eol=lf`, but a working copy can still hold CRLF files
+ * (Windows editors, `core.autocrlf`, tools that write the platform separator). Hashing the raw bytes
+ * made the recorded checksum depend on how the checkout happened to be written, so a database
+ * migrated on one machine was refused at startup on another with the identical repository content.
+ * Normalising first keeps identity tied to the migration's actual SQL.
+ */
+export function migrationChecksum(sql: string): string {
+  return createHash('sha256').update(sql.replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+}
+
 function checksum(sql: string): string {
-  return createHash('sha256').update(sql, 'utf8').digest('hex');
+  return migrationChecksum(sql);
 }
 
 interface AppliedRow {
