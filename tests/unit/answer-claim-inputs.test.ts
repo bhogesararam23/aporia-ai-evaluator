@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  codePointLength,
   resolveQuoteOffset,
+  sliceCodePoints,
   validateAnswerClaimAssessmentInput,
   validateAnswerClaimDraftInput,
   validateClaimCitationLinkInput,
@@ -12,7 +14,7 @@ import { validateAnswerClaimRevisionInput } from '../../src/core/answerClaimInpu
 const ANSWER = 'Aram led the project and authored the parser. The system launched in 2021.';
 
 function range(result: { startOffset: number | null; endOffset: number | null }): string {
-  return ANSWER.slice(result.startOffset as number, result.endOffset as number);
+  return sliceCodePoints(ANSWER, result.startOffset as number, result.endOffset as number);
 }
 
 test('an exact quote resolves to the range it occupies in the captured answer', () => {
@@ -52,12 +54,12 @@ test('whitespace and line breaks do not defeat normalised matching', () => {
   assert.equal(result.value.startOffset, 0);
   // The mapped range must still describe the original bytes, not the normalised form.
   assert.equal(
-    spread.slice(result.value.startOffset as number, result.value.endOffset as number),
+    sliceCodePoints(spread, result.value.startOffset as number, result.value.endOffset as number),
     'Aram  led\n  the project',
   );
 });
 
-test('normalised matching maps back to original code-unit offsets', () => {
+test('normalised matching maps back to original code-point offsets', () => {
   const text = 'The  launch\tdate is 2021.';
   const result = resolveQuoteOffset(text, 'launch date', 'NORMALIZED_MATCH');
   assert.equal(result.ok, true);
@@ -65,7 +67,7 @@ test('normalised matching maps back to original code-unit offsets', () => {
     return;
   }
   assert.equal(
-    text.slice(result.value.startOffset as number, result.value.endOffset as number),
+    sliceCodePoints(text, result.value.startOffset as number, result.value.endOffset as number),
     'launch\tdate',
   );
 });
@@ -99,20 +101,22 @@ test('an empty captured answer cannot locate a quote', () => {
   }
 });
 
-test('a range never splits a surrogate pair', () => {
+test('offsets count code points, which is what lets SQLite re-verify a stored range', () => {
   const text = '\u{1F389} shipped the parser \u{1F389}';
   const result = resolveQuoteOffset(text, 'shipped the parser', 'EXACT_MATCH');
   assert.equal(result.ok, true);
   if (!result.ok) {
     return;
   }
-  const start = result.value.startOffset as number;
-  const end = result.value.endOffset as number;
-  const before = text.charCodeAt(start - 1);
-  const after = text.charCodeAt(end);
-  assert.equal(before >= 0xd800 && before <= 0xdbff, false, 'range begins inside a pair');
-  assert.equal(after >= 0xdc00 && after <= 0xdfff, false, 'range ends inside a pair');
-  assert.equal(text.slice(start, end), 'shipped the parser');
+  // Two emoji are four UTF-16 code units but two code points, so the offsets must be code-point
+  // offsets for `substr(answer_text, start + 1, end - start)` to return the quote.
+  assert.equal(result.value.startOffset, 2);
+  assert.equal(result.value.endOffset, 20);
+  assert.equal(
+    sliceCodePoints(text, result.value.startOffset as number, result.value.endOffset as number),
+    'shipped the parser',
+  );
+  assert.notEqual(codePointLength(text), text.length);
 });
 
 test('draft validation resolves the quote and refuses a fabricated one', () => {

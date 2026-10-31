@@ -39,9 +39,13 @@ export interface AnswerClaimOffsetResult {
  * Verify that a recorded quote really comes from the captured answer, and resolve the character
  * range it occupies.
  *
- * Offsets are UTF-16 code-unit indices into the stored `answer_text`, which is what JavaScript
- * `slice` uses. They are only recorded when they can be re-derived from the raw answer, so a
- * paraphrased or edited quote can never carry a precise-looking range that does not describe it.
+ * Offsets count **Unicode code points**, not UTF-16 code units. That definition is deliberate: it is
+ * what SQLite `substr()` and `length()` use, so the database can independently re-check that a quote
+ * marked `EXACT_MATCH` really is the text it claims to occupy. JavaScript must convert, because
+ * `slice` counts code units.
+ *
+ * A range is only recorded when it can be re-derived from the raw answer, so a paraphrased or edited
+ * quote can never carry a precise-looking offset pair that does not describe it.
  */
 export function resolveQuoteOffset(
   answerText: string,
@@ -65,7 +69,10 @@ export function resolveQuoteOffset(
         'The quote is not present verbatim in the captured answer. Choose an exact-match quote from the original text, or record the basis as “not established”.',
       );
     }
-    return valid({ startOffset: start, endOffset: start + quoteText.length });
+    return valid({
+      startOffset: toCodePointOffset(answerText, start),
+      endOffset: toCodePointOffset(answerText, start) + codePointLength(quoteText),
+    });
   }
   const located = findNormalizedRange(answerText, quoteText);
   if (located === null) {
@@ -74,7 +81,30 @@ export function resolveQuoteOffset(
       'The quote does not match the captured answer even after normalising whitespace and equivalent characters. Record the basis as “not established”.',
     );
   }
-  return valid(located);
+  return valid({
+    startOffset: toCodePointOffset(answerText, located.startOffset),
+    endOffset: toCodePointOffset(answerText, located.endOffset),
+  });
+}
+
+/** Number of Unicode code points in `text`, which is how stored offsets count. */
+export function codePointLength(text: string): number {
+  return [...text].length;
+}
+
+/** Extract a stored range, where `start` and `end` are code-point offsets. */
+export function sliceCodePoints(text: string, start: number, end: number): string {
+  return [...text].slice(start, end).join('');
+}
+
+function toCodePointOffset(text: string, unitOffset: number): number {
+  return codePointLength(text.slice(0, unitOffset));
+}
+
+/** A located range in UTF-16 code units, before conversion into the stored code-point offsets. */
+interface UnitRange {
+  readonly startOffset: number;
+  readonly endOffset: number;
 }
 
 interface NormalizedText {
@@ -135,10 +165,7 @@ function isTrailingWhitespace(units: readonly string[]): boolean {
   return units.length > 0 && WHITESPACE.test(units[units.length - 1] as string);
 }
 
-function findNormalizedRange(
-  answerText: string,
-  quoteText: string,
-): AnswerClaimOffsetResult | null {
+function findNormalizedRange(answerText: string, quoteText: string): UnitRange | null {
   const haystack = normalizeWithMap(answerText);
   const needle = normalizeWithMap(quoteText).text;
   if (needle.length === 0) {
