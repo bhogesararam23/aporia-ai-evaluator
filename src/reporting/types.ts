@@ -3,7 +3,7 @@ import type {
   EvidenceRelationshipRecord,
   PropositionConclusion,
 } from '../core/evidence.ts';
-import type { RunMetrics } from '../core/metrics.ts';
+import type { RunMetrics, MetricUnit } from '../core/metrics.ts';
 import type {
   AssessmentMethod,
   AttributionRole,
@@ -345,7 +345,7 @@ export interface ReportRunView {
 export interface MetricDelta {
   readonly metricId: string;
   readonly label: string;
-  readonly unit: 'observations' | 'query intents';
+  readonly unit: MetricUnit;
   readonly current: number | null;
   readonly prior: number | null;
   readonly delta: number | null;

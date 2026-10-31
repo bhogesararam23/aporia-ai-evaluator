@@ -156,9 +156,11 @@ test('creates a consistent backup with a validated manifest', async () => {
     assert.equal(result.directory, output);
     assert.equal(result.manifest.formatVersion, BACKUP_FORMAT_VERSION);
     assert.equal(result.manifest.createdAt, NOW);
+    const latestMigration = loadMigrations(MIGRATIONS).at(-1);
+    assert.notEqual(latestMigration, undefined, 'no migrations were found');
     assert.equal(
       result.manifest.schemaVersion,
-      loadMigrations(MIGRATIONS).at(-1)?.version,
+      latestMigration?.version,
       'the manifest records the highest applied migration',
     );
     assert.equal(result.manifest.tableCounts.projects, 1);

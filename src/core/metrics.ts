@@ -1,4 +1,16 @@
+import {
+  computeClaimLevelMetrics,
+  type ClaimLevelMetrics,
+  type ClaimLevelMetricsInput,
+} from './claimMetrics.ts';
 import { METRICS_VERSION } from './versions.ts';
+import {
+  countExclusions,
+  rate,
+  type ExclusionReason,
+  type MetricExclusion,
+  type MetricResult,
+} from './metricsCommon.ts';
 import type {
   AssessmentDimension,
   AttributionLabel,
@@ -11,57 +23,15 @@ import type {
   RunStatus,
 } from './vocabulary.ts';
 
-export const EXCLUSION_REASONS = [
-  'VOIDED_OBSERVATION',
-  'PROVIDER_ERROR',
-  'BLOCKED',
-  'TIMEOUT',
-  'UNAVAILABLE_TOOL',
-  'POLICY_REFUSAL',
-  'NO_ANSWER',
-  'PRESENCE_UNASSESSED',
-  'PRESENCE_NOT_ASSESSABLE',
-  'FIDELITY_UNASSESSED',
-  'FIDELITY_NOT_ASSESSABLE',
-  'CITATION_METADATA_UNAVAILABLE',
-  'NO_ACTIVE_CITATIONS',
-  'CITATION_SUPPORT_UNASSESSED',
-  'CITATION_SUPPORT_NOT_ASSESSABLE',
-  'ATTRIBUTION_NOT_ADDRESSED',
-  'ATTRIBUTION_UNASSESSED',
-  'ATTRIBUTION_NOT_ASSESSABLE',
-  'QUERY_UNTESTED',
-  'QUERY_PRESENCE_UNASSESSED',
-] as const;
-
-export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];
-
-export const EXCLUSION_DESCRIPTIONS: Record<ExclusionReason, string> = {
-  VOIDED_OBSERVATION: 'The operator voided this observation; the original record is retained.',
-  PROVIDER_ERROR: 'A capture or provider error occurred. This is not a negative answer.',
-  BLOCKED: 'Access was blocked. This is not evidence about the claim.',
-  TIMEOUT: 'The capture timed out. This is not evidence about the claim.',
-  UNAVAILABLE_TOOL: 'The system or capture route was unavailable. This is not a negative answer.',
-  POLICY_REFUSAL:
-    'The system refused on policy or safety grounds. A refusal is not a factual denial.',
-  NO_ANSWER: 'The system produced no answer or abstained. Silence is not scored as incorrect.',
-  PRESENCE_UNASSESSED: 'No presence assessment was recorded.',
-  PRESENCE_NOT_ASSESSABLE: 'The presence assessment was marked not assessable.',
-  FIDELITY_UNASSESSED: 'No fidelity assessment was recorded.',
-  FIDELITY_NOT_ASSESSABLE: 'The fidelity assessment was marked not assessable.',
-  CITATION_METADATA_UNAVAILABLE:
-    'The capture declares that citations were not shown or their availability is unknown.',
-  NO_ACTIVE_CITATIONS: 'The observation has no active citation to evaluate for support.',
-  CITATION_SUPPORT_UNASSESSED: 'No citation-support assessment was recorded.',
-  CITATION_SUPPORT_NOT_ASSESSABLE: 'The citation-support assessment was marked not assessable.',
-  ATTRIBUTION_NOT_ADDRESSED:
-    'The answer did not attribute the accomplishment, so attribution is not scored.',
-  ATTRIBUTION_UNASSESSED: 'No attribution assessment was recorded.',
-  ATTRIBUTION_NOT_ASSESSABLE: 'The attribution assessment was marked not assessable.',
-  QUERY_UNTESTED: 'No eligible completed observation was recorded for this query intent.',
-  QUERY_PRESENCE_UNASSESSED:
-    'The query was tested, but no eligible observation has a presence assessment.',
-};
+// The shared exclusion vocabulary moved to `metricsCommon.ts` so the claim-level metrics can use it
+// without importing this module. It is re-exported here because callers read it from `metrics.ts`.
+export { EXCLUSION_REASONS, EXCLUSION_DESCRIPTIONS } from './metricsCommon.ts';
+export type {
+  ExclusionReason,
+  MetricExclusion,
+  MetricResult,
+  MetricUnit,
+} from './metricsCommon.ts';
 
 export interface CitationInput {
   readonly id: string;
@@ -102,25 +72,12 @@ export interface RunMetricsInput {
   readonly runStatus: RunStatus;
   readonly queries: readonly QueryInput[];
   readonly observations: readonly ObservationInput[];
-}
-
-export interface MetricExclusion {
-  readonly reason: ExclusionReason;
-  readonly count: number;
-  readonly description: string;
-}
-
-export interface MetricResult {
-  readonly id: string;
-  readonly label: string;
-  readonly definition: string;
-  readonly unit: 'observations' | 'query intents';
-  readonly numerator: number | null;
-  readonly denominator: number;
-  readonly value: number | null;
-  readonly exclusions: readonly MetricExclusion[];
-  readonly breakdown?: Readonly<Record<string, number>>;
-  readonly notes: readonly string[];
+  /**
+   * Answer statements recorded against the current revision of each claim. Absent, or an empty
+   * list, means the answers were never decomposed: the claim-level block is then absent from the
+   * result rather than reported as zero.
+   */
+  readonly claims?: ClaimLevelMetricsInput['claims'];
 }
 
 export type QueryCoverageStatus =
@@ -196,6 +153,11 @@ export interface RunMetrics {
   readonly claimFidelityRate: MetricResult;
   readonly attributionCorrectnessRate: MetricResult;
   readonly observedAnswerCoverage: MetricResult;
+  /**
+   * Added by `metrics-v3`. Absent in `metrics-v1` and `metrics-v2` snapshots, where the answers
+   * were not decomposed; absence must be rendered as "not recorded", never as zero.
+   */
+  readonly claimLevel?: ClaimLevelMetrics;
   readonly notes: readonly string[];
 }
 
@@ -238,25 +200,6 @@ function latestLabel(
     }
   }
   return latest?.label;
-}
-
-function countExclusions(reasons: readonly ExclusionReason[]): MetricExclusion[] {
-  const counts = new Map<ExclusionReason, number>();
-  for (const reason of reasons) {
-    counts.set(reason, (counts.get(reason) ?? 0) + 1);
-  }
-  return EXCLUSION_REASONS.filter((reason) => (counts.get(reason) ?? 0) > 0).map((reason) => ({
-    reason,
-    count: counts.get(reason) ?? 0,
-    description: EXCLUSION_DESCRIPTIONS[reason],
-  }));
-}
-
-function rate(numerator: number | null, denominator: number): number | null {
-  if (numerator === null || denominator === 0) {
-    return null;
-  }
-  return numerator / denominator;
 }
 
 function activeCitations(observation: ObservationInput): CitationInput[] {
@@ -303,6 +246,7 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
   const globalReasons: ExclusionReason[] = [];
   let eligibleCount = 0;
   let voidedCount = 0;
+  const eligibleObservationIds: string[] = [];
   for (const observation of input.observations) {
     if (observation.voided) {
       voidedCount += 1;
@@ -314,6 +258,7 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
       }
     } else {
       eligibleCount += 1;
+      eligibleObservationIds.push(observation.id);
     }
   }
 
@@ -584,6 +529,11 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
     notes.push(`Preview only: the run is ${input.runStatus}, not FINALIZED.`);
   }
 
+  const claimLevel = computeClaimLevelMetrics({
+    claims: input.claims ?? [],
+    eligibleObservationIds,
+  });
+
   return {
     version: METRICS_VERSION,
     runStatus: input.runStatus,
@@ -685,6 +635,7 @@ export function computeRunMetrics(input: RunMetricsInput): RunMetrics {
       ],
     }),
     observedAnswerCoverage: coverageMetric,
+    ...(claimLevel === null ? {} : { claimLevel }),
     notes,
   };
 }

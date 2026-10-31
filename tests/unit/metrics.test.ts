@@ -104,7 +104,9 @@ function exclusionCount(
 test('computes separate rates with explicit denominators and exclusions', () => {
   const metrics = computeRunMetrics(baseInput());
 
-  assert.equal(metrics.version, 'metrics-v2');
+  assert.equal(metrics.version, 'metrics-v3');
+  // A run with no recorded answer statements has no claim-level answer, not a claim-level zero.
+  assert.equal(metrics.claimLevel, undefined);
   assert.deepEqual(
     {
       numerator: metrics.mentionRate.numerator,
