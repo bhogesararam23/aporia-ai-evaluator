@@ -79,11 +79,17 @@ The milestone requirement is therefore a statement-level layer that:
    `SUPPORTS` still does not affect fidelity: fidelity is assessed on the claim, citation support on
    the mapping.
 7. **Assessment is versioned per claim revision.** `answer_claim_assessments` is append-only with
-   `dimension` in `FIDELITY`, `CITATION_SUPPORT`, `ATTRIBUTION` and a version per
-   (claim, dimension), mirroring `observation_assessments`. Fidelity labels extend the existing set
-   with `OMITTED`, `REFUSED`, `UNAVAILABLE`, so that "did not say" is never counted as "said wrong".
-   Attribution labels add `WRONG_ROLE`, `AMBIGUOUS`, `FALSE_SOLE_CREDIT`, and
-   `COLLABORATIVE_PARTIAL` to distinguish "right person, wrong role" and "shared work claimed as
+   `dimension` in `FIDELITY` and `ATTRIBUTION` and a version per (claim, dimension), mirroring
+   `observation_assessments`. Citation support is deliberately **not** an assessment dimension: it is
+   recorded on the claim-to-citation mapping row (decision 6), because one statement can be supported
+   by one citation and contradicted by another, and a single claim-level "citation support" label
+   would re-merge exactly what claim-level evaluation exists to separate. Correcting a mapping uses
+   the one-way supersession fields that `evidence_relationships` already uses, so the revised
+   judgement is a new row and the original stays readable.
+   Fidelity labels extend the existing set with `OMITTED`, `REFUSED`, and `UNAVAILABLE`, so that
+   "did not say" is never counted as "said wrong". Attribution labels add `WRONG_ROLE`,
+   `WRONG_PERSON`, `AMBIGUOUS`, `FALSE_SOLE_CREDIT`, `COLLABORATIVE_PARTIAL`, and `UNATTRIBUTED` to
+   distinguish "right person, wrong role" and "shared work claimed as
    sole credit" from a flat `INCORRECT`.
 8. **Assessment is allowed while the run is open, and only then.** The claim layer inherits the
    existing rule that observation assessments require an open run, so a finalized run cannot be
