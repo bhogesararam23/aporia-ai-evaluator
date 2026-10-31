@@ -27,10 +27,20 @@ import {
   createAchievement,
 } from '../../src/persistence/repositories/achievements.ts';
 import {
+  approveQuerySet,
+  insertAnswerClaim,
+  insertClaimAssessment,
+  insertClaimCitationLink,
+  insertClaimPropositionLink,
+  insertCitation,
   insertClaimWithProposition,
   insertEvidenceWithRelation,
+  insertObservation,
   insertProject,
+  insertQuery,
+  insertQuerySet,
   insertReport,
+  insertRun,
   insertSource,
 } from '../helpers/db.ts';
 
@@ -51,6 +61,7 @@ function seedDatabase(
   projectName = 'Aporia',
   reportSnapshot?: string,
   withAchievement = false,
+  withAnswerClaims = false,
 ): void {
   mkdirSync(dirname(path), { recursive: true });
   const db = openDatabase(path);
@@ -59,6 +70,25 @@ function seedDatabase(
     insertProject(db, { name: projectName });
     insertClaimWithProposition(db);
     insertReport(db, reportSnapshot === undefined ? {} : { snapshotJson: reportSnapshot });
+    if (withAnswerClaims) {
+      insertQuerySet(db);
+      insertQuery(db);
+      approveQuerySet(db);
+      insertRun(db);
+      insertObservation(db, { answerText: 'Project A was created by Ram.' });
+      insertCitation(db, { observationId: 'obs_1' });
+      insertAnswerClaim(db, { quoteText: 'created by Ram' });
+      insertClaimPropositionLink(db);
+      insertClaimCitationLink(db);
+      insertClaimAssessment(db, { dimension: 'FIDELITY', version: 1 });
+      insertClaimAssessment(db, {
+        id: 'aca_2',
+        dimension: 'ATTRIBUTION',
+        version: 1,
+        label: 'CORRECT',
+        attributionSubject: 'Ram',
+      });
+    }
     if (withAchievement) {
       insertSource(db);
       insertEvidenceWithRelation(db);
@@ -126,7 +156,11 @@ test('creates a consistent backup with a validated manifest', async () => {
     assert.equal(result.directory, output);
     assert.equal(result.manifest.formatVersion, BACKUP_FORMAT_VERSION);
     assert.equal(result.manifest.createdAt, NOW);
-    assert.equal(result.manifest.schemaVersion, 7);
+    assert.equal(
+      result.manifest.schemaVersion,
+      loadMigrations(MIGRATIONS).at(-1)?.version,
+      'the manifest records the highest applied migration',
+    );
     assert.equal(result.manifest.tableCounts.projects, 1);
     assert.equal(result.manifest.tableCounts.reports, 1);
     assert.match(result.manifest.databaseSha256, /^[a-f0-9]{64}$/);
@@ -197,6 +231,76 @@ test('a backup restores into an empty data directory', async () => {
         JSON.parse(String(report?.['snapshot_json']))['schemaVersion'],
         'report-snapshot-v1',
       );
+    } finally {
+      closeDatabase(db);
+    }
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a backup carries claim-level statements, links, assessments and history intact', async () => {
+  const temp = tempDir();
+  try {
+    const source = join(temp.path, 'aporia.db');
+    seedDatabase(source, 'Claim-level project', undefined, false, true);
+    const backupDir = join(temp.path, 'backup-1');
+    const result = await createBackup(source, backupDir, { now: () => NOW });
+
+    // Every claim-level table must appear in the manifest, or a silent omission would pass
+    // verification while dropping the whole statement layer.
+    assert.equal(result.manifest.tableCounts.answer_claims, 1);
+    assert.equal(result.manifest.tableCounts.answer_claim_revisions, 1);
+    assert.equal(result.manifest.tableCounts.answer_claim_propositions, 1);
+    assert.equal(result.manifest.tableCounts.answer_claim_citations, 1);
+    assert.equal(result.manifest.tableCounts.answer_claim_assessments, 2);
+
+    const destination = join(temp.path, 'destination');
+    const restored = await restoreBackup({
+      backupDirectory: backupDir,
+      dataDir: destination,
+      replace: false,
+      confirmation: '',
+    });
+    assert.equal(restored.counts.answer_claims, 1);
+    assert.equal(restored.counts.answer_claim_assessments, 2);
+
+    const db = openDatabase(join(destination, 'aporia.db'));
+    try {
+      const answerText = String(
+        db.prepare('SELECT answer_text FROM observations WHERE id = ?').get('obs_1')?.[
+          'answer_text'
+        ],
+      );
+      const revision = db
+        .prepare('SELECT quote_text, start_offset, end_offset FROM answer_claim_revisions')
+        .get() as Record<string, unknown>;
+      assert.equal(revision['quote_text'], 'created by Ram');
+      // The restored offsets must still select the same text from the restored answer, which is
+      // what the quote trigger will re-check on any later revision.
+      const start = Number(revision['start_offset']);
+      const end = Number(revision['end_offset']);
+      assert.equal(answerText.slice(start, end), 'created by Ram');
+      const assessment = db
+        .prepare(
+          'SELECT dimension, label, attribution_subject FROM answer_claim_assessments ORDER BY dimension',
+        )
+        .all() as Record<string, unknown>[];
+      assert.deepEqual(
+        assessment.map((row) => row['label']),
+        ['CORRECT', 'ACCURATE'],
+      );
+      assert.equal(assessment[0]?.['attribution_subject'], 'Ram');
+      // The restored rows must still satisfy the quote trigger, so a later revision is writable.
+      db.prepare(
+        `INSERT INTO answer_claim_revisions
+          (id, project_id, claim_id, revision, quote_text, offset_basis, start_offset,
+           end_offset, relevance, supersedes_revision_id, decomposition_version, created_by,
+           created_at)
+         SELECT 'acr_2', project_id, claim_id, 2, ?, offset_basis, start_offset, end_offset,
+           relevance, id, decomposition_version, created_by, created_at
+         FROM answer_claim_revisions WHERE id = 'acr_1'`,
+      ).run('created by Ram');
     } finally {
       closeDatabase(db);
     }
