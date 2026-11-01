@@ -122,6 +122,31 @@ Stores a monotonically numbered per-project report, title, generation time, snap
 
 Triggers make revisions and their child rows immutable; reject a claim, source, or evidence item from another project; require a claim revision to belong to its claim; prevent project/creation identity changes; and prevent an approval of a stale revision or a mismatched hash. Project deletion cascades achievement records, revisions, child rows, and approvals.
 
+### `answer_claims`, `answer_claim_revisions`, `answer_claim_propositions`, `answer_claim_citations`, `answer_claim_assessments` (`008_answer_claims.sql`)
+
+One captured answer decomposed into the statements it actually makes, without editing the answer (ADR-018).
+
+- `answer_claims` belongs to one observation, carries a per-observation `ordinal`, and points at one current revision. `UNIQUE(observation_id, ordinal)` is enforced by a table constraint, not only by repository code: an earlier draft relied on the code alone and would have accepted two statements claiming the same position.
+- `answer_claim_revisions` is immutable and stores `quote_text` with `offset_basis`, `start_offset`, `end_offset`, `statement_kind`, and `relevance`. Offsets are counted in Unicode **code points**, not UTF-16 code units, because SQLite's `substr` and `length` count code points — a `QUOTED` revision is re-verified by a trigger that re-derives the quoted text from the stored answer and compares it, which is only possible while both sides count the same thing.
+- `statement_kind` splits `'QUOTED'` (an exact or normalised match with a located range) from `'REVIEWER_DESCRIPTION'` (`offset_basis = 'NOT_ESTABLISHED'`), and `OMISSION` must be a reviewer description: an omitted statement has no text in the answer to locate. CHECK constraints and the core validator both enforce this, because a storable "located omission" would be a fabricated quote.
+- `answer_claim_propositions` maps a statement to a target proposition with a relation (`SUPPORTS`, `PARTIALLY_SUPPORTS`, `CONTRADICTS`, `REFINES`, `DOES_NOT_ADDRESS`, `UNCERTAIN`, `OMITS_TARGET`, `INSUFFICIENT_FOR_TARGET`) and a rationale. A partial unique index allows one active link per statement-and-proposition pair while keeping superseded links as history.
+- `answer_claim_citations` maps a statement to a citation **from the same answer** with a support label; citation support lives on the mapping row, not in an assessment dimension, so the number of citations never masquerades as an accuracy measure.
+- `answer_claim_assessments` is append-only and versioned, and a trigger requires each label to belong to the dimension it is filed under. A statement may be marked `NOT_ASSESSED` and stay useful for decomposition coverage.
+
+Triggers require an open run for inserts, refuse writes that touch a voided statement or a voided observation, keep a supersession chain honest (`supersedes` must point at the previous revision of the same claim), re-derive quote text and range, bound offsets to the answer length, restrict `attribution_detail` to attribution assessments, and re-check `observations.voided_at` against its statements, so an answer cannot be voided while a statement still reads as live.
+
+### `remediation_findings`, `finding_references`, `finding_updates`, `retest_comparisons` (`009_remediation.sql`)
+
+Tracked evaluation problems and the guards that make the honest reading unavoidable (ADR-021).
+
+- `remediation_findings` carries `UNIQUE(project_id, reference_number)`, rendered as `F-0001`. A trigger refuses any status other than `OPEN` at insert, so a finding cannot be created already improved.
+- A status that claims a measurement (`IMPROVED`, `UNCHANGED`, `REGRESSED`, `UNABLE_TO_VERIFY`) is refused unless a stored `retest_comparisons` row for that finding carries the matching outcome (`NOT_COMPARABLE` also unlocks `UNABLE_TO_VERIFY`). Severity and cause cannot move without a `finding_updates` row written at the same instant. Closure and `WONT_FIX` require a rationale. Identity, project, reference number, creator, creation time, lifecycle version, first-observed time and suggestion key are immutable.
+- `finding_updates` is append-only, `UNIQUE(finding_id, sequence)`, and a trigger refuses a gap in the sequence and any entry except the first that omits a previous status.
+- `finding_references` holds exactly one typed target among eight nullable foreign keys, with a CHECK on the count and a trigger requiring the target to live in the finding's own project. A multi-column `UNIQUE` was deliberately not used: SQLite treats NULLs as distinct, so it would appear to forbid duplicate pointers while permitting every one of them.
+- `retest_comparisons` refuses `base_run_id = later_run_id` and refuses a direction (`CHECK (comparable = 1 OR outcome IN ('NOT_COMPARABLE','UNABLE_TO_VERIFY'))`). It is append-only and project-scoped by trigger, because a run and a finding from different projects would otherwise read as a trend.
+
+Two schema behaviours are worth knowing before adding a guard here. SQLite fires multiple triggers for the same event **ordered by trigger name**, not by creation order, so two overlapping `BEFORE INSERT` guards will report whichever name sorts first — write each test case so only one rule can reject it, or the assertion is about naming. And a `BEFORE INSERT` trigger runs **before** table CHECK constraints, so a scope guard placed first will bury a malformed row under a boundary message; the guard here is written to speak only once the row has exactly one target.
+
 ## 4. Cross-cutting invariants
 
 - Every persisted record has a stable identifier and timestamps.
@@ -129,6 +154,8 @@ Triggers make revisions and their child rows immutable; reject a claim, source, 
 - Supporting and contradictory evidence relationships coexist; corrections supersede rather than delete.
 - Provider/capture errors are observation statuses and eligibility exclusions, not negative claims.
 - Reports reference the exact snapshot and versions used.
+- Migrations are identified by a SHA-256 of their SQL with CRLF normalised to LF, so a checkout that converts line endings cannot make an applied migration look tampered with. `migrationChecksum()` in `src/persistence/migrate.ts` is the only implementation and the backup manifest reads it from there.
+- `BACKUP_TABLES` must name every table the migrations create. A test enumerates `sqlite_master` and compares it with the manifest in both directions, because a table left out verifies as consistent while silently dropping everything the new migration stored.
 - No table stores plan, invoice, subscription, revenue, or entitlement data.
 
 ## 5. Data control and limitations
@@ -139,5 +166,6 @@ Triggers make revisions and their child rows immutable; reject a claim, source, 
 - The database is a single local file plus WAL/SHM files while running. Stop the server before copying it for a consistent backup.
 - No achievement, public publication, review-event, benchmark, or provider-capability tables exist in v0.1.
 - Achievement records, revisions, contributor roles, evidence links, and approval rows were added in v0.2 (`007_achievements.sql`); publication is still not implemented.
+- Answer-statement decomposition (`008_answer_claims.sql`) and tracked remediation findings (`009_remediation.sql`) were added in v0.3. A benchmark case set is a versioned file format validated by `src/benchmark/`, not a table: there is no stored benchmark dataset, and none is fabricated.
 
 See [Local operations](../operations/LOCAL_RUNBOOK.md) for backup and troubleshooting guidance.

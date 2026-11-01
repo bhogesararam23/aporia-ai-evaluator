@@ -72,6 +72,16 @@ All project routes are scoped by `projectId` and resolve records only within tha
 | POST | `/projects/:projectId/runs/:runId/finalize` | Finalize run |
 | POST | `/projects/:projectId/runs/:runId/cancel` | Cancel run with reason |
 | POST | `/projects/:projectId/runs/:runId/import` | Atomic JSON observation import |
+| GET | `/projects/:projectId/findings` | Tracked findings with a status filter and per-project numbering |
+| GET | `/projects/:projectId/findings/new` | Raise-a-finding form; optional query parameters prefill a pointer and a report-suggestion handoff |
+| POST | `/projects/:projectId/findings` | Create a finding open; a half-filled pointer is refused rather than dropped |
+| GET | `/projects/:projectId/findings/:findingId` | Narrative, severity and cause with rationales, pointers by target wording, offered statuses, history, comparisons; `?referenceType=` reveals a target list |
+| POST | `/projects/:projectId/findings/:findingId/transition` | Append a status change; a measured status without a supporting stored comparison returns 422 naming what would unlock it |
+| POST | `/projects/:projectId/findings/:findingId/details` | Amend severity, cause, owner or action with a required note; the history entry is written first |
+| POST | `/projects/:projectId/findings/:findingId/references` | Link one typed pointer, validated to the finding's own project |
+| POST | `/projects/:projectId/findings/:findingId/references/:referenceId/remove` | Remove a pointer with an audit event; the finding body is unchanged |
+| GET | `/projects/:projectId/findings/:findingId/retest` | Run-pair and focus-metric picker, then a preview with comparability reasons, per-metric rows, polarity, and the causal boundary. Writes nothing |
+| POST | `/projects/:projectId/findings/:findingId/retest/record` | Recompute the comparison from stored runs and record it; refused unless the finding is awaiting a retest |
 | GET | `/projects/:projectId/audits` | Local HTML audit list |
 | GET | `/projects/:projectId/audits/new` | Paste/upload HTML form |
 | POST | `/projects/:projectId/audits` | Parse and store local audit |
