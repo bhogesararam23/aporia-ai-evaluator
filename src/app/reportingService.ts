@@ -257,6 +257,14 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
         })),
         answerClaims: listAnswerClaimsForObservation(db, observation.id).map((claim) => {
           const revision = claim.currentRevision;
+          // The cited record's state is read here rather than inferred from the mapping row, because
+          // a citation can be voided after a statement was linked to it and the mapping must stop
+          // counting as support while remaining in the history.
+          const voidedCitationIds = new Set(
+            observation.citations
+              .filter((citation) => citation.voidedAt !== null)
+              .map((citation) => citation.id),
+          );
           return {
             id: claim.id,
             ordinal: claim.ordinal,
@@ -275,9 +283,13 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
                 propositionId: link.propositionId,
                 relation: link.relation,
               })),
-            citationSupports: claim.citationLinks
+            citationMappings: claim.citationLinks
               .filter((link) => link.supersededBy === null)
-              .map((link) => link.support),
+              .map((link) => ({
+                citationId: link.citationId,
+                support: link.support,
+                citationVoided: voidedCitationIds.has(link.citationId),
+              })),
             labels: currentClaimLabels(claim),
             voidedAt: claim.voidedAt,
           };

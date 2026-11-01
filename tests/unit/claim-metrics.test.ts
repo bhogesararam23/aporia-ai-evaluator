@@ -5,7 +5,7 @@ import {
   type ObservationInput,
   type RunMetricsInput,
 } from '../../src/core/metrics.ts';
-import type { AnswerClaimInput } from '../../src/core/claimMetrics.ts';
+import type { AnswerClaimCitationInput, AnswerClaimInput } from '../../src/core/claimMetrics.ts';
 
 const OBSERVATION: ObservationInput = {
   id: 'obs_1',
@@ -32,15 +32,27 @@ type ClaimOverrides = Partial<Omit<AnswerClaimInput, 'fidelityLabel' | 'attribut
   readonly attributionLabel?: string | undefined;
 };
 
+function mapping(
+  support: string,
+  overrides: { readonly citationId?: string; readonly citationVoided?: boolean } = {},
+): AnswerClaimCitationInput {
+  return {
+    citationId: overrides.citationId ?? 'cit_1',
+    support,
+    citationVoided: overrides.citationVoided ?? false,
+  };
+}
+
 function claim(overrides: ClaimOverrides = {}): AnswerClaimInput {
   return {
     claimId: 'acs_1',
     observationId: 'obs_1',
     revisionId: 'acr_1',
     relevance: 'ADDRESSES',
+    voided: false,
     fidelityLabel: 'ACCURATE',
     attributionLabel: 'NOT_ADDRESSED',
-    citationSupports: ['SUPPORTS'],
+    citationMappings: [mapping('SUPPORTS')],
     propositionRelations: [{ propositionId: 'prp_1', relation: 'SUPPORTS_TARGET' }],
     ...overrides,
   };
@@ -89,25 +101,49 @@ test('the fidelity denominator holds only definitive assessments', () => {
       claim({ claimId: 'b', fidelityLabel: 'CONTRADICTED' }),
       claim({ claimId: 'c', fidelityLabel: 'UNSUPPORTED' }),
       claim({ claimId: 'd', fidelityLabel: 'PARTIALLY_ACCURATE' }),
-      claim({ claimId: 'e', fidelityLabel: 'OMITTED' }),
-      claim({ claimId: 'f', fidelityLabel: 'REFUSED' }),
-      claim({ claimId: 'g', fidelityLabel: 'UNAVAILABLE' }),
-      claim({ claimId: 'h', fidelityLabel: 'NOT_ADDRESSED' }),
-      claim({ claimId: 'i', fidelityLabel: 'NOT_ASSESSABLE' }),
-      claim({ claimId: 'j', fidelityLabel: undefined }),
+      // Each gap label is paired with the relevance that makes it honest, so the exclusion names the
+      // gap rather than a recording conflict. The proposition link is dropped on those rows because a
+      // statement that omits, refuses or stands unrelated cannot also assert the target.
+      claim({
+        claimId: 'e',
+        relevance: 'OMISSION',
+        fidelityLabel: 'OMITTED',
+        propositionRelations: [],
+      }),
+      claim({
+        claimId: 'f',
+        relevance: 'REFUSAL',
+        fidelityLabel: 'REFUSED',
+        propositionRelations: [],
+      }),
+      claim({
+        claimId: 'g',
+        relevance: 'UNAVAILABLE',
+        fidelityLabel: 'UNAVAILABLE',
+        propositionRelations: [],
+      }),
+      claim({
+        claimId: 'h',
+        relevance: 'UNRELATED',
+        fidelityLabel: 'NOT_ADDRESSED',
+        propositionRelations: [],
+      }),
+      claim({ claimId: 'i', fidelityLabel: 'NOT_ASSESSABLE', propositionRelations: [] }),
+      claim({ claimId: 'j', fidelityLabel: undefined, propositionRelations: [] }),
     ]),
   );
   assert.equal(claimLevel.claimFidelityRate.denominator, 4);
   assert.equal(claimLevel.claimFidelityRate.numerator, 1);
   assert.equal(claimLevel.unassessedClaims, 1);
+  assert.equal(claimLevel.labelConflictClaims, 0, 'every pair above is internally consistent');
   const reasons = claimLevel.claimFidelityRate.exclusions.map((row) => row.reason).sort();
   assert.deepEqual(reasons, [
     'CLAIM_FIDELITY_UNASSESSED',
-    'CLAIM_NOT_ADDRESSED',
     'CLAIM_NOT_ASSESSABLE',
     'CLAIM_OMITTED',
     'CLAIM_REFUSED',
     'CLAIM_UNAVAILABLE',
+    'CLAIM_UNRELATED',
   ]);
 });
 
@@ -143,21 +179,33 @@ test('an answer of only refusals and omissions produces null, never zero', () =>
   assert.equal(claimLevel.claimFidelityRate.value, null);
   assert.equal(claimLevel.claimFidelityRate.numerator, null);
   assert.equal(claimLevel.claimAttributionRate.value, null);
-  assert.equal(claimLevel.claimCitationSupportRate.denominator, 3);
+  // A refusal, an abstention and an omission assert nothing, so nothing cited can support them.
+  // Under metrics-v3 these three mappings scored; under the contract they cannot.
+  assert.equal(claimLevel.claimCitationSupportRate.denominator, 0);
+  assert.deepEqual(
+    claimLevel.claimCitationSupportRate.exclusions.map((row) => [row.reason, row.count]),
+    [['CLAIM_CITATION_NON_ASSERTING', 3]],
+  );
 });
 
 test('citation support counts each mapping and never folds partial support into supported', () => {
   const { claimLevel } = block(
     baseInput([
-      claim({ claimId: 'a', citationSupports: ['SUPPORTS'] }),
-      claim({ claimId: 'b', citationSupports: ['PARTIALLY_SUPPORTS'] }),
-      claim({ claimId: 'c', citationSupports: ['SUPPORTS_WITH_CONDITIONS'] }),
-      claim({ claimId: 'd', citationSupports: ['DOES_NOT_SUPPORT'] }),
-      claim({ claimId: 'e', citationSupports: ['UNCLEAR'] }),
-      claim({ claimId: 'f', citationSupports: ['METADATA_MISSING'] }),
-      claim({ claimId: 'g', citationSupports: [] }),
+      claim({ claimId: 'a', citationMappings: [mapping('SUPPORTS')] }),
+      claim({ claimId: 'b', citationMappings: [mapping('PARTIALLY_SUPPORTS')] }),
+      claim({ claimId: 'c', citationMappings: [mapping('SUPPORTS_WITH_CONDITIONS')] }),
+      claim({ claimId: 'd', citationMappings: [mapping('DOES_NOT_SUPPORT')] }),
+      claim({ claimId: 'e', citationMappings: [mapping('UNCLEAR')] }),
+      claim({ claimId: 'f', citationMappings: [mapping('METADATA_MISSING')] }),
+      claim({ claimId: 'g', citationMappings: [] }),
       // One statement carried by two citations counts twice, as two separate judgements.
-      claim({ claimId: 'h', citationSupports: ['SUPPORTS', 'DOES_NOT_SUPPORT'] }),
+      claim({
+        claimId: 'h',
+        citationMappings: [
+          mapping('SUPPORTS', { citationId: 'cit_1' }),
+          mapping('DOES_NOT_SUPPORT', { citationId: 'cit_2' }),
+        ],
+      }),
     ]),
   );
   assert.equal(claimLevel.claimCitationSupportRate.denominator, 6);
@@ -334,18 +382,167 @@ test('a non-asserting statement is kept outside fidelity but stays visible', () 
         claimId: 'a',
         relevance: 'UNRELATED',
         fidelityLabel: undefined,
-        citationSupports: [],
+        citationMappings: [],
         propositionRelations: [],
       }),
       claim({
         claimId: 'b',
         relevance: 'AMBIGUOUS',
         fidelityLabel: undefined,
-        citationSupports: [],
+        citationMappings: [],
         propositionRelations: [],
       }),
     ]),
   );
   assert.match(claimLevel.notes.join(' '), /no factual assertion/);
   assert.equal(claimLevel.claimFidelityRate.value, null);
+  // A refusal or an unrelated row with no citation is a complete record, not a missing check.
+  assert.deepEqual(claimLevel.claimCitationSupportRate.exclusions, []);
+});
+
+test('a refusal carrying an accurate label cannot be scored as an accurate statement', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({ claimId: 'live', fidelityLabel: 'ACCURATE' }),
+      // The exact shape that metrics-v3 counted: the relevance says the answer refused, the stored
+      // label says somebody judged it accurate. This is the regression D-1 exists to stop.
+      claim({ claimId: 'refusal', relevance: 'REFUSAL', fidelityLabel: 'ACCURATE' }),
+      claim({ claimId: 'omission', relevance: 'OMISSION', fidelityLabel: 'CONTRADICTED' }),
+      claim({ claimId: 'unrelated', relevance: 'UNRELATED', fidelityLabel: 'UNSUPPORTED' }),
+    ]),
+  );
+  assert.equal(
+    claimLevel.claimFidelityRate.denominator,
+    1,
+    'only the genuinely asserting statement is scored',
+  );
+  assert.equal(claimLevel.claimFidelityRate.numerator, 1);
+  assert.equal(claimLevel.claimContradictionRate.numerator, 0);
+  assert.equal(claimLevel.claimUnsupportedRate.numerator, 0);
+  assert.equal(claimLevel.labelConflictClaims, 3);
+  assert.deepEqual(
+    claimLevel.claimFidelityRate.exclusions
+      .filter((row) => row.reason === 'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE')
+      .map((row) => row.count),
+    [3],
+  );
+  assert.match(claimLevel.notes.join(' '), /Relevance decides whether a statement asserts/);
+});
+
+test('a voided statement is excluded with a reason instead of vanishing from the report', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({ claimId: 'live', fidelityLabel: 'ACCURATE' }),
+      claim({ claimId: 'gone', voided: true, fidelityLabel: 'CONTRADICTED' }),
+    ]),
+  );
+  assert.equal(claimLevel.claimFidelityRate.denominator, 1);
+  assert.equal(claimLevel.claimFidelityRate.numerator, 1);
+  assert.equal(claimLevel.voidedClaims, 1);
+  assert.deepEqual(
+    claimLevel.claimFidelityRate.exclusions
+      .filter((row) => row.reason === 'CLAIM_VOIDED')
+      .map((row) => row.count),
+    [1],
+    'the exclusion is named so a reader can see the record was withdrawn rather than absent',
+  );
+  assert.match(claimLevel.notes.join(' '), /1 statement\(s\) were voided/);
+});
+
+test('voiding every statement on an answer leaves it undecomposed, not covered', () => {
+  const { claimLevel } = block(baseInput([claim({ claimId: 'gone', voided: true })]));
+  assert.equal(claimLevel.observationsWithClaims, 0);
+  assert.equal(claimLevel.decompositionCoverage.numerator, 0);
+  assert.equal(claimLevel.decompositionCoverage.denominator, 1);
+  assert.equal(claimLevel.claimFidelityRate.denominator, 0);
+  assert.equal(claimLevel.voidedClaims, 1);
+});
+
+test('a citation voided after the mapping was recorded stops supporting the statement', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({ claimId: 'live', citationMappings: [mapping('SUPPORTS')] }),
+      claim({
+        claimId: 'withdrawn',
+        citationMappings: [mapping('SUPPORTS', { citationId: 'cit_9', citationVoided: true })],
+      }),
+    ]),
+  );
+  assert.equal(claimLevel.claimCitationSupportRate.denominator, 1);
+  assert.equal(claimLevel.claimCitationSupportRate.numerator, 1);
+  assert.deepEqual(
+    claimLevel.claimCitationSupportRate.exclusions
+      .filter((row) => row.reason === 'CLAIM_CITATION_VOIDED')
+      .map((row) => row.count),
+    [1],
+    'the withdrawn mapping is reported, not quietly deleted from the record',
+  );
+});
+
+test('an unrelated statement cannot manufacture a relevant omission', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({
+        claimId: 'unrelated',
+        relevance: 'UNRELATED',
+        fidelityLabel: undefined,
+        citationMappings: [],
+        propositionRelations: [{ propositionId: 'prp_x', relation: 'OMITS_TARGET' }],
+      }),
+      claim({
+        claimId: 'refusal',
+        relevance: 'REFUSAL',
+        fidelityLabel: undefined,
+        citationMappings: [],
+        propositionRelations: [{ propositionId: 'prp_y', relation: 'OMITS_TARGET' }],
+      }),
+      claim({
+        claimId: 'real',
+        relevance: 'OMISSION',
+        fidelityLabel: undefined,
+        citationMappings: [],
+        propositionRelations: [{ propositionId: 'prp_z', relation: 'OMITS_TARGET' }],
+      }),
+    ]),
+  );
+  assert.equal(claimLevel.relevantOmissionRate.numerator, 1);
+  assert.equal(claimLevel.relevantOmissionRate.denominator, 1);
+  assert.deepEqual(
+    claimLevel.relevantOmissionRate.exclusions
+      .filter((row) => row.reason === 'CLAIM_OMISSION_NON_ENGAGING')
+      .map((row) => row.count),
+    [2],
+  );
+});
+
+test('an inconsistent proposition link is reported as a conflict, never silently dropped', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({
+        claimId: 'contradicts-self',
+        relevance: 'ADDRESSES',
+        propositionRelations: [{ propositionId: 'prp_1', relation: 'OMITS_TARGET' }],
+      }),
+    ]),
+  );
+  assert.equal(claimLevel.relevantOmissionRate.denominator, 0);
+  assert.equal(claimLevel.labelConflictClaims, 1);
+});
+
+test('a label on the wrong side of the relevance line cannot rescue an unassessed statement', () => {
+  // Attribution and fidelity disagree about whether anything was asserted; both must fall out.
+  const { claimLevel } = block(
+    baseInput([
+      claim({
+        claimId: 'a',
+        relevance: 'ABSTENTION',
+        fidelityLabel: 'PARTIALLY_ACCURATE',
+        attributionLabel: 'WRONG_PERSON',
+      }),
+    ]),
+  );
+  assert.equal(claimLevel.claimFidelityRate.denominator, 0);
+  assert.equal(claimLevel.claimAttributionRate.denominator, 0);
+  assert.equal(claimLevel.labelConflictClaims, 1);
+  assert.equal(claimLevel.unassessedClaims, 0, 'a conflict is not the same thing as a gap');
 });

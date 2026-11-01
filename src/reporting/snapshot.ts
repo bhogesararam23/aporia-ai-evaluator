@@ -181,26 +181,33 @@ function toCoreObservations(observations: readonly ReportObservationInput[]): Ob
 /**
  * Statements for the claim-level block.
  *
- * Every current, non-voided statement is passed, including those on an excluded observation, because
- * the claim-level metrics record `CLAIM_OBSERVATION_INELIGIBLE` for them. Pre-filtering here would
- * drop those statements without a trace, and a reader could not tell a narrow denominator from an
- * unmeasured answer.
+ * Every current statement is passed, including voided ones and ones on an excluded observation,
+ * because the claim-level metrics record `CLAIM_VOIDED` and `CLAIM_OBSERVATION_INELIGIBLE` for them.
+ * Pre-filtering here would drop those statements without a trace, and a reader could not tell a
+ * narrow denominator from an unmeasured answer. A `metrics-v3` snapshot carries support labels
+ * without the cited record's state, so the mapping shape falls back to reading every citation as
+ * live — which is exactly how that version scored it.
  */
 function toCoreClaims(observations: readonly ReportObservationInput[]): AnswerClaimInput[] {
   const claims: AnswerClaimInput[] = [];
   for (const observation of observations) {
     for (const claim of observation.answerClaims ?? []) {
-      if (claim.voidedAt !== null) {
-        continue;
-      }
+      const mappings =
+        claim.citationMappings ??
+        (claim.citationSupports ?? []).map((support) => ({
+          citationId: '',
+          support,
+          citationVoided: false,
+        }));
       claims.push({
         claimId: claim.id,
         observationId: observation.id,
         revisionId: claim.revisionId,
         relevance: claim.relevance,
+        voided: claim.voidedAt !== null,
         fidelityLabel: claim.labels.FIDELITY,
         attributionLabel: claim.labels.ATTRIBUTION,
-        citationSupports: claim.citationSupports,
+        citationMappings: mappings,
         propositionRelations: claim.propositionLinks,
       });
     }
@@ -776,7 +783,8 @@ export function buildReportSnapshot(input: ReportBuildInput): ReportSnapshot {
           (inner, observation) =>
             inner +
             (observation.answerClaims ?? []).reduce(
-              (claims, claim) => claims + claim.citationSupports.length,
+              (claims, claim) =>
+                claims + (claim.citationMappings?.length ?? claim.citationSupports?.length ?? 0),
               0,
             ),
           0,

@@ -197,6 +197,13 @@ export interface ReportAnswerClaimPropositionInput {
   readonly relation: ClaimPropositionRelation | string;
 }
 
+export interface ReportAnswerClaimCitationInput {
+  readonly citationId: string;
+  readonly support: ClaimCitationSupportLabel;
+  /** Whether the cited record itself has been voided, which decides whether the mapping scores. */
+  readonly citationVoided: boolean;
+}
+
 /**
  * One recorded answer statement as the report sees it: the current revision only, with the active
  * links and the latest label per assessment dimension. Superseded revisions stay in the database
@@ -216,7 +223,16 @@ export interface ReportAnswerClaimInput {
   readonly relevance: ClaimRelevance | string;
   readonly paraphrase: string | null;
   readonly propositionLinks: readonly ReportAnswerClaimPropositionInput[];
-  readonly citationSupports: readonly ClaimCitationSupportLabel[];
+  /**
+   * Added with `metrics-v4`: each mapping carries the state of the cited record, so a mapping to a
+   * citation voided after the fact stops counting as support without being deleted.
+   */
+  readonly citationMappings?: readonly ReportAnswerClaimCitationInput[];
+  /**
+   * A `metrics-v1` to `metrics-v3` snapshot stores the support labels on their own, without the
+   * cited record's state. Kept optional so an old report renders exactly what it recorded.
+   */
+  readonly citationSupports?: readonly ClaimCitationSupportLabel[];
   readonly labels: Readonly<Partial<Record<ClaimDimension, string>>>;
   readonly voidedAt: string | null;
 }

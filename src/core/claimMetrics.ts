@@ -7,20 +7,36 @@
  */
 import {
   ANSWER_CLAIM_VERSIONS,
-  isAssertingAttributionLabel,
   isAssertingRelevance,
-  isClaimAttributionLabel,
-  isClaimFidelityLabel,
   type ClaimCitationSupportLabel,
-  type ClaimFidelityLabel,
-  type ClaimPropositionRelation,
   type ClaimRelevance,
 } from './answerClaims.ts';
+import {
+  attributionEligibility,
+  citationSupportEligibility,
+  fidelityEligibility,
+  isKnownRelevance,
+  nonAssertionReason,
+  omissionEligibility,
+} from './claimEligibility.ts';
 import { countExclusions, type ExclusionReason, type MetricResult } from './metricsCommon.ts';
 
 export interface AnswerClaimPropositionInput {
   readonly propositionId: string;
-  readonly relation: ClaimPropositionRelation | string;
+  readonly relation: string;
+}
+
+/**
+ * One claim-to-citation mapping, carrying the state of the cited record.
+ *
+ * `citationVoided` travels with the mapping because the mapping and the citation have separate
+ * lifecycles: a citation can be withdrawn after a statement was linked to it, and a metric that
+ * reads only the support label would keep scoring withdrawn material as support.
+ */
+export interface AnswerClaimCitationInput {
+  readonly citationId: string;
+  readonly support: ClaimCitationSupportLabel | string;
+  readonly citationVoided: boolean;
 }
 
 export interface AnswerClaimInput {
@@ -28,12 +44,14 @@ export interface AnswerClaimInput {
   readonly observationId: string;
   readonly revisionId: string;
   readonly relevance: ClaimRelevance | string;
+  /** A voided statement stays in the record and contributes to no current metric. */
+  readonly voided: boolean;
   /** Latest fidelity label recorded against the current revision, if any. */
   readonly fidelityLabel?: string | undefined;
   /** Latest attribution label recorded against the current revision, if any. */
   readonly attributionLabel?: string | undefined;
-  /** Support assessment of each active claim-to-citation mapping. */
-  readonly citationSupports: readonly (ClaimCitationSupportLabel | string)[];
+  /** Active claim-to-citation mappings, with the state of each cited record. */
+  readonly citationMappings: readonly AnswerClaimCitationInput[];
   readonly propositionRelations: readonly AnswerClaimPropositionInput[];
 }
 
@@ -50,6 +68,9 @@ export interface ClaimLevelMetrics {
   readonly decompositionCoverage: MetricResult;
   readonly partiallyDecomposedObservations: number;
   readonly unassessedClaims: number;
+  readonly voidedClaims: number;
+  /** Statements whose recorded label asserts more than their recorded relevance permits. */
+  readonly labelConflictClaims: number;
   readonly claimFidelityRate: MetricResult;
   readonly claimContradictionRate: MetricResult;
   readonly claimUnsupportedRate: MetricResult;
@@ -57,41 +78,6 @@ export interface ClaimLevelMetrics {
   readonly claimAttributionRate: MetricResult;
   readonly relevantOmissionRate: MetricResult;
   readonly notes: readonly string[];
-}
-
-const FIDELITY_DEFINITIVE: readonly ClaimFidelityLabel[] = [
-  'ACCURATE',
-  'PARTIALLY_ACCURATE',
-  'CONTRADICTED',
-  'UNSUPPORTED',
-];
-
-const ATTRIBUTION_EXCLUSIONS: Record<string, ExclusionReason> = {
-  NOT_ADDRESSED: 'CLAIM_ATTRIBUTION_NOT_ADDRESSED',
-  NOT_ASSESSABLE: 'CLAIM_ATTRIBUTION_NOT_ASSESSABLE',
-};
-
-const CITATION_EXCLUSIONS: Record<string, ExclusionReason> = {
-  UNCLEAR: 'CLAIM_CITATION_UNCLEAR',
-  METADATA_MISSING: 'CLAIM_CITATION_METADATA_MISSING',
-  NOT_ASSESSABLE: 'CLAIM_CITATION_NOT_ASSESSABLE',
-};
-
-function fidelityExclusionOf(label: string): ExclusionReason | null {
-  switch (label) {
-    case 'OMITTED':
-      return 'CLAIM_OMITTED';
-    case 'REFUSED':
-      return 'CLAIM_REFUSED';
-    case 'UNAVAILABLE':
-      return 'CLAIM_UNAVAILABLE';
-    case 'NOT_ADDRESSED':
-      return 'CLAIM_NOT_ADDRESSED';
-    case 'NOT_ASSESSABLE':
-      return 'CLAIM_NOT_ASSESSABLE';
-    default:
-      return null;
-  }
 }
 
 function claimMetric(input: {
@@ -130,12 +116,12 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
     return null;
   }
   const eligible = new Set(input.eligibleObservationIds);
-  // Decomposition coverage counts eligible observations only. An ineligible observation's statements
-  // are outside scoring altogether, so counting them here would inflate the figure that tells a
-  // reader how much of the sample the other claim-level rates describe.
+  // Decomposition coverage counts eligible observations that still hold a live statement. A voided
+  // statement is history rather than a decomposed answer, so an observation whose only statement was
+  // withdrawn must not read as covered.
   const observationsWithClaims = new Set(
     input.claims
-      .filter((item) => eligible.has(item.observationId))
+      .filter((item) => !item.voided && eligible.has(item.observationId))
       .map((item) => item.observationId),
   );
 
@@ -145,6 +131,9 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       globalReasons.push('CLAIM_OBSERVATION_INELIGIBLE');
     }
   }
+  // Statements on an ineligible observation are outside scoring entirely. Voided statements stay in
+  // this list on purpose: they must be excluded by every denominator, which is only honest if the
+  // report can say that it happened and how many.
   const scoredClaims = input.claims.filter((claim) => eligible.has(claim.observationId));
 
   let fidelityNumerator = 0;
@@ -186,104 +175,158 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
 
   const propositionsRelated = new Set<string>();
   const propositionsOmitted = new Set<string>();
+  const omissionReasons: ExclusionReason[] = [];
   let unassessedClaims = 0;
   let claimsWithNoAssertion = 0;
+  let conflictingLabels = 0;
+  let voidedClaims = 0;
 
   for (const claim of scoredClaims) {
-    // Relevance governs whether the statement asserts anything. A statement can be linked to a
-    // proposition and still be a refusal or an omission, and the reviewer's relevance label is the
-    // authority on that; proposition relations say which target is involved, not whether an
-    // assertion was made.
-    const asserting = isAssertingRelevance(claim.relevance as ClaimRelevance);
-    if (!asserting) {
-      // An unrelated, ambiguous, refusal, abstention or omission statement carries no factual
-      // assertion about the target, so it cannot be scored for fidelity.
-      claimsWithNoAssertion += 1;
+    if (claim.voided) {
+      voidedClaims += 1;
+    }
+    // One flag per statement, so a row whose fidelity and attribution both overstate the recorded
+    // relevance is reported once. A conflict is a recording error the operator should see and fix,
+    // not something the metric should silently resolve by preferring one field.
+    let conflict = false;
+    if (!claim.voided && isKnownRelevance(claim.relevance)) {
+      const reason = nonAssertionReason(claim.relevance);
+      if (reason !== null) {
+        claimsWithNoAssertion += 1;
+      }
     }
 
+    // The pair is checked, not the relation alone. A statement recorded as unrelated cannot show
+    // that anything was left unsaid, however its proposition link was labelled, so an inconsistent
+    // link is excluded here instead of inflating the relevant-omission numerator.
     for (const relation of claim.propositionRelations) {
-      propositionsRelated.add(relation.propositionId);
-      if (relation.relation === 'OMITS_TARGET') {
-        propositionsOmitted.add(relation.propositionId);
-      }
-    }
-
-    if (claim.fidelityLabel === undefined) {
-      unassessedClaims += 1;
-      fidelityReasons.push('CLAIM_FIDELITY_UNASSESSED');
-    } else if (!isClaimFidelityLabel(claim.fidelityLabel)) {
-      unassessedClaims += 1;
-      fidelityReasons.push('CLAIM_LABEL_INVALID');
-    } else {
-      const exclusion = fidelityExclusionOf(claim.fidelityLabel);
-      if (exclusion !== null) {
-        fidelityReasons.push(exclusion);
-      } else if (FIDELITY_DEFINITIVE.includes(claim.fidelityLabel)) {
-        fidelityDenominator += 1;
-        fidelityBreakdown[claim.fidelityLabel] = (fidelityBreakdown[claim.fidelityLabel] ?? 0) + 1;
-        if (claim.fidelityLabel === 'ACCURATE') {
-          fidelityNumerator += 1;
-        } else if (claim.fidelityLabel === 'CONTRADICTED') {
-          contradictionNumerator += 1;
-        } else if (claim.fidelityLabel === 'UNSUPPORTED') {
-          unsupportedNumerator += 1;
+      const omission = omissionEligibility({
+        relevance: claim.relevance,
+        relation: relation.relation,
+        voided: claim.voided,
+      });
+      if (omission.eligible) {
+        propositionsRelated.add(relation.propositionId);
+        if (relation.relation === 'OMITS_TARGET') {
+          propositionsOmitted.add(relation.propositionId);
         }
       } else {
-        fidelityReasons.push('CLAIM_NOT_ASSESSABLE');
-      }
-    }
-
-    if (claim.attributionLabel === undefined) {
-      attributionReasons.push('CLAIM_ATTRIBUTION_UNASSESSED');
-    } else if (!isClaimAttributionLabel(claim.attributionLabel)) {
-      attributionReasons.push('CLAIM_LABEL_INVALID');
-    } else {
-      const exclusion = ATTRIBUTION_EXCLUSIONS[claim.attributionLabel];
-      if (exclusion !== undefined) {
-        attributionReasons.push(exclusion);
-      } else if (isAssertingAttributionLabel(claim.attributionLabel)) {
-        attributionDenominator += 1;
-        attributionBreakdown[claim.attributionLabel] =
-          (attributionBreakdown[claim.attributionLabel] ?? 0) + 1;
-        if (claim.attributionLabel === 'CORRECT') {
-          attributionNumerator += 1;
+        if (omission.reason === 'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE') {
+          conflict = true;
         }
-      } else {
-        attributionReasons.push('CLAIM_ATTRIBUTION_UNASSESSED');
+        omissionReasons.push(omission.reason as ExclusionReason);
       }
     }
 
-    if (claim.citationSupports.length === 0) {
+    // Relevance decides whether an assertion exists; the label decides only what was asserted about
+    // it. The order is the whole defect fix: a stale or mistyped label can no longer pull a refusal,
+    // an omission or an unrelated row back into a factual denominator.
+    const fidelity = fidelityEligibility({
+      relevance: claim.relevance,
+      fidelityLabel: claim.fidelityLabel,
+      voided: claim.voided,
+    });
+    if (fidelity.eligible) {
+      const label = claim.fidelityLabel as string;
+      fidelityDenominator += 1;
+      fidelityBreakdown[label] = (fidelityBreakdown[label] ?? 0) + 1;
+      if (label === 'ACCURATE') {
+        fidelityNumerator += 1;
+      } else if (label === 'CONTRADICTED') {
+        contradictionNumerator += 1;
+      } else if (label === 'UNSUPPORTED') {
+        unsupportedNumerator += 1;
+      }
+    } else {
+      const reason = fidelity.reason as ExclusionReason;
+      fidelityReasons.push(reason);
+      if (
+        !claim.voided &&
+        (reason === 'CLAIM_FIDELITY_UNASSESSED' || reason === 'CLAIM_LABEL_INVALID')
+      ) {
+        unassessedClaims += 1;
+      }
+      if (reason === 'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE') {
+        conflict = true;
+      }
+    }
+
+    const attribution = attributionEligibility({
+      relevance: claim.relevance,
+      attributionLabel: claim.attributionLabel,
+      voided: claim.voided,
+    });
+    if (attribution.eligible) {
+      const label = claim.attributionLabel as string;
+      attributionDenominator += 1;
+      attributionBreakdown[label] = (attributionBreakdown[label] ?? 0) + 1;
+      if (label === 'CORRECT') {
+        attributionNumerator += 1;
+      }
+    } else {
+      const reason = attribution.reason as ExclusionReason;
+      attributionReasons.push(reason);
+      if (reason === 'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE') {
+        conflict = true;
+      }
+    }
+
+    // Absence of a citation is only a gap when there was an assertion to support. A refusal with no
+    // citation is a complete record, not a missing check.
+    if (
+      !claim.voided &&
+      isKnownRelevance(claim.relevance) &&
+      isAssertingRelevance(claim.relevance) &&
+      claim.citationMappings.length === 0
+    ) {
       citationReasons.push('CLAIM_NO_MAPPED_CITATION');
     }
-    for (const support of claim.citationSupports) {
-      const exclusion = CITATION_EXCLUSIONS[support];
-      if (exclusion !== undefined) {
-        citationReasons.push(exclusion);
-      } else if (
-        support === 'SUPPORTS' ||
-        support === 'PARTIALLY_SUPPORTS' ||
-        support === 'SUPPORTS_WITH_CONDITIONS' ||
-        support === 'DOES_NOT_SUPPORT'
-      ) {
+    for (const mapping of claim.citationMappings) {
+      const support = citationSupportEligibility({
+        relevance: claim.relevance,
+        support: mapping.support,
+        citationVoided: mapping.citationVoided,
+        claimVoided: claim.voided,
+      });
+      if (support.eligible) {
+        const label = mapping.support as string;
         citationDenominator += 1;
-        citationBreakdown[support] = (citationBreakdown[support] ?? 0) + 1;
-        if (support === 'SUPPORTS') {
+        citationBreakdown[label] = (citationBreakdown[label] ?? 0) + 1;
+        if (label === 'SUPPORTS') {
           citationNumerator += 1;
         }
+      } else {
+        if (support.reason === 'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE') {
+          conflict = true;
+        }
+        citationReasons.push(support.reason as ExclusionReason);
       }
+    }
+    if (conflict) {
+      conflictingLabels += 1;
     }
   }
 
   const decompositionDenominator = eligible.size;
   const notes = [
     'Claim-level rates count statements the reviewer extracted, not answers. They can disagree with the observation-level rates for the same run; both are reported.',
-    `Only ${observationsWithClaims.size} of ${eligible.size} eligible observations had any statement recorded, so these denominators describe decomposed answers rather than the whole sample.`,
-    'A refusal, abstention, omission, unavailable answer, or unassessed statement is excluded with a named reason and never counted as an inaccurate statement.',
+    `Only ${observationsWithClaims.size} of ${eligible.size} eligible observations still hold a live statement, so these denominators describe decomposed answers rather than the whole sample.`,
+    'Relevance decides whether a statement asserts anything. A refusal, abstention, omission, unrelated or unavailable statement is outside every factual denominator whatever label was recorded against it, and the reason names which kind it was.',
+    'A label that contradicts the recorded relevance is excluded and reported as a conflict. It is never resolved by preferring the label, because a refusal scored as an accurate statement is the exact error this block exists to avoid.',
   ];
   if (claimsWithNoAssertion > 0) {
     notes.push(
-      `${claimsWithNoAssertion} recorded statement(s) make no factual assertion about the target and are outside the fidelity denominator.`,
+      `${claimsWithNoAssertion} recorded statement(s) make no factual assertion about the target and are outside the fidelity, attribution and citation-support denominators.`,
+    );
+  }
+  if (voidedClaims > 0) {
+    notes.push(
+      `${voidedClaims} statement(s) were voided by the reviewer. They stay in the record and the history and contribute to no current metric.`,
+    );
+  }
+  if (conflictingLabels > 0) {
+    notes.push(
+      `${conflictingLabels} assessment(s) assert more than the recorded relevance supports. Correct either the relevance or the label; until then the statement is excluded and the conflict is visible here.`,
     );
   }
 
@@ -291,13 +334,17 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
     decompositionVersion: ANSWER_CLAIM_VERSIONS.decomposition,
     observationsWithClaims: observationsWithClaims.size,
     eligibleObservations: eligible.size,
-    partiallyDecomposedObservations: countPartiallyDecomposed(scoredClaims),
+    partiallyDecomposedObservations: countPartiallyDecomposed(
+      scoredClaims.filter((claim) => !claim.voided),
+    ),
     unassessedClaims,
+    voidedClaims,
+    labelConflictClaims: conflictingLabels,
     decompositionCoverage: claimMetric({
       id: 'answer_decomposition_coverage',
       label: 'Answer decomposition coverage',
       definition:
-        'Eligible completed observations with at least one recorded answer statement, divided by eligible completed observations. Read this before any other claim-level rate: a small denominator here means the claim-level figures describe a chosen subset of the answers.',
+        'Eligible completed observations with at least one live answer statement, divided by eligible completed observations. Read this before any other claim-level rate: a small denominator here means the claim-level figures describe a chosen subset of the answers.',
       unit: 'observations',
       numerator: observationsWithClaims.size,
       denominator: decompositionDenominator,
@@ -306,13 +353,14 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
         'An observation without statements contributes to the denominator only, and is not evidence that the answer was wrong.',
         'Decomposition is human work; this coverage figure is a measure of reviewer effort as much as of the sample.',
         'Statements recorded against an ineligible observation are excluded here and from every other claim-level rate.',
+        'An observation whose only statements were voided counts as not decomposed. The voided rows are still readable in the record and are reported as an exclusion elsewhere.',
       ],
     }),
     claimFidelityRate: claimMetric({
       id: 'answer_statement_fidelity_rate',
       label: 'Statement fidelity rate',
       definition:
-        'Recorded statements assessed accurate within the recorded scope, divided by statements with a definitive fidelity assessment (accurate, partially accurate, contradicted, or unsupported by recorded evidence). Omissions, refusals, unavailable checks, non-assertions, and unassessed statements are excluded and reported.',
+        'Statements recorded as making a factual assertion about the target and assessed accurate within the recorded scope, divided by asserted statements carrying a definitive fidelity assessment (accurate, partially accurate, contradicted, or unsupported by recorded evidence). Refusals, abstentions, omissions, unrelated and unavailable statements, voided rows, and unassessed statements are excluded and each exclusion names its reason.',
       unit: 'answer statements',
       numerator: fidelityNumerator,
       denominator: fidelityDenominator,
@@ -321,6 +369,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       notes: [
         'Accurate means accurate against the evidence the reviewer recorded, within the recorded scope. It is not independent verification.',
         'Partial accuracy and contradiction are shown separately and are not absorbed into this rate.',
+        'Relevance decides whether a statement asserts anything at all, so a refusal cannot be counted as an accurate factual statement.',
       ],
     }),
     claimContradictionRate: claimMetric({
@@ -386,11 +435,15 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       unit: 'propositions',
       numerator: propositionsOmitted.size,
       denominator: propositionsRelated.size,
-      reasons: propositionsRelated.size === 0 ? ['CLAIM_NO_PROPOSITION_RELATION'] : [],
+      reasons:
+        propositionsRelated.size === 0
+          ? [...omissionReasons, 'CLAIM_NO_PROPOSITION_RELATION']
+          : omissionReasons,
       notes: [
         'An omission is a visibility gap. It is not a contradiction and never enters a fidelity denominator.',
         'The unit is the proposition, so several answers omitting the same fact counts once.',
         'A proposition no statement relates to at all is absent from this measure, not counted as omitted.',
+        'Only a statement that engages the target can record an omission. A link from an unrelated, ambiguous, refusing or unavailable statement is excluded here and reported as a conflict where the pair is inconsistent.',
       ],
     }),
     notes,

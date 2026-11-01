@@ -176,6 +176,8 @@ function statementSection(run: ReportRunView): Html {
     `;
   }
   const metrics = claimMetricRows(run);
+  const voidedCount = claimLevel.voidedClaims ?? 0;
+  const conflictCount = claimLevel.labelConflictClaims ?? 0;
   const statements = run.observations.flatMap((observation) =>
     (observation.answerClaims ?? [])
       .filter((claim) => claim.voidedAt === null)
@@ -187,6 +189,18 @@ function statementSection(run: ReportRunView): Html {
       ${String(claimLevel.observationsWithClaims)} of ${String(claimLevel.eligibleObservations)}
       eligible answer(s) were decomposed into statements, and ${String(claimLevel.unassessedClaims)}
       statement(s) carry no assessment.
+      ${
+        voidedCount > 0
+          ? html` ${String(voidedCount)} statement(s) were voided by the reviewer and contribute to
+            no figure below.`
+          : ''
+      }
+      ${
+        conflictCount > 0
+          ? html` ${String(conflictCount)} statement(s) carry an assessment that the recorded
+            relevance does not support; they are excluded and listed as a conflict until corrected.`
+          : ''
+      }
       ${
         claimLevel.partiallyDecomposedObservations > 0
           ? html` ${String(claimLevel.partiallyDecomposedObservations)} answer(s) were only
@@ -277,13 +291,26 @@ function statementSection(run: ReportRunView): Html {
                     ${claim.propositionLinks.map(
                       (link) => html`<li>Proposition ${link.propositionId}: ${link.relation}</li>`,
                     )}
-                    ${claim.citationSupports.map(
-                      (support) =>
+                    ${(
+                      claim.citationMappings ??
+                      (claim.citationSupports ?? []).map((support) => ({
+                        citationId: '',
+                        support,
+                        citationVoided: false,
+                      }))
+                    ).map(
+                      (mapping) =>
                         html`<li>
                           Citation support:
                           ${
-                            CLAIM_CITATION_SUPPORT_DISPLAY[support as ClaimCitationSupportLabel] ??
-                            String(support)
+                            CLAIM_CITATION_SUPPORT_DISPLAY[
+                              mapping.support as ClaimCitationSupportLabel
+                            ] ?? String(mapping.support)
+                          }
+                          ${
+                            mapping.citationVoided
+                              ? ' — the cited record was voided, so this mapping supports nothing in the current figures'
+                              : ''
                           }
                         </li>`,
                     )}

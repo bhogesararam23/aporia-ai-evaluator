@@ -771,29 +771,46 @@ function claimInputs(
        ORDER BY o.captured_at, o.rowid`,
     )
     .all(runId, projectId) as Row[];
+  // One query for the whole run, so a withdrawn citation costs nothing per statement.
+  const voidedCitations = new Set(
+    (
+      db
+        .prepare(
+          `SELECT id FROM citations
+           WHERE voided_at IS NOT NULL
+             AND observation_id IN (SELECT id FROM observations WHERE run_id = ?)`,
+        )
+        .all(runId) as Row[]
+    ).map((row) => stringValue(row, 'id')),
+  );
   const claims: AnswerClaimInput[] = [];
   let decomposed = 0;
   for (const row of rows) {
     const observationId = stringValue(row, 'id');
     const records = listAnswerClaimsForObservation(db, observationId);
-    if (records.length > 0) {
+    if (records.some((record) => record.voidedAt === null)) {
       decomposed += 1;
     }
     for (const record of records) {
-      if (record.voidedAt !== null) {
-        continue;
-      }
       const labels = currentClaimLabels(record);
+      // A voided statement is passed through rather than filtered out, so it is excluded by the
+      // metric with a named reason. This is the same rule the report path applies, and the two must
+      // not drift: a retest and a report for one finalized run cannot be allowed to disagree.
       claims.push({
         claimId: record.id,
         observationId,
         revisionId: record.currentRevisionId ?? '',
         relevance: record.currentRevision?.relevance ?? 'NOT_ASSESSABLE',
+        voided: record.voidedAt !== null,
         fidelityLabel: labels.FIDELITY,
         attributionLabel: labels.ATTRIBUTION,
-        citationSupports: record.citationLinks
+        citationMappings: record.citationLinks
           .filter((link) => link.supersededBy === null)
-          .map((link) => link.support),
+          .map((link) => ({
+            citationId: link.citationId,
+            support: link.support,
+            citationVoided: voidedCitations.has(link.citationId),
+          })),
         propositionRelations: record.propositionLinks
           .filter((link) => link.supersededBy === null)
           .map((link) => ({ propositionId: link.propositionId, relation: link.relation })),

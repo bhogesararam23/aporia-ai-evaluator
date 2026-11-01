@@ -128,14 +128,21 @@ export function produceMetricCounts(benchmarkCase: BenchmarkCase): ExpectedMetri
       observationId: 'obs_1',
       revisionId: `${statement.id}.1`,
       relevance: statement.relevance,
+      voided: false,
       fidelityLabel: undefined,
       attributionLabel: undefined,
-      citationSupports: statement.citationIds
+      citationMappings: statement.citationIds
         .map((citationId) =>
           benchmarkCase.input.citations.find((citation) => citation.id === citationId),
         )
         .filter((citation) => citation !== undefined)
-        .map((citation) => (citation.supportsStatement ? 'SUPPORTS' : 'DOES_NOT_SUPPORT')),
+        .map((citation) => ({
+          citationId: citation.id,
+          support: citation.supportsStatement ? 'SUPPORTS' : 'DOES_NOT_SUPPORT',
+          // A benchmark case records the material a reviewer read; nothing in the v1 contract can
+          // express a withdrawn citation, so the deterministic run reads every citation as live.
+          citationVoided: false,
+        })),
       propositionRelations: statement.propositionIds.map((propositionId) => ({
         propositionId,
         relation: 'SUPPORTS_TARGET',
