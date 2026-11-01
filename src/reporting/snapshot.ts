@@ -11,6 +11,7 @@ import {
   type RunMetricsInput,
 } from '../core/metrics.ts';
 import type { AnswerClaimInput } from '../core/claimMetrics.ts';
+import { comparabilityReasons } from '../core/runComparison.ts';
 import {
   REPORT_SCHEMA_VERSION,
   REPORT_TEMPLATE_VERSION,
@@ -258,8 +259,8 @@ function buildRunView(runInput: ReportRunInput, querySet: ReportQuerySetInput): 
  * Two runs are directly comparable only when every declared condition matches. The condition list is
  * `comparabilityReasons`, kept in one place so the report and the retest workflow cannot drift.
  */
-function sameConfiguration(left: ReportRunView, right: ReportRunView): boolean {
-  return comparabilityReasons(left, right).length === 0;
+function sameConfiguration(prior: ReportRunView, current: ReportRunView): boolean {
+  return comparabilityReasons({ prior, current }).length === 0;
 }
 
 const COMPARABLE_METRICS = [
@@ -285,55 +286,10 @@ function claimBreadth(run: ReportRunView): { observations: number; withClaims: n
 }
 
 /**
- * Comparability is decided in one place so the report and the retest workflow cannot drift apart
- * (ADR-021). Each broken condition is returned as its own plain-language reason.
+ * Comparability is decided in `core/runComparison.ts`, which the report and the retest workflow both
+ * read. It is re-exported here because report callers already imported it from this module.
  */
-export function comparabilityReasons(
-  left: Pick<
-    ReportRunView,
-    | 'querySetId'
-    | 'providerLabel'
-    | 'modelLabel'
-    | 'interfaceLabel'
-    | 'groundingMode'
-    | 'locale'
-    | 'region'
-  >,
-  right: Pick<
-    ReportRunView,
-    | 'querySetId'
-    | 'providerLabel'
-    | 'modelLabel'
-    | 'interfaceLabel'
-    | 'groundingMode'
-    | 'locale'
-    | 'region'
-  >,
-): string[] {
-  const reasons: string[] = [];
-  if (left.querySetId !== right.querySetId) {
-    reasons.push('The runs used different query sets.');
-  }
-  if (left.providerLabel !== right.providerLabel) {
-    reasons.push('The provider label differs.');
-  }
-  if (left.modelLabel !== right.modelLabel) {
-    reasons.push('The model or version label differs.');
-  }
-  if (left.interfaceLabel !== right.interfaceLabel) {
-    reasons.push('The interface label differs.');
-  }
-  if (left.groundingMode !== right.groundingMode) {
-    reasons.push('The search or grounding mode differs.');
-  }
-  if (left.locale !== right.locale) {
-    reasons.push('The locale differs.');
-  }
-  if (left.region !== right.region) {
-    reasons.push('The region differs.');
-  }
-  return reasons;
-}
+export { comparabilityReasons };
 
 function deltas(current: ReportRunView, prior: ReportRunView): MetricDelta[] {
   return COMPARABLE_METRICS.map((key) => {

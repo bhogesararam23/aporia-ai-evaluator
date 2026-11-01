@@ -153,11 +153,16 @@ test('an excluded observation names its statements as ineligible rather than dro
 
 test('comparability is decided in one shared helper', () => {
   const base = firstRun(buildReportSnapshot(baseInput()));
-  assert.deepEqual(comparabilityReasons(base, base), []);
-  assert.deepEqual(comparabilityReasons({ ...base, modelLabel: 'other' }, base), [
-    'The model or version label differs.',
-  ]);
-  const reasons = comparabilityReasons({ ...base, locale: 'fr', groundingMode: 'NO_SEARCH' }, base);
+  assert.deepEqual(comparabilityReasons({ prior: base, current: base }), []);
+  // The pair is named, not positional, and the sentence reads in time order: earlier value first.
+  assert.deepEqual(
+    comparabilityReasons({ prior: base, current: { ...base, modelLabel: 'other' } }),
+    ['The model or version label differs: "unknown-model" then, "other" now.'],
+  );
+  const reasons = comparabilityReasons({
+    prior: base,
+    current: { ...base, locale: 'fr', groundingMode: 'NO_SEARCH' },
+  });
   assert.equal(reasons.length, 2);
   assert.ok(
     reasons.every((reason) => reason.length > 10),
