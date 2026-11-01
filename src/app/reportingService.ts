@@ -15,6 +15,10 @@ import {
   nextReportNumber,
 } from '../persistence/repositories/reports.ts';
 import { getRunOrThrow, listRuns } from '../persistence/repositories/runs.ts';
+import {
+  currentClaimLabels,
+  listAnswerClaimsForObservation,
+} from '../persistence/repositories/answerClaims.ts';
 import { getWebsiteAudit, listWebsiteAudits } from '../persistence/repositories/websiteAudits.ts';
 import { exportAchievements } from '../persistence/repositories/achievements.ts';
 import type { WriteContext } from '../persistence/repositories/context.ts';
@@ -249,6 +253,33 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
           attributionRole: assessment.attributionRole,
           createdAt: assessment.createdAt,
         })),
+        answerClaims: listAnswerClaimsForObservation(db, observation.id).map((claim) => {
+          const revision = claim.currentRevision;
+          return {
+            id: claim.id,
+            ordinal: claim.ordinal,
+            revisionId: claim.currentRevisionId ?? '',
+            revision: revision?.revision ?? 0,
+            quoteText: revision?.quoteText ?? '',
+            statementKind: revision?.statementKind ?? 'REVIEWER_DESCRIPTION',
+            offsetBasis: revision?.offsetBasis ?? 'NOT_ESTABLISHED',
+            startOffset: revision?.startOffset ?? null,
+            endOffset: revision?.endOffset ?? null,
+            relevance: revision?.relevance ?? 'NOT_ASSESSABLE',
+            paraphrase: revision?.paraphrase ?? null,
+            propositionLinks: claim.propositionLinks
+              .filter((link) => link.supersededBy === null)
+              .map((link) => ({
+                propositionId: link.propositionId,
+                relation: link.relation,
+              })),
+            citationSupports: claim.citationLinks
+              .filter((link) => link.supersededBy === null)
+              .map((link) => link.support),
+            labels: currentClaimLabels(claim),
+            voidedAt: claim.voidedAt,
+          };
+        }),
       })),
     };
   });

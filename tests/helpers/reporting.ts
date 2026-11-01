@@ -1,4 +1,5 @@
 import type {
+  ReportAnswerClaimInput,
   ReportBuildInput,
   ReportObservationInput,
   ReportRunInput,
@@ -169,6 +170,34 @@ export const QUERY_SET = {
     },
   ],
 };
+
+/**
+ * A recorded answer statement as report input sees it: current revision only, active links, and the
+ * latest label per assessment dimension.
+ */
+export function answerClaim(
+  id: string,
+  overrides: Partial<ReportAnswerClaimInput> = {},
+): ReportAnswerClaimInput {
+  return {
+    id,
+    ordinal: 1,
+    revisionId: `${id}_r1`,
+    revision: 1,
+    quoteText: 'created by Ram',
+    statementKind: 'QUOTED',
+    offsetBasis: 'EXACT_MATCH',
+    startOffset: 14,
+    endOffset: 28,
+    relevance: 'ADDRESSES',
+    paraphrase: null,
+    propositionLinks: [{ propositionId: 'prp_1', relation: 'SUPPORTS_TARGET' }],
+    citationSupports: ['SUPPORTS'],
+    labels: { FIDELITY: 'ACCURATE', ATTRIBUTION: 'CORRECT' },
+    voidedAt: null,
+    ...overrides,
+  };
+}
 
 export function observation(
   id: string,

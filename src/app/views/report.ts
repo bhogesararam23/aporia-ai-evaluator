@@ -1,4 +1,13 @@
 import type { ReportRunView, ReportSnapshot } from '../../reporting/types.ts';
+import type { MetricResult } from '../../core/metrics.ts';
+import {
+  ANSWER_STATEMENT_KIND_LABELS,
+  CLAIM_CITATION_SUPPORT_DISPLAY,
+  CLAIM_RELEVANCE_LABELS,
+  type AnswerStatementKind,
+  type ClaimCitationSupportLabel,
+  type ClaimRelevance,
+} from '../../core/answerClaims.ts';
 import { QUERY_INTENT_LABELS } from '../../core/vocabulary.ts';
 import { FINDING_SEVERITY_LABELS, type FindingSeverity } from '../../website/types.ts';
 import {
@@ -122,8 +131,172 @@ function metricTable(run: ReportRunView): Html {
         </tbody>
       </table>
     </div>
-    ${intentCoverageTable(run)}
+    ${intentCoverageTable(run)} ${statementSection(run)}
     <p class="small muted">${run.metrics.notes.join(' ')}</p>
+  `;
+}
+
+function claimMetricRows(run: ReportRunView): MetricResult[] {
+  const claimLevel = run.metrics.claimLevel;
+  if (claimLevel === undefined) {
+    return [];
+  }
+  return [
+    claimLevel.decompositionCoverage,
+    claimLevel.claimFidelityRate,
+    claimLevel.claimContradictionRate,
+    claimLevel.claimUnsupportedRate,
+    claimLevel.claimCitationSupportRate,
+    claimLevel.claimAttributionRate,
+    claimLevel.relevantOmissionRate,
+  ];
+}
+
+/**
+ * The statement-level section.
+ *
+ * Absent is rendered as an explanation, never as a zero: a report generated before answers were
+ * decomposed, or for a run nobody decomposed, has no statement-level answer rather than a bad one.
+ */
+function statementSection(run: ReportRunView): Html {
+  const claimLevel = run.metrics.claimLevel;
+  if (claimLevel === undefined) {
+    return html`
+      <h4>Answer statements</h4>
+      <p class="muted">
+        No answer statements were recorded for this run, so no statement-level figure is available.
+        That is not a zero and not a failure: it means the captured answers were assessed only as
+        whole answers.
+        ${
+          run.metrics.version === 'metrics-v3'
+            ? ''
+            : `This snapshot was produced under ${run.metrics.version}, which predates statement-level metrics.`
+        }
+      </p>
+    `;
+  }
+  const metrics = claimMetricRows(run);
+  const statements = run.observations.flatMap((observation) =>
+    (observation.answerClaims ?? [])
+      .filter((claim) => claim.voidedAt === null)
+      .map((claim) => ({ observation, claim })),
+  );
+  return html`
+    <h4>Answer statements</h4>
+    <p class="small">
+      ${String(claimLevel.observationsWithClaims)} of ${String(claimLevel.eligibleObservations)}
+      eligible answer(s) were decomposed into statements, and ${String(claimLevel.unassessedClaims)}
+      statement(s) carry no assessment.
+      ${
+        claimLevel.partiallyDecomposedObservations > 0
+          ? html` ${String(claimLevel.partiallyDecomposedObservations)} answer(s) were only
+            partially decomposed, so statement denominators are narrower than the answer set.`
+          : ''
+      }
+    </p>
+    <div class="table-wrap">
+      <table class="metric-table">
+        <caption>
+          Statement-level metrics for ${run.name}. These count statements, citations mappings, and
+          propositions, not answers — read the unit column before comparing them with the
+          whole-answer figures above.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">Unit</th>
+            <th scope="col">Value</th>
+            <th scope="col">Numerator / denominator</th>
+            <th scope="col">Exclusions</th>
+            <th scope="col">Definition</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${metrics.map(
+            (metric) => html`
+              <tr>
+                <th scope="row">${metric.label}</th>
+                <td>${metric.unit}</td>
+                <td class="numeric">${formatPercent(metric.value)}</td>
+                <td class="numeric">
+                  ${
+                    metric.numerator === null
+                      ? 'Not available'
+                      : `${metric.numerator} / ${metric.denominator}`
+                  }
+                </td>
+                <td>
+                  ${
+                    metric.exclusions.length === 0
+                      ? html`<span class="muted">None</span>`
+                      : html`<ul class="small">
+                          ${metric.exclusions.map(
+                            (exclusion) => html`<li>${exclusion.description}</li>`,
+                          )}
+                        </ul>`
+                  }
+                </td>
+                <td class="small">${metric.definition}</td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
+    </div>
+    ${
+      statements.length === 0
+        ? html`<p class="muted">
+            No live statement was recorded for a completed answer in this run.
+          </p>`
+        : html`<ul class="statement-list">
+            ${statements.map(
+              ({ observation, claim }) => html`
+                <li>
+                  <strong>
+                    ${
+                      CLAIM_RELEVANCE_LABELS[claim.relevance as ClaimRelevance] ??
+                      humanize(String(claim.relevance))
+                    }
+                  </strong>
+                  <blockquote class="quote-text">${claim.quoteText}</blockquote>
+                  <span class="small muted">
+                    Answer ${observation.queryOrdinal} · statement ${claim.ordinal} · revision
+                    ${claim.revision} ·
+                    ${
+                      ANSWER_STATEMENT_KIND_LABELS[claim.statementKind as AnswerStatementKind] ??
+                      humanize(claim.statementKind)
+                    }
+                    ${
+                      claim.startOffset === null
+                        ? ''
+                        : ` · characters ${claim.startOffset}–${claim.endOffset}`
+                    }
+                  </span>
+                  ${claim.paraphrase === null ? '' : html`<p class="small">${claim.paraphrase}</p>`}
+                  <ul class="small">
+                    ${claim.propositionLinks.map(
+                      (link) => html`<li>Proposition ${link.propositionId}: ${link.relation}</li>`,
+                    )}
+                    ${claim.citationSupports.map(
+                      (support) =>
+                        html`<li>
+                          Citation support:
+                          ${
+                            CLAIM_CITATION_SUPPORT_DISPLAY[support as ClaimCitationSupportLabel] ??
+                            String(support)
+                          }
+                        </li>`,
+                    )}
+                    ${Object.entries(claim.labels).map(
+                      ([dimension, label]) => html`<li>${humanize(dimension)}: ${label}</li>`,
+                    )}
+                  </ul>
+                </li>
+              `,
+            )}
+          </ul>`
+    }
+    <p class="small muted">${claimLevel.notes.join(' ')}</p>
   `;
 }
 

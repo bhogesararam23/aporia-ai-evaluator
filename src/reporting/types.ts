@@ -5,6 +5,14 @@ import type {
 } from '../core/evidence.ts';
 import type { RunMetrics, MetricUnit } from '../core/metrics.ts';
 import type {
+  AnswerOffsetBasis,
+  AnswerStatementKind,
+  ClaimCitationSupportLabel,
+  ClaimDimension,
+  ClaimPropositionRelation,
+  ClaimRelevance,
+} from '../core/answerClaims.ts';
+import type {
   AssessmentMethod,
   AttributionRole,
   ClaimStatus,
@@ -20,7 +28,16 @@ import type {
 } from '../core/vocabulary.ts';
 
 export const REPORT_SCHEMA_VERSION = 'report-snapshot-v1';
-export const REPORT_TEMPLATE_VERSION = 'report-template-v2';
+/**
+ * v3 adds the statement-level section (`metrics-v3`) and tracked remediation findings (ADR-021).
+ * v1 and v2 snapshots are still rendered from their stored JSON and are never recomputed.
+ */
+export const REPORT_TEMPLATE_VERSION = 'report-template-v3';
+export const KNOWN_REPORT_TEMPLATE_VERSIONS = [
+  'report-template-v1',
+  'report-template-v2',
+  REPORT_TEMPLATE_VERSION,
+] as const;
 
 export interface ReportProjectInput {
   readonly id: string;
@@ -175,6 +192,35 @@ export interface ReportObservationAssessmentInput {
   readonly createdAt: string;
 }
 
+export interface ReportAnswerClaimPropositionInput {
+  readonly propositionId: string;
+  readonly relation: ClaimPropositionRelation | string;
+}
+
+/**
+ * One recorded answer statement as the report sees it: the current revision only, with the active
+ * links and the latest label per assessment dimension. Superseded revisions stay in the database
+ * review history and deliberately do not enter a report, so correcting a statement cannot
+ * double-count it.
+ */
+export interface ReportAnswerClaimInput {
+  readonly id: string;
+  readonly ordinal: number;
+  readonly revisionId: string;
+  readonly revision: number;
+  readonly quoteText: string;
+  readonly statementKind: AnswerStatementKind;
+  readonly offsetBasis: AnswerOffsetBasis;
+  readonly startOffset: number | null;
+  readonly endOffset: number | null;
+  readonly relevance: ClaimRelevance | string;
+  readonly paraphrase: string | null;
+  readonly propositionLinks: readonly ReportAnswerClaimPropositionInput[];
+  readonly citationSupports: readonly ClaimCitationSupportLabel[];
+  readonly labels: Readonly<Partial<Record<ClaimDimension, string>>>;
+  readonly voidedAt: string | null;
+}
+
 export interface ReportObservationInput {
   readonly id: string;
   readonly queryId: string;
@@ -191,6 +237,11 @@ export interface ReportObservationInput {
   readonly voidReason: string | null;
   readonly citations: readonly ReportCitationInput[];
   readonly assessments: readonly ReportObservationAssessmentInput[];
+  /**
+   * Added with `metrics-v3`. Absent in a `report-template-v1`/`v2` snapshot because the answers were
+   * never decomposed; absence must be rendered as "not recorded", never as zero.
+   */
+  readonly answerClaims?: readonly ReportAnswerClaimInput[];
 }
 
 export interface ReportRunInput {
@@ -316,6 +367,8 @@ export interface ReportQuerySetView extends ReportQuerySetInput {
 
 export interface ReportObservationView extends ReportObservationInput {
   readonly statusEligibility: 'ELIGIBLE' | 'EXCLUDED';
+  /** Statements that carry at least one assessment, so a reader sees the real denominator. */
+  readonly assessedClaimCount: number;
 }
 
 export interface ReportRunView {
@@ -380,6 +433,11 @@ export interface ReportCoverage {
   readonly cancelledRuns: number;
   readonly observations: number;
   readonly websiteAudits: number;
+  /** Added with `metrics-v3`. Zero in a v2 snapshot means none were recorded, not none exist. */
+  readonly answerClaims: number;
+  readonly assessedAnswerClaims: number;
+  readonly decomposedObservations: number;
+  readonly citationClaimMappings: number;
   readonly unassessedPropositions: number;
   readonly claimsWithoutPropositions: number;
   readonly runConfigurationsWithoutMetrics: number;

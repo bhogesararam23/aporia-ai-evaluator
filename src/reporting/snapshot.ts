@@ -10,13 +10,7 @@ import {
   type ObservationInput,
   type RunMetricsInput,
 } from '../core/metrics.ts';
-import { EVIDENCE_RULE_VERSION, METHODOLOGY_VERSION, METRICS_VERSION } from '../core/versions.ts';
-import type {
-  AttributionLabel,
-  CitationSupportLabel,
-  FidelityLabel,
-  PresenceLabel,
-} from '../core/vocabulary.ts';
+import type { AnswerClaimInput } from '../core/claimMetrics.ts';
 import {
   REPORT_SCHEMA_VERSION,
   REPORT_TEMPLATE_VERSION,
@@ -37,6 +31,13 @@ import {
   type RunComparison,
   type RemediationSuggestion,
 } from './types.ts';
+import { EVIDENCE_RULE_VERSION, METHODOLOGY_VERSION, METRICS_VERSION } from '../core/versions.ts';
+import type {
+  AttributionLabel,
+  CitationSupportLabel,
+  FidelityLabel,
+  PresenceLabel,
+} from '../core/vocabulary.ts';
 
 function activeRelationship(
   row: ReportPropositionInput['evidence'][number],
@@ -175,11 +176,42 @@ function toCoreObservations(observations: readonly ReportObservationInput[]): Ob
   }));
 }
 
+/**
+ * Statements for the claim-level block.
+ *
+ * Every current, non-voided statement is passed, including those on an excluded observation, because
+ * the claim-level metrics record `CLAIM_OBSERVATION_INELIGIBLE` for them. Pre-filtering here would
+ * drop those statements without a trace, and a reader could not tell a narrow denominator from an
+ * unmeasured answer.
+ */
+function toCoreClaims(observations: readonly ReportObservationInput[]): AnswerClaimInput[] {
+  const claims: AnswerClaimInput[] = [];
+  for (const observation of observations) {
+    for (const claim of observation.answerClaims ?? []) {
+      if (claim.voidedAt !== null) {
+        continue;
+      }
+      claims.push({
+        claimId: claim.id,
+        observationId: observation.id,
+        revisionId: claim.revisionId,
+        relevance: claim.relevance,
+        fidelityLabel: claim.labels.FIDELITY,
+        attributionLabel: claim.labels.ATTRIBUTION,
+        citationSupports: claim.citationSupports,
+        propositionRelations: claim.propositionLinks,
+      });
+    }
+  }
+  return claims;
+}
+
 function buildRunView(runInput: ReportRunInput, querySet: ReportQuerySetInput): ReportRunView {
   const metricsInput: RunMetricsInput = {
     runStatus: runInput.run.status,
     queries: querySet.queries.map((query) => ({ id: query.id, intent: query.intent })),
     observations: toCoreObservations(runInput.observations),
+    claims: toCoreClaims(runInput.observations),
   };
   const metrics = computeRunMetrics(metricsInput);
   const observations: ReportObservationView[] = [...runInput.observations]
@@ -193,6 +225,9 @@ function buildRunView(runInput: ReportRunInput, querySet: ReportQuerySetInput): 
         observation.voidedAt === null && observation.status === 'COMPLETED'
           ? 'ELIGIBLE'
           : 'EXCLUDED',
+      assessedClaimCount: (observation.answerClaims ?? []).filter(
+        (claim) => claim.voidedAt === null && Object.keys(claim.labels).length > 0,
+      ).length,
     }));
   return {
     id: runInput.run.id,
@@ -219,16 +254,12 @@ function buildRunView(runInput: ReportRunInput, querySet: ReportQuerySetInput): 
   };
 }
 
+/**
+ * Two runs are directly comparable only when every declared condition matches. The condition list is
+ * `comparabilityReasons`, kept in one place so the report and the retest workflow cannot drift.
+ */
 function sameConfiguration(left: ReportRunView, right: ReportRunView): boolean {
-  return (
-    left.querySetId === right.querySetId &&
-    left.providerLabel === right.providerLabel &&
-    left.modelLabel === right.modelLabel &&
-    left.interfaceLabel === right.interfaceLabel &&
-    left.groundingMode === right.groundingMode &&
-    left.locale === right.locale &&
-    left.region === right.region
-  );
+  return comparabilityReasons(left, right).length === 0;
 }
 
 const COMPARABLE_METRICS = [
@@ -240,6 +271,69 @@ const COMPARABLE_METRICS = [
   'attributionCorrectnessRate',
   'observedAnswerCoverage',
 ] as const;
+
+/**
+ * Statements recorded for a run's eligible observations. Used both for the claim-level block and to
+ * decide whether a claim-level delta means anything.
+ */
+function claimBreadth(run: ReportRunView): { observations: number; withClaims: number } {
+  const eligible = run.observations.filter((row) => row.statusEligibility === 'ELIGIBLE');
+  return {
+    observations: eligible.length,
+    withClaims: eligible.filter((row) => (row.answerClaims ?? []).length > 0).length,
+  };
+}
+
+/**
+ * Comparability is decided in one place so the report and the retest workflow cannot drift apart
+ * (ADR-021). Each broken condition is returned as its own plain-language reason.
+ */
+export function comparabilityReasons(
+  left: Pick<
+    ReportRunView,
+    | 'querySetId'
+    | 'providerLabel'
+    | 'modelLabel'
+    | 'interfaceLabel'
+    | 'groundingMode'
+    | 'locale'
+    | 'region'
+  >,
+  right: Pick<
+    ReportRunView,
+    | 'querySetId'
+    | 'providerLabel'
+    | 'modelLabel'
+    | 'interfaceLabel'
+    | 'groundingMode'
+    | 'locale'
+    | 'region'
+  >,
+): string[] {
+  const reasons: string[] = [];
+  if (left.querySetId !== right.querySetId) {
+    reasons.push('The runs used different query sets.');
+  }
+  if (left.providerLabel !== right.providerLabel) {
+    reasons.push('The provider label differs.');
+  }
+  if (left.modelLabel !== right.modelLabel) {
+    reasons.push('The model or version label differs.');
+  }
+  if (left.interfaceLabel !== right.interfaceLabel) {
+    reasons.push('The interface label differs.');
+  }
+  if (left.groundingMode !== right.groundingMode) {
+    reasons.push('The search or grounding mode differs.');
+  }
+  if (left.locale !== right.locale) {
+    reasons.push('The locale differs.');
+  }
+  if (left.region !== right.region) {
+    reasons.push('The region differs.');
+  }
+  return reasons;
+}
 
 function deltas(current: ReportRunView, prior: ReportRunView): MetricDelta[] {
   return COMPARABLE_METRICS.map((key) => {
@@ -292,13 +386,30 @@ function buildComparisons(runs: readonly ReportRunView[]): RunComparison[] {
       };
     }
     const prior = compatible[compatible.length - 1] as ReportRunView;
+    const reasons = [
+      'Same query-set version and declared configuration. Deltas are descriptive associations, not causal effects.',
+    ];
+    // A statement-level delta is only meaningful when both sides decomposed their answers to a
+    // comparable degree. Otherwise a change in reviewer effort looks like a change in the answer.
+    const currentBreadth = claimBreadth(run);
+    const priorBreadth = claimBreadth(prior);
+    if (currentBreadth.withClaims === 0 || priorBreadth.withClaims === 0) {
+      reasons.push(
+        'Statement-level metrics are not compared: one side has no recorded answer statements, so any difference would describe the decomposition, not the answer.',
+      );
+    } else if (
+      currentBreadth.withClaims / Math.max(currentBreadth.observations, 1) !==
+      priorBreadth.withClaims / Math.max(priorBreadth.observations, 1)
+    ) {
+      reasons.push(
+        `Statement-level metrics are reported but not compared as a trend: ${String(priorBreadth.withClaims)} of ${String(priorBreadth.observations)} eligible answer(s) were decomposed earlier versus ${String(currentBreadth.withClaims)} of ${String(currentBreadth.observations)} now.`,
+      );
+    }
     return {
       runId: run.id,
       priorRunId: prior.id,
       comparable: true,
-      reasons: [
-        'Same query-set version and declared configuration. Deltas are descriptive associations, not causal effects.',
-      ],
+      reasons,
       metricDeltas: deltas(run, prior),
     };
   });
@@ -566,6 +677,20 @@ function buildLimitations(
       'Citation metrics exclude observations whose interface did not expose citation metadata.',
     );
   }
+  if (runs.some((run) => run.metrics.claimLevel !== undefined)) {
+    limitations.push(
+      'Statement-level figures describe only the answers a reviewer decomposed, and only against the evidence and scope recorded at review time. They are not provider-quality measures.',
+    );
+  } else {
+    limitations.push(
+      'No answer statements were decomposed for the runs in this report, so no statement-level figure is available. Absence here means none were recorded, not that the answers were wrong.',
+    );
+  }
+  if (runs.some((run) => (run.metrics.claimLevel?.unassessedClaims ?? 0) > 0)) {
+    limitations.push(
+      'Some recorded statements carry no assessment; they are excluded from statement-level denominators and counted as unassessed rather than treated as inaccurate.',
+    );
+  }
   return limitations;
 }
 
@@ -628,6 +753,42 @@ export function buildReportSnapshot(input: ReportBuildInput): ReportSnapshot {
     cancelledRuns: input.runs.filter((run) => run.run.status === 'CANCELLED').length,
     observations: runViews.reduce((sum, run) => sum + run.observations.length, 0),
     websiteAudits: input.websiteAudits.length,
+    answerClaims: runViews.reduce(
+      (sum, run) =>
+        sum +
+        run.observations.reduce(
+          (inner, observation) =>
+            inner +
+            (observation.answerClaims ?? []).filter((claim) => claim.voidedAt === null).length,
+          0,
+        ),
+      0,
+    ),
+    assessedAnswerClaims: runViews.reduce(
+      (sum, run) => sum + run.observations.reduce((inner, o) => inner + o.assessedClaimCount, 0),
+      0,
+    ),
+    decomposedObservations: runViews.reduce(
+      (sum, run) =>
+        sum +
+        run.observations.filter((observation) => (observation.answerClaims ?? []).length > 0)
+          .length,
+      0,
+    ),
+    citationClaimMappings: runViews.reduce(
+      (sum, run) =>
+        sum +
+        run.observations.reduce(
+          (inner, observation) =>
+            inner +
+            (observation.answerClaims ?? []).reduce(
+              (claims, claim) => claims + claim.citationSupports.length,
+              0,
+            ),
+          0,
+        ),
+      0,
+    ),
     unassessedPropositions: claimViews.reduce(
       (sum, claim) =>
         sum +

@@ -275,8 +275,13 @@ function assembleClaim(db: DatabaseSync, row: Row): AnswerClaimRecord {
  * Read the claim rows for one observation in a single pass per table rather than one pass per claim,
  * because a long answer can hold a dozen statements and the workspace page would otherwise issue
  * dozens of identical queries.
+ *
+ * Exported for report generation, which needs the same records the workspace shows.
  */
-function claimsForObservation(db: DatabaseSync, observationId: string): AnswerClaimRecord[] {
+export function listAnswerClaimsForObservation(
+  db: DatabaseSync,
+  observationId: string,
+): AnswerClaimRecord[] {
   const rows = db
     .prepare('SELECT * FROM answer_claims WHERE observation_id = ? ORDER BY ordinal ASC')
     .all(observationId);
@@ -407,7 +412,7 @@ export function getAnswerClaimWorkspace(
     answerText: nullableStringValue(row, 'answer_text'),
     citationCapture: stringValue(row, 'citation_capture'),
     voidedAt: nullableStringValue(row, 'voided_at'),
-    claims: claimsForObservation(db, observationId),
+    claims: listAnswerClaimsForObservation(db, observationId),
     citations,
     propositions: projectPropositions(db, projectId),
   };

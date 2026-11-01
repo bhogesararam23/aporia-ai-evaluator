@@ -22,8 +22,13 @@ function formatValue(value: number | null): string {
   return value === null ? '' : value.toFixed(6);
 }
 
+/**
+ * Every metric row for a run. The claim-level block is appended when present, with the same
+ * numerator, denominator, exclusion and definition columns, so an export consumer can see exactly how
+ * narrow a statement-level denominator is instead of reading a bare percentage.
+ */
 function metricRows(run: ReportRunView): MetricResult[] {
-  return [
+  const rows = [
     run.metrics.mentionRate,
     run.metrics.targetSourceCitationRate,
     run.metrics.anySourceCitationRate,
@@ -32,6 +37,19 @@ function metricRows(run: ReportRunView): MetricResult[] {
     run.metrics.attributionCorrectnessRate,
     run.metrics.observedAnswerCoverage,
   ];
+  const claimLevel = run.metrics.claimLevel;
+  if (claimLevel !== undefined) {
+    rows.push(
+      claimLevel.decompositionCoverage,
+      claimLevel.claimFidelityRate,
+      claimLevel.claimContradictionRate,
+      claimLevel.claimUnsupportedRate,
+      claimLevel.claimCitationSupportRate,
+      claimLevel.claimAttributionRate,
+      claimLevel.relevantOmissionRate,
+    );
+  }
+  return rows;
 }
 
 export function metricsCsv(snapshot: ReportSnapshot): string {
