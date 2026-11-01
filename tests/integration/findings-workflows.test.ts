@@ -9,9 +9,11 @@ import {
   createFinding,
   getFinding,
   listFindings,
+  listReferenceCandidates,
   previewRetestComparison,
   recordRetestComparison,
   removeFindingReference,
+  referenceTargetLabels,
   transitionFinding,
   updateFindingDetails,
   type FindingInput,
@@ -21,6 +23,7 @@ import {
   createTestDatabase,
   insertAnswerClaim,
   insertClaimWithProposition,
+  insertCitation,
   insertObservation,
   insertObservationAssessment,
   insertProject,
@@ -28,6 +31,7 @@ import {
   insertQuerySet,
   insertReport,
   insertRun,
+  insertWebsiteAudit,
   TEST_ACTOR,
   TEST_TIME,
 } from '../helpers/db.ts';
@@ -686,6 +690,78 @@ test('project deletion removes findings, references, updates and comparisons', (
       assert.equal(Number(row['n']), 0, table);
     }
     assert.equal(getFinding(db, 'prj_1', id), null);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('reference candidates are readable, project-scoped, and bounded', () => {
+  const db = seeded();
+  try {
+    insertCitation(db, { observationId: 'obs_base' });
+    insertAnswerClaim(db, { observationId: 'obs_base', quoteText: 'created by Ram' });
+    insertWebsiteAudit(db, { label: 'Project home page' });
+    // The same record types in the other project, to prove the picker cannot cross the boundary.
+    insertClaimWithProposition(db, {
+      projectId: 'prj_2',
+      claimId: 'clm_3',
+      revisionId: 'rev_3',
+      propositionId: 'prp_3',
+    });
+    const candidates = listReferenceCandidates(db, 'prj_1');
+    assert.deepEqual(
+      candidates.claim.items.map((item) => item.id),
+      ['clm_1'],
+    );
+    assert.deepEqual(candidates.run.items.map((item) => item.id), ['run_base']);
+    assert.deepEqual(candidates.observation.items.map((item) => item.id), ['obs_base']);
+    assert.deepEqual(candidates.answer_claim.items.map((item) => item.id), ['acs_1']);
+    assert.deepEqual(candidates.citation.items.map((item) => item.id), ['cit_1']);
+    assert.deepEqual(candidates.website_audit.items.map((item) => item.id), ['wsa_1']);
+    assert.deepEqual(candidates.proposition.items.map((item) => item.id), ['prp_1']);
+    // Labels carry the words already on screen, not identifiers an operator cannot read.
+    assert.match(candidates.answer_claim.items[0]?.label ?? '', /created by Ram/);
+    assert.match(candidates.website_audit.items[0]?.label ?? '', /Project home page/);
+    assert.equal(candidates.claim.truncated, false);
+    // A limit at the count already stored means there is nothing more to show.
+    assert.equal(listReferenceCandidates(db, 'prj_1', 1).claim.truncated, false);
+    const other = listReferenceCandidates(db, 'prj_2', 50);
+    assert.deepEqual(
+      other.claim.items.map((item) => item.id),
+      ['clm_2', 'clm_3'],
+    );
+    // Two claims with room for one is the truncation the page has to admit to.
+    assert.equal(listReferenceCandidates(db, 'prj_2', 1).claim.truncated, true);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('a stored reference reads back what it points at today, and a deleted target takes its pointer with it', () => {
+  const db = seeded();
+  try {
+    const id = findingId(db);
+    const withRefs = addFindingReference(
+      db,
+      'prj_1',
+      id,
+      { type: 'claim', id: 'clm_1' },
+      context,
+    );
+    const claimRef = withRefs.references[0];
+    assert.ok(claimRef);
+    const labels = referenceTargetLabels(db, 'prj_1', withRefs.references);
+    assert.match(labels.get(claimRef.id) ?? '', /repository contains the described feature/);
+    // A pointer into another project never resolves, so the finding cannot borrow a foreign label.
+    const foreign = referenceTargetLabels(db, 'prj_2', withRefs.references);
+    assert.equal(foreign.get(claimRef.id), null);
+    // Deleting the referenced record cascades the pointer away but leaves the finding body intact.
+    // This is ADR-021's trade-off, and it has to stay visible: the narrative of what was observed
+    // survives, while the page can no longer claim the record is still there.
+    db.prepare('DELETE FROM claims WHERE id = ?').run('clm_1');
+    const afterDeletion = getFinding(db, 'prj_1', id);
+    assert.notEqual(afterDeletion, null, 'the finding body survives its referenced record');
+    assert.deepEqual(afterDeletion?.references, [], 'the pointer is removed with its target');
   } finally {
     closeDatabase(db);
   }

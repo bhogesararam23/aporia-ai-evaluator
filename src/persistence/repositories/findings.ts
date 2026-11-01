@@ -583,6 +583,164 @@ export function removeFindingReference(
 }
 
 // ---------------------------------------------------------------------------
+// Reference targets: what a pointer actually points at
+// ---------------------------------------------------------------------------
+
+/**
+ * The eight types stored as reference rows. `report_suggestion` is excluded because it lives on the
+ * finding itself rather than in a pointer to a record that could be deleted.
+ */
+const REFERENCE_TARGET_TYPES = [
+  'claim',
+  'proposition',
+  'query',
+  'run',
+  'observation',
+  'answer_claim',
+  'citation',
+  'website_audit',
+] as const;
+type ReferenceTargetType = (typeof REFERENCE_TARGET_TYPES)[number];
+
+/**
+ * One readable description per target type, scoped to a project.
+ *
+ * Every query is a single indexed select that joins up to the project, ordered most recent first, so
+ * an operator picks a record by the words already on screen instead of pasting an identifier. The
+ * limit keeps a large project from loading thousands of options into a page; the caller renders the
+ * truncation rather than hiding it. Each order ends on the id, because an ordering that ties leaves
+ * the pickers shuffling between two renders of the same page.
+ */
+const TARGET_QUERIES: Record<ReferenceTargetType, string> = {
+  claim: `SELECT c.id AS id, COALESCE(r.text, 'A claim with no current revision') AS label
+    FROM claims c LEFT JOIN claim_revisions r ON r.id = c.current_revision_id
+    WHERE c.project_id = ? ORDER BY c.updated_at DESC, c.id LIMIT ?`,
+  proposition: `SELECT p.id AS id, p.text AS label
+    FROM propositions p
+    JOIN claim_revisions r ON r.id = p.claim_revision_id
+    JOIN claims c ON c.id = r.claim_id
+    WHERE c.project_id = ? ORDER BY p.created_at DESC, p.rowid DESC LIMIT ?`,
+  query: `SELECT q.id AS id, q.text AS label
+    FROM queries q JOIN query_sets s ON s.id = q.query_set_id
+    WHERE s.project_id = ? ORDER BY q.created_at DESC, q.ordinal, q.id LIMIT ?`,
+  run: `SELECT id, name AS label FROM runs
+    WHERE project_id = ? ORDER BY created_at DESC, id LIMIT ?`,
+  observation: `SELECT o.id AS id, o.query_text_snapshot AS label
+    FROM observations o JOIN runs r ON r.id = o.run_id
+    WHERE r.project_id = ? ORDER BY o.captured_at DESC, o.rowid LIMIT ?`,
+  answer_claim: `SELECT a.id AS id, COALESCE(v.quote_text, 'A statement with no current revision') AS label
+    FROM answer_claims a LEFT JOIN answer_claim_revisions v ON v.id = a.current_revision_id
+    WHERE a.project_id = ? ORDER BY a.created_at DESC, a.ordinal, a.id LIMIT ?`,
+  citation: `SELECT ci.id AS id, COALESCE(NULLIF(ci.title, ''), ci.url) AS label
+    FROM citations ci
+    JOIN observations o ON o.id = ci.observation_id
+    JOIN runs r ON r.id = o.run_id
+    WHERE r.project_id = ? ORDER BY ci.created_at DESC, ci.position, ci.id LIMIT ?`,
+  website_audit: `SELECT id, label FROM website_audits
+    WHERE project_id = ? ORDER BY audited_at DESC, id LIMIT ?`,
+};
+
+export interface ReferenceCandidate {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface ReferenceChoices {
+  readonly items: readonly ReferenceCandidate[];
+  readonly truncated: boolean;
+}
+
+function readableLabel(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length <= 90 ? collapsed : `${collapsed.slice(0, 89)}…`;
+}
+
+function choicesFor(
+  db: DatabaseSync,
+  type: ReferenceTargetType,
+  projectId: string,
+  limit: number,
+): ReferenceChoices {
+  const rows = db.prepare(TARGET_QUERIES[type]).all(projectId, limit + 1) as Row[];
+  const truncated = rows.length > limit;
+  return {
+    items: (truncated ? rows.slice(0, limit) : rows).map((row) => ({
+      id: stringValue(row, 'id'),
+      label: readableLabel(stringValue(row, 'label')),
+    })),
+    truncated,
+  };
+}
+
+export type ReferenceChoiceMap = Record<ReferenceTargetType, ReferenceChoices>;
+
+export function listReferenceCandidates(
+  db: DatabaseSync,
+  projectId: string,
+  limit = 50,
+): ReferenceChoiceMap {
+  const map = {} as ReferenceChoiceMap;
+  for (const type of REFERENCE_TARGET_TYPES) {
+    map[type] = choicesFor(db, type, projectId, limit);
+  }
+  return map;
+}
+
+/**
+ * Readable text for the targets a finding already points at.
+ *
+ * A reference stores an id, never a copy of the record, so this reads what that id says today. A
+ * target that no longer resolves returns null and the caller says so: a finding must not appear to
+ * still describe a record that has gone.
+ */
+const TARGET_LOOKUPS: Record<ReferenceTargetType, string> = {
+  claim: `SELECT COALESCE(r.text, 'A claim with no current revision') AS label
+    FROM claims c LEFT JOIN claim_revisions r ON r.id = c.current_revision_id
+    WHERE c.project_id = ? AND c.id = ?`,
+  proposition: `SELECT p.text AS label
+    FROM propositions p
+    JOIN claim_revisions r ON r.id = p.claim_revision_id
+    JOIN claims c ON c.id = r.claim_id
+    WHERE c.project_id = ? AND p.id = ?`,
+  query: `SELECT q.text AS label FROM queries q JOIN query_sets s ON s.id = q.query_set_id
+    WHERE s.project_id = ? AND q.id = ?`,
+  run: 'SELECT name AS label FROM runs WHERE project_id = ? AND id = ?',
+  observation: `SELECT o.query_text_snapshot AS label FROM observations o JOIN runs r ON r.id = o.run_id
+    WHERE r.project_id = ? AND o.id = ?`,
+  answer_claim: `SELECT COALESCE(v.quote_text, 'A statement with no current revision') AS label
+    FROM answer_claims a LEFT JOIN answer_claim_revisions v ON v.id = a.current_revision_id
+    WHERE a.project_id = ? AND a.id = ?`,
+  citation: `SELECT COALESCE(NULLIF(ci.title, ''), ci.url) AS label
+    FROM citations ci
+    JOIN observations o ON o.id = ci.observation_id
+    JOIN runs r ON r.id = o.run_id
+    WHERE r.project_id = ? AND ci.id = ?`,
+  website_audit: 'SELECT label FROM website_audits WHERE project_id = ? AND id = ?',
+};
+
+export function referenceTargetLabels(
+  db: DatabaseSync,
+  projectId: string,
+  references: readonly FindingReferenceRecord[],
+): Map<string, string | null> {
+  const found = new Map<string, string | null>();
+  for (const reference of references) {
+    if (!isReferenceTargetType(reference.type)) {
+      continue;
+    }
+    const row = db
+      .prepare(TARGET_LOOKUPS[reference.type])
+      .get(projectId, reference.targetId) as Row | undefined;
+    found.set(reference.id, row === undefined ? null : readableLabel(stringValue(row, 'label')));
+  }
+  return found;
+}
+
+function isReferenceTargetType(type: FindingReferenceType): type is ReferenceTargetType {
+  return (REFERENCE_TARGET_TYPES as readonly string[]).includes(type);
+}
+
+// ---------------------------------------------------------------------------
 // Retest comparison
 // ---------------------------------------------------------------------------
 
