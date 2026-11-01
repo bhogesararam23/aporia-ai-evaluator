@@ -713,12 +713,30 @@ test('reference candidates are readable, project-scoped, and bounded', () => {
       candidates.claim.items.map((item) => item.id),
       ['clm_1'],
     );
-    assert.deepEqual(candidates.run.items.map((item) => item.id), ['run_base']);
-    assert.deepEqual(candidates.observation.items.map((item) => item.id), ['obs_base']);
-    assert.deepEqual(candidates.answer_claim.items.map((item) => item.id), ['acs_1']);
-    assert.deepEqual(candidates.citation.items.map((item) => item.id), ['cit_1']);
-    assert.deepEqual(candidates.website_audit.items.map((item) => item.id), ['wsa_1']);
-    assert.deepEqual(candidates.proposition.items.map((item) => item.id), ['prp_1']);
+    assert.deepEqual(
+      candidates.run.items.map((item) => item.id),
+      ['run_base'],
+    );
+    assert.deepEqual(
+      candidates.observation.items.map((item) => item.id),
+      ['obs_base'],
+    );
+    assert.deepEqual(
+      candidates.answer_claim.items.map((item) => item.id),
+      ['acs_1'],
+    );
+    assert.deepEqual(
+      candidates.citation.items.map((item) => item.id),
+      ['cit_1'],
+    );
+    assert.deepEqual(
+      candidates.website_audit.items.map((item) => item.id),
+      ['wsa_1'],
+    );
+    assert.deepEqual(
+      candidates.proposition.items.map((item) => item.id),
+      ['prp_1'],
+    );
     // Labels carry the words already on screen, not identifiers an operator cannot read.
     assert.match(candidates.answer_claim.items[0]?.label ?? '', /created by Ram/);
     assert.match(candidates.website_audit.items[0]?.label ?? '', /Project home page/);
@@ -741,13 +759,7 @@ test('a stored reference reads back what it points at today, and a deleted targe
   const db = seeded();
   try {
     const id = findingId(db);
-    const withRefs = addFindingReference(
-      db,
-      'prj_1',
-      id,
-      { type: 'claim', id: 'clm_1' },
-      context,
-    );
+    const withRefs = addFindingReference(db, 'prj_1', id, { type: 'claim', id: 'clm_1' }, context);
     const claimRef = withRefs.references[0];
     assert.ok(claimRef);
     const labels = referenceTargetLabels(db, 'prj_1', withRefs.references);

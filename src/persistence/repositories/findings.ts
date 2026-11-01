@@ -728,9 +728,8 @@ export function referenceTargetLabels(
     if (!isReferenceTargetType(reference.type)) {
       continue;
     }
-    const row = db
-      .prepare(TARGET_LOOKUPS[reference.type])
-      .get(projectId, reference.targetId) as Row | undefined;
+    const row = db.prepare(TARGET_LOOKUPS[reference.type]).get(projectId, reference.targetId) as
+      Row | undefined;
     found.set(reference.id, row === undefined ? null : readableLabel(stringValue(row, 'label')));
   }
   return found;
