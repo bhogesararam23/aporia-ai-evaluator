@@ -43,6 +43,14 @@ export const EXCLUSION_REASONS = [
   'CLAIM_CITATION_NOT_ASSESSABLE',
   'CLAIM_NO_PROPOSITION_RELATION',
   'CLAIM_LABEL_INVALID',
+  'CLAIM_VOIDED',
+  'CLAIM_UNRELATED',
+  'CLAIM_AMBIGUOUS',
+  'CLAIM_ABSTENTION',
+  'CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE',
+  'CLAIM_CITATION_VOIDED',
+  'CLAIM_CITATION_NON_ASSERTING',
+  'CLAIM_OMISSION_NON_ENGAGING',
 ] as const;
 
 export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];
@@ -98,6 +106,22 @@ export const EXCLUSION_DESCRIPTIONS: Record<ExclusionReason, string> = {
     'No recorded statement relates to a target proposition, so the omission measure has no denominator.',
   CLAIM_LABEL_INVALID:
     'A stored label does not belong to its dimension. It is reported as unassessed rather than trusted.',
+  CLAIM_VOIDED:
+    'The reviewer voided this statement. Its record and reason stay inspectable, and it contributes to no current metric.',
+  CLAIM_UNRELATED:
+    'The statement has nothing to do with the evaluation target. It is recorded for completeness and scored on nothing.',
+  CLAIM_AMBIGUOUS:
+    'The statement cannot be tied to one target with confidence. It stays an open question rather than becoming a verdict.',
+  CLAIM_ABSTENTION:
+    'The answer hedged or said it did not know. Abstention is not a negative verdict and is not scored as an inaccurate statement.',
+  CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE:
+    'The recorded label asserts something the recorded relevance says was never asserted. Relevance governs, the statement is excluded, and the conflict is reported for correction.',
+  CLAIM_CITATION_VOIDED:
+    'The cited record was voided. The mapping is kept as history and no longer counts as citation support.',
+  CLAIM_CITATION_NON_ASSERTING:
+    'The statement makes no factual assertion, so no cited material can support it. The mapping is recorded and excluded.',
+  CLAIM_OMISSION_NON_ENGAGING:
+    'The statement does not engage the target, so it cannot show that anything was left unsaid. Its proposition link is excluded from the omission measure.',
 };
 
 export interface MetricExclusion {
