@@ -7,6 +7,7 @@
  */
 import {
   ANSWER_CLAIM_VERSIONS,
+  CLAIM_CITATION_SUPPORT_LABELS,
   isAssertingRelevance,
   type ClaimCitationSupportLabel,
   type ClaimRelevance,
@@ -66,7 +67,21 @@ export interface ClaimLevelMetrics {
   readonly observationsWithClaims: number;
   readonly eligibleObservations: number;
   readonly decompositionCoverage: MetricResult;
-  readonly partiallyDecomposedObservations: number;
+  /**
+   * Answers whose recorded statements are only part-way through fidelity review.
+   *
+   * Named for the work it measures. `metrics-v3` called this `partiallyDecomposedObservations`, but
+   * it counted observations where some statements already carry a label and some do not — which is
+   * review progress, not whether the answer was decomposed. Decomposition coverage is the separate
+   * `decompositionCoverage` rate, and the counts below split the two apart instead of letting a
+   * reader mistake reviewer effort for AI performance.
+   */
+  readonly partiallyAssessedObservations: number;
+  readonly statementsRecorded: number;
+  readonly statementsFidelityAssessed: number;
+  readonly statementsAttributionAssessed: number;
+  readonly citationMappingsRecorded: number;
+  readonly citationMappingsAssessed: number;
   readonly unassessedClaims: number;
   readonly voidedClaims: number;
   /** Statements whose recorded label asserts more than their recorded relevance permits. */
@@ -180,10 +195,27 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
   let claimsWithNoAssertion = 0;
   let conflictingLabels = 0;
   let voidedClaims = 0;
+  let statementsRecorded = 0;
+  let statementsFidelityAssessed = 0;
+  let statementsAttributionAssessed = 0;
+  let citationMappingsRecorded = 0;
+  let citationMappingsAssessed = 0;
 
   for (const claim of scoredClaims) {
     if (claim.voided) {
       voidedClaims += 1;
+    } else {
+      statementsRecorded += 1;
+      if (claim.fidelityLabel !== undefined) {
+        statementsFidelityAssessed += 1;
+      }
+      if (claim.attributionLabel !== undefined) {
+        statementsAttributionAssessed += 1;
+      }
+      citationMappingsRecorded += claim.citationMappings.length;
+      citationMappingsAssessed += claim.citationMappings.filter((mapping) =>
+        CLAIM_CITATION_SUPPORT_LABELS.includes(mapping.support as ClaimCitationSupportLabel),
+      ).length;
     }
     // One flag per statement, so a row whose fidelity and attribution both overstate the recorded
     // relevance is reported once. A conflict is a recording error the operator should see and fix,
@@ -314,6 +346,9 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
     'Relevance decides whether a statement asserts anything. A refusal, abstention, omission, unrelated or unavailable statement is outside every factual denominator whatever label was recorded against it, and the reason names which kind it was.',
     'A label that contradicts the recorded relevance is excluded and reported as a conflict. It is never resolved by preferring the label, because a refusal scored as an accurate statement is the exact error this block exists to avoid.',
   ];
+  notes.push(
+    `Review progress, kept apart from every rate: ${statementsFidelityAssessed} of ${statementsRecorded} live statement(s) carry a fidelity assessment, ${statementsAttributionAssessed} carry an attribution assessment, and ${citationMappingsAssessed} of ${citationMappingsRecorded} citation mapping(s) carry a recorded support label. Finishing review moves these figures, not an answer's score.`,
+  );
   if (claimsWithNoAssertion > 0) {
     notes.push(
       `${claimsWithNoAssertion} recorded statement(s) make no factual assertion about the target and are outside the fidelity, attribution and citation-support denominators.`,
@@ -334,9 +369,14 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
     decompositionVersion: ANSWER_CLAIM_VERSIONS.decomposition,
     observationsWithClaims: observationsWithClaims.size,
     eligibleObservations: eligible.size,
-    partiallyDecomposedObservations: countPartiallyDecomposed(
+    partiallyAssessedObservations: countPartiallyAssessed(
       scoredClaims.filter((claim) => !claim.voided),
     ),
+    statementsRecorded,
+    statementsFidelityAssessed,
+    statementsAttributionAssessed,
+    citationMappingsRecorded,
+    citationMappingsAssessed,
     unassessedClaims,
     voidedClaims,
     labelConflictClaims: conflictingLabels,
@@ -450,7 +490,14 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
   };
 }
 
-function countPartiallyDecomposed(claims: readonly AnswerClaimInput[]): number {
+/**
+ * Answers part-way through fidelity review.
+ *
+ * The unit is the answer, and what it measures is whether the reviewer finished the statements that
+ * were already recorded. It says nothing about the answer itself, which is why the name says review
+ * rather than decomposition.
+ */
+function countPartiallyAssessed(claims: readonly AnswerClaimInput[]): number {
   const byObservation = new Map<string, { unassessed: number; assessed: number }>();
   for (const claim of claims) {
     const entry = byObservation.get(claim.observationId) ?? { unassessed: 0, assessed: 0 };

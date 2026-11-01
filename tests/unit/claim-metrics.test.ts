@@ -344,7 +344,7 @@ test('a partially decomposed answer is counted rather than smoothed over', () =>
       claim({ claimId: 'b', fidelityLabel: undefined }),
     ]),
   );
-  assert.equal(claimLevel.partiallyDecomposedObservations, 1);
+  assert.equal(claimLevel.partiallyAssessedObservations, 1);
   assert.equal(claimLevel.unassessedClaims, 1);
 });
 
@@ -545,4 +545,52 @@ test('a label on the wrong side of the relevance line cannot rescue an unassesse
   assert.equal(claimLevel.claimAttributionRate.denominator, 0);
   assert.equal(claimLevel.labelConflictClaims, 1);
   assert.equal(claimLevel.unassessedClaims, 0, 'a conflict is not the same thing as a gap');
+});
+
+test('unfinished review is reported as reviewer progress, never as an answer result', () => {
+  const partial = block(
+    baseInput([
+      claim({ claimId: 'a', fidelityLabel: 'ACCURATE' }),
+      claim({ claimId: 'b', fidelityLabel: undefined, citationMappings: [] }),
+    ]),
+  );
+  assert.equal(partial.claimLevel.statementsRecorded, 2);
+  assert.equal(partial.claimLevel.statementsFidelityAssessed, 1);
+  assert.equal(partial.claimLevel.partiallyAssessedObservations, 1);
+  assert.equal(partial.claimLevel.claimFidelityRate.denominator, 1);
+
+  const finished = block(
+    baseInput([
+      claim({ claimId: 'a', fidelityLabel: 'ACCURATE' }),
+      claim({ claimId: 'b', fidelityLabel: 'CONTRADICTED' }),
+    ]),
+  );
+  assert.equal(finished.claimLevel.statementsFidelityAssessed, 2);
+  assert.equal(finished.claimLevel.partiallyAssessedObservations, 0);
+  assert.equal(finished.claimLevel.claimFidelityRate.denominator, 2);
+  assert.equal(finished.claimLevel.claimFidelityRate.numerator, 1);
+  // The rate changed because a judgement was recorded about a statement that already existed. It is
+  // reported as review progress so a reader cannot mistake finishing the paperwork for an answer
+  // improving.
+  assert.match(partial.claimLevel.notes.join(' '), /Review progress, kept apart from every rate/);
+  assert.match(partial.claimLevel.notes.join(' '), /1 of 2 live statement\(s\) carry a fidelity/);
+});
+
+test('citation mapping progress is counted separately from statement progress', () => {
+  const { claimLevel } = block(
+    baseInput([
+      claim({
+        claimId: 'a',
+        citationMappings: [mapping('SUPPORTS'), mapping('UNCLEAR', { citationId: 'cit_2' })],
+      }),
+      claim({ claimId: 'b', citationMappings: [mapping('NOT_A_LABEL')] }),
+    ]),
+  );
+  assert.equal(claimLevel.citationMappingsRecorded, 3);
+  assert.equal(
+    claimLevel.citationMappingsAssessed,
+    2,
+    'a stored label outside the vocabulary is not assessed',
+  );
+  assert.equal(claimLevel.claimCitationSupportRate.denominator, 1);
 });

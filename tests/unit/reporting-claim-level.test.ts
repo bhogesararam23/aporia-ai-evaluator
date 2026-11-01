@@ -80,7 +80,7 @@ test('recorded statements produce the claim-level block and coverage counts', ()
   assert.equal(snapshot.coverage.assessedAnswerClaims, 2);
   assert.equal(snapshot.coverage.decomposedObservations, 2);
   assert.equal(snapshot.coverage.citationClaimMappings, 2);
-  assert.equal(claimLevel.partiallyDecomposedObservations, 1);
+  assert.equal(claimLevel.partiallyAssessedObservations, 1);
 });
 
 test('a voided statement stays readable but leaves every denominator', () => {

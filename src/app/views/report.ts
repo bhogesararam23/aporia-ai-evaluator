@@ -1,5 +1,6 @@
 import type { ReportRunView, ReportSnapshot } from '../../reporting/types.ts';
 import type { MetricResult } from '../../core/metrics.ts';
+import type { ClaimLevelMetrics } from '../../core/claimMetrics.ts';
 import {
   ANSWER_STATEMENT_KIND_LABELS,
   CLAIM_CITATION_SUPPORT_DISPLAY,
@@ -153,6 +154,50 @@ function claimMetricRows(run: ReportRunView): MetricResult[] {
 }
 
 /**
+ * How far review has got, stated separately from every rate.
+ *
+ * `metrics-v3` stored this as `partiallyDecomposedObservations` and this view described it as an
+ * answer being "only partially decomposed" — which read like a verdict on the answer when it only
+ * described unfinished reviewer work. The count is now named for what it measures, and a v3 snapshot
+ * is rendered with the wording that matches what it actually recorded.
+ */
+function reviewProgressNote(claimLevel: ClaimLevelMetrics): Html {
+  const stored = claimLevel as ClaimLevelMetrics & {
+    readonly partiallyDecomposedObservations?: number;
+  };
+  const partial =
+    stored.partiallyAssessedObservations ?? stored.partiallyDecomposedObservations ?? 0;
+  if (stored.statementsRecorded === undefined) {
+    return partial > 0
+      ? html`
+          <p class="small muted">
+            ${String(partial)} answer(s) still had statements awaiting a fidelity assessment when
+            this snapshot was written. That figure measured unfinished review, not how complete the
+            decomposition was; separate review-progress counts were added with
+            <code>metrics-v4</code>.
+          </p>
+        `
+      : html``;
+  }
+  return html`
+    <details class="small">
+      <summary>
+        Review progress — ${String(stored.statementsFidelityAssessed)} of
+        ${String(stored.statementsRecorded)} statement(s) assessed for fidelity,
+        ${String(stored.statementsAttributionAssessed)} for attribution, and
+        ${String(stored.citationMappingsAssessed)} of ${String(stored.citationMappingsRecorded)}
+        citation mapping(s) assessed for support. ${String(partial)} answer(s) part-way.
+      </summary>
+      <p>
+        These counts describe how much of the reviewer's work is finished. Completing review changes
+        them and changes no rate on this page, because a statement nobody has judged yet is reported
+        as unassessed rather than as a result.
+      </p>
+    </details>
+  `;
+}
+
+/**
  * The statement-level section.
  *
  * Absent is rendered as an explanation, never as a zero: a report generated before answers were
@@ -201,13 +246,8 @@ function statementSection(run: ReportRunView): Html {
             relevance does not support; they are excluded and listed as a conflict until corrected.`
           : ''
       }
-      ${
-        claimLevel.partiallyDecomposedObservations > 0
-          ? html` ${String(claimLevel.partiallyDecomposedObservations)} answer(s) were only
-            partially decomposed, so statement denominators are narrower than the answer set.`
-          : ''
-      }
     </p>
+    ${reviewProgressNote(claimLevel)}
     <div class="table-wrap">
       <table class="metric-table">
         <caption>
