@@ -73,8 +73,10 @@ This document prevents the implementation from being mistaken for the complete p
 
 - Reports are project snapshots; there is no scheduled monitoring, alerting, retest notification, or longitudinal dashboard.
 - Comparisons are limited to identical query-set versions and declared provider configuration. Deltas are descriptive, not causal.
-- Remediation suggestions are derived from recorded gaps/findings and are not tracked work items with owners, due dates, or status transitions.
-- Report exports include all recorded material; there is no redaction workflow or share-scope control.
+- Findings are tracked work items with an owner **label**, a status lifecycle, and a retest comparison, but they are not a project-management system: there are no due dates, no assignments, no notifications, and no accounts, so nothing verifies who owns or changed a finding. A measured status (`improved`, `unchanged`, `regressed`, `unable to verify`) requires a stored comparison; `unable to verify` is a respectable outcome and is never rendered as fixed.
+- A retest compares two captures the operator made by hand. Creating `retest required` schedules nothing and calls no provider; if no later run exists, there is nothing to compare.
+- Remediation suggestions are derived from recorded gaps and findings. A suggestion becomes a tracked finding only when somebody raises one; the report does not open findings by itself, and a finding raised from a suggestion records the suggestion key rather than a decision that the suggestion was correct.
+- Report exports include all recorded material; there is no redaction workflow or share-scope control. Findings, statement narratives, and comparison reasons are included, so an export may carry an operator's written account of a wrong statement about a real person.
 - No license is declared. No legal, privacy, consumer-protection, or regulatory review has been completed.
 - The repository is not production-ready, independently audited, or backed by verified CI/release controls merely because checks pass locally.
 
@@ -87,10 +89,16 @@ The following data-model concepts are documented in the baseline but are not imp
 - dedicated review/appeal events (local audit and assessment history are used instead);
 - provider capability records;
 - citation-to-source resolution;
-- remediation work-item tracking;
-- benchmark and gold-set management;
 - scheduled provider tests and monitoring;
 - accounts, organizations, plans, billing, and quotas.
+
+Implemented later, with their own limits:
+
+- **Remediation work-item tracking** exists from v0.3 as tracked findings (`009_remediation.sql`), with pointers, an append-only history, and stored retest comparisons. It carries no due dates, notifications, or identities.
+- **Benchmark and gold-set management** exists from v0.3 as an offline file format with validation and scoring (`src/benchmark/`, `npm run benchmark`). It manages **no dataset**: there are no gold cases in this repository, no published corpus, and no measured agreement figure. Until a real annotator records labels, the harness is a machine that can score a comparison, not evidence that the evaluator is correct.
+- **Answer-statement decomposition** exists from v0.3 (`008_answer_claims.sql`). A statement is what a reviewer says the answer asserted: extraction is manual, the raw answer is never edited, and a statement whose quote cannot be located is stored as a reviewer description rather than as a quote.
+- Observation-level attribution still uses the v0.2 labels (`correct`, `partially correct`, `incorrect`, `not addressed`, `not assessable`). The finer distinctions — right person with the wrong role, false sole credit, collaborative or organisational contribution — exist only at statement level, so an answer-level rate cannot express them.
+- A statement-level metric appears in a report only when the answers were decomposed. Its absence means "not recorded"; it is never reported as zero, and a change in how much of the answer a reviewer decomposed is reported as context rather than as improvement.
 
 ## 10. Appropriate use of this milestone
 
