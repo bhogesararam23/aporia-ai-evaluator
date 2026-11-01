@@ -4,6 +4,7 @@ import { html, raw, safeHref } from '../../src/app/views/html.ts';
 import {
   assessmentBadge,
   checkboxField,
+  dateField,
   dateTimeField,
   errorSummary,
   formatDateTime,
@@ -57,6 +58,36 @@ test('text fields escape values, errors, and help text', () => {
   assert.match(field.value, /Required &lt;now&gt;/);
   assert.match(field.value, /Help &amp; guidance/);
   assert.match(field.value, /required/);
+});
+
+test('every help and error paragraph is referenced by the control it describes', () => {
+  // An aria-describedby that names a non-existent element is invisible to a screen reader. The
+  // reference is built from the control id, so a field that shows help or an error must also make it
+  // reachable, or the guidance is silently lost on every form in the product.
+  const issues = [{ field: 'note', message: 'Say what changed.' }];
+  const fields = [
+    textField({ name: 'note', label: 'Note', issues, help: 'Plain text.' }),
+    textareaField({ name: 'note', label: 'Note', issues, help: 'Plain text.' }),
+    selectField({
+      name: 'note',
+      label: 'Note',
+      issues,
+      help: 'Pick one.',
+      options: [{ value: 'a', label: 'A' }],
+    }),
+    dateTimeField({ name: 'note', label: 'Note', issues }),
+    dateField({ name: 'note', label: 'Note', issues, help: 'A calendar date.' }),
+    checkboxField({ name: 'note', label: 'Note', issues, help: 'Tick to confirm.' }),
+  ];
+  for (const field of fields) {
+    const referenced = /aria-describedby="([^"]+)"/.exec(field.value)?.[1];
+    assert.ok(referenced, 'the control names its description');
+    for (const id of referenced.split(/\s+/).filter((token) => token.length > 0)) {
+      assert.match(field.value, new RegExp(`id="${id}"`), `${id} exists in the same field`);
+    }
+    assert.match(field.value, /Say what changed\./);
+    assert.match(field.value, /aria-invalid="true"/);
+  }
 });
 
 test('textareas and selects escape submitted values', () => {
