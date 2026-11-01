@@ -1,8 +1,8 @@
-# Implementation Status — Local Core v0.2
+# Implementation Status — Local Core v0.3
 
 - Status: Implemented and locally validated; owner acceptance and release remain pending
-- Date: 2026-10-30
-- Branch: `feat/aporia-local-core-v0.2`
+- Date: 2026-11-01
+- Branch: `feat/aporia-local-core-v0.3-claim-level-evaluation`
 - Scope: local-first evidence evaluation without provider, cloud, crawler, or publishing integrations
 
 This matrix records what is actually implemented and verified in this repository. “Validated” means the named local check ran successfully; it does not mean an external review, production deployment, or provider validation occurred. The existing documents remain the requirements source of truth.
@@ -43,6 +43,24 @@ This matrix records what is actually implemented and verified in this repository
 | Local security controls | Implemented / Validated | Loopback binding, Host/Origin/CSRF, CSP, body/upload limits, escaping, safe URLs, parameterized SQL | Config, security, body, HTTP, view, audit tests |
 | Documentation and runbook | Implemented / Validated | Architecture, schema, metrics, testing, limitations, operations, README | Link check, docs tests, and manual review |
 | CI quality gate | Implemented / Validated | GitHub Actions runs `npm ci` and `npm run check` on Node 24 | Hosted runs 40773185352 (`38d3006`) and 40775144790 (`4dae6ce`) succeeded |
+
+### v0.3 additions
+
+| Capability | Status | Implementation | Verification |
+|---|---|---|---|
+| Answer-statement decomposition | Implemented / Validated | `008_answer_claims.sql`, `src/core/answerClaims.ts`, statement workspace at `/…/observations/:observationId/claims`; raw answer never edited; corrections create superseding revisions | `tests/unit/answer-claims.test.ts`, `tests/unit/answer-claim-inputs.test.ts`, `tests/integration/schema-answer-claims.test.ts`, `tests/integration/repositories-answer-claims.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
+| Quote location and verification | Implemented / Validated | Exact/normalised/no-offset bases in Unicode **code points**; NFKC mapping back to code-unit positions; a trigger re-derives the quote from the stored answer | `tests/unit/answer-claim-inputs.test.ts` (astral-character offsets, whitespace-only refusal), `tests/integration/schema-answer-claims.test.ts` |
+| Statement–proposition relations | Implemented / Validated | One-to-many and many-to-one links with `SUPPORTS`/`PARTIALLY_SUPPORTS`/`CONTRADICTS`/`REFINES`/`DOES_NOT_ADDRESS`/`UNCERTAIN`/`OMITS_TARGET`/`INSUFFICIENT_FOR_TARGET`; corrections supersede, never delete | `tests/integration/repositories-answer-claims.test.ts` |
+| Statement–citation mapping | Implemented / Validated | Support label per mapping row (`NO_CITATION`, `NON_SUPPORTING`, `PARTIAL`, `CONDITIONAL`, `METADATA_MISSING`, shared citation); citation presence is never treated as accuracy | `tests/unit/claim-metrics.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
+| Statement-level attribution | Implemented / Validated | Right person/wrong role, partial, ambiguous, incorrect, unattributed, false sole credit, collaborative/organisational labels; authorship is never inferred from a name | `tests/unit/claim-metrics.test.ts`, `tests/integration/repositories-answer-claims.test.ts` |
+| metrics-v3 with historical compatibility | Implemented / Validated | `src/core/claimMetrics.ts` adds a statement-level block keyed `answer_*`; `metrics-v1`/`metrics-v2` are never recomputed and render from stored snapshots; an absent block renders as "not recorded", never zero | `tests/unit/claim-metrics.test.ts`, `tests/unit/metrics.test.ts`, `tests/unit/report-compatibility.test.ts` |
+| Claim-level reporting | Implemented / Validated | Snapshot, report view, and metrics CSV carry the statement block, coverage counts, and limitation lines; template `report-template-v3` | `tests/unit/reporting-claim-level.test.ts`, `tests/integration/reporting-service.test.ts` |
+| Offline benchmark harness | Implemented / Validated | `src/benchmark/` validates a versioned case format, scores per-label precision/recall with confusion matrices, separates software regression from methodology failure; `npm run benchmark` | `tests/unit/benchmark-validate.test.ts`, `tests/unit/benchmark-scoring.test.ts`, `tests/integration/benchmark-cli.test.ts` |
+| Tracked remediation findings | Implemented / Validated | `009_remediation.sql`, `src/core/findings.ts`, `src/persistence/repositories/findings.ts`, findings workspace and retest pages | `tests/unit/findings-lifecycle.test.ts`, `tests/unit/finding-inputs.test.ts`, `tests/integration/findings-workflows.test.ts`, `tests/integration/finding-workflows.test.ts` |
+| Longitudinal retest comparison | Implemented / Validated | One shared comparability rule for report and retest, metric polarity per metric, causal-boundary text, append-only comparisons; a measured status requires a stored comparison | `tests/integration/findings-workflows.test.ts`, `tests/integration/finding-workflows.test.ts` |
+| Backup coverage of v0.3 tables | Implemented / Validated | All nine new tables in `BACKUP_TABLES`; the manifest is checked against the live schema in both directions | `tests/integration/backup-restore.test.ts` |
+| Module-boundary enforcement for the benchmark layer | Implemented / Validated | `scripts/check-boundaries.ts` takes the tree it checks as an argument and knows the `benchmark` layer | `tests/unit/boundaries.test.ts` |
+| Documentation-to-code drift guard | Implemented / Validated | The published route map is compared with the registered routes in both directions | `tests/unit/route-map.test.ts` |
 
 ## 2. Product requirement mapping
 

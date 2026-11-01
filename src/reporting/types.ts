@@ -3,7 +3,15 @@ import type {
   EvidenceRelationshipRecord,
   PropositionConclusion,
 } from '../core/evidence.ts';
-import type { RunMetrics } from '../core/metrics.ts';
+import type { RunMetrics, MetricUnit } from '../core/metrics.ts';
+import type {
+  AnswerOffsetBasis,
+  AnswerStatementKind,
+  ClaimCitationSupportLabel,
+  ClaimDimension,
+  ClaimPropositionRelation,
+  ClaimRelevance,
+} from '../core/answerClaims.ts';
 import type {
   AssessmentMethod,
   AttributionRole,
@@ -20,7 +28,16 @@ import type {
 } from '../core/vocabulary.ts';
 
 export const REPORT_SCHEMA_VERSION = 'report-snapshot-v1';
-export const REPORT_TEMPLATE_VERSION = 'report-template-v2';
+/**
+ * v3 adds the statement-level section (`metrics-v3`) and tracked remediation findings (ADR-021).
+ * v1 and v2 snapshots are still rendered from their stored JSON and are never recomputed.
+ */
+export const REPORT_TEMPLATE_VERSION = 'report-template-v3';
+export const KNOWN_REPORT_TEMPLATE_VERSIONS = [
+  'report-template-v1',
+  'report-template-v2',
+  REPORT_TEMPLATE_VERSION,
+] as const;
 
 export interface ReportProjectInput {
   readonly id: string;
@@ -175,6 +192,35 @@ export interface ReportObservationAssessmentInput {
   readonly createdAt: string;
 }
 
+export interface ReportAnswerClaimPropositionInput {
+  readonly propositionId: string;
+  readonly relation: ClaimPropositionRelation | string;
+}
+
+/**
+ * One recorded answer statement as the report sees it: the current revision only, with the active
+ * links and the latest label per assessment dimension. Superseded revisions stay in the database
+ * review history and deliberately do not enter a report, so correcting a statement cannot
+ * double-count it.
+ */
+export interface ReportAnswerClaimInput {
+  readonly id: string;
+  readonly ordinal: number;
+  readonly revisionId: string;
+  readonly revision: number;
+  readonly quoteText: string;
+  readonly statementKind: AnswerStatementKind;
+  readonly offsetBasis: AnswerOffsetBasis;
+  readonly startOffset: number | null;
+  readonly endOffset: number | null;
+  readonly relevance: ClaimRelevance | string;
+  readonly paraphrase: string | null;
+  readonly propositionLinks: readonly ReportAnswerClaimPropositionInput[];
+  readonly citationSupports: readonly ClaimCitationSupportLabel[];
+  readonly labels: Readonly<Partial<Record<ClaimDimension, string>>>;
+  readonly voidedAt: string | null;
+}
+
 export interface ReportObservationInput {
   readonly id: string;
   readonly queryId: string;
@@ -191,6 +237,11 @@ export interface ReportObservationInput {
   readonly voidReason: string | null;
   readonly citations: readonly ReportCitationInput[];
   readonly assessments: readonly ReportObservationAssessmentInput[];
+  /**
+   * Added with `metrics-v3`. Absent in a `report-template-v1`/`v2` snapshot because the answers were
+   * never decomposed; absence must be rendered as "not recorded", never as zero.
+   */
+  readonly answerClaims?: readonly ReportAnswerClaimInput[];
 }
 
 export interface ReportRunInput {
@@ -254,6 +305,66 @@ export interface ReportAuditInput {
   readonly lastEventAt: string | null;
 }
 
+/**
+ * A tracked remediation finding, as it stood when the report was generated (ADR-021).
+ *
+ * The snapshot copies the finding's own text rather than the text of the records it points at,
+ * because a pointer stores an identity and the record behind it may be revised later. A report has
+ * to keep saying what was believed at the time it was written.
+ *
+ * Status, severity, cause and outcome stay plain strings here on purpose: a stored snapshot must
+ * still render when the vocabulary has gained a value since it was written, rather than failing to
+ * parse its own history.
+ */
+export interface ReportFindingUpdateInput {
+  readonly sequence: number;
+  readonly previousStatus: string | null;
+  readonly newStatus: string | null;
+  readonly note: string;
+  readonly actor: string;
+  readonly at: string;
+  readonly comparisonIndex: number | null;
+}
+
+export interface ReportFindingComparisonInput {
+  readonly baseRunId: string;
+  readonly laterRunId: string;
+  readonly comparable: boolean;
+  readonly outcome: string;
+  readonly reasons: readonly string[];
+  readonly statementNote: string | null;
+  readonly createdBy: string;
+  readonly at: string;
+}
+
+export interface ReportFindingInput {
+  readonly referenceNumber: number;
+  readonly title: string;
+  readonly observedIssue: string;
+  readonly supportingEvidence: string;
+  readonly cause: string;
+  readonly severity: string;
+  readonly severityRationale: string;
+  readonly recommendedAction: string;
+  readonly ownerLabel: string;
+  readonly status: string;
+  readonly statusRationale: string | null;
+  readonly reportSuggestionKey: string | null;
+  readonly firstObservedAt: string;
+  readonly lastObservedAt: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly references: readonly { readonly type: string; readonly targetId: string }[];
+  readonly updates: readonly ReportFindingUpdateInput[];
+  readonly comparisons: readonly ReportFindingComparisonInput[];
+}
+
+export interface ReportFindingView extends ReportFindingInput {
+  /** The project-scoped human reference, rendered rather than stored. */
+  readonly reference: string;
+}
+
 export interface ReportBuildInput {
   readonly reportNumber: number;
   readonly title: string;
@@ -265,6 +376,12 @@ export interface ReportBuildInput {
   readonly querySets: readonly ReportQuerySetInput[];
   readonly runs: readonly ReportRunInput[];
   readonly websiteAudits: readonly ReportWebsiteAuditInput[];
+  /**
+   * Tracked findings at generation time. Absent in a `report-template-v1` or `v2` snapshot, which
+   * had no findings section at all; the renderer must say "not carried by this template" rather than
+   * "nothing is being tracked".
+   */
+  readonly findings?: readonly ReportFindingInput[];
   readonly audit: ReportAuditInput;
 }
 
@@ -316,6 +433,8 @@ export interface ReportQuerySetView extends ReportQuerySetInput {
 
 export interface ReportObservationView extends ReportObservationInput {
   readonly statusEligibility: 'ELIGIBLE' | 'EXCLUDED';
+  /** Statements that carry at least one assessment, so a reader sees the real denominator. */
+  readonly assessedClaimCount: number;
 }
 
 export interface ReportRunView {
@@ -345,7 +464,7 @@ export interface ReportRunView {
 export interface MetricDelta {
   readonly metricId: string;
   readonly label: string;
-  readonly unit: 'observations' | 'query intents';
+  readonly unit: MetricUnit;
   readonly current: number | null;
   readonly prior: number | null;
   readonly delta: number | null;
@@ -380,6 +499,11 @@ export interface ReportCoverage {
   readonly cancelledRuns: number;
   readonly observations: number;
   readonly websiteAudits: number;
+  /** Added with `metrics-v3`. Zero in a v2 snapshot means none were recorded, not none exist. */
+  readonly answerClaims: number;
+  readonly assessedAnswerClaims: number;
+  readonly decomposedObservations: number;
+  readonly citationClaimMappings: number;
   readonly unassessedPropositions: number;
   readonly claimsWithoutPropositions: number;
   readonly runConfigurationsWithoutMetrics: number;
@@ -418,6 +542,11 @@ export interface ReportSnapshot {
   readonly comparisons: readonly RunComparison[];
   readonly websiteAudits: readonly ReportWebsiteAuditInput[];
   readonly remediation: readonly RemediationSuggestion[];
+  /**
+   * Added with `report-template-v3`. Absent in older snapshots, where findings were not carried;
+   * an empty list means this project was tracking nothing at the time.
+   */
+  readonly findings?: readonly ReportFindingView[];
   readonly limitations: readonly string[];
   readonly unavailableChecks: readonly ReportUnavailableCheckInput[];
   readonly audit: ReportAuditInput;

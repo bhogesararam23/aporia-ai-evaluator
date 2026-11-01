@@ -1,7 +1,7 @@
 # Module Boundaries and Separation Rules
 
-- Status: Required architectural constraint for future implementation
-- Related: ADR-004 and ADR-007
+- Status: Enforced for the implemented local core by `scripts/check-boundaries.ts`; still a proposal for the wider package split
+- Related: ADR-004, ADR-007, ADR-008, ADR-020, ADR-022
 
 ## 1. Objective
 
@@ -32,6 +32,13 @@ Own URL audits, structured-data generation, sitemap/canonical guidance, CMS adap
 ### Reporting
 Own deterministic rendering of versioned inputs and results. It must not silently recompute old data under new metrics or hide negative/unknown results by default.
 
+### Benchmark validation
+Owns the offline case contract, corpus validation, deterministic regression scoring, reviewer-agreement
+statistics, and the reproducible report. It reads evaluator semantics and never mutates them. It must
+not read live application state, because then a benchmark result would depend on what happens to be in
+the database rather than on the frozen case. It must never generate gold material: a label it invents
+is a fabricated validation result.
+
 ### Commercial module (optional future)
 Owns products/plans, billing, invoices, usage accounting, customer lifecycle, and entitlements. It may provide a quota decision at the API/application boundary. It MUST NOT be imported by evaluator core or influence verdict weights, source selection, claim confidence, attribution, or metric formulas.
 
@@ -59,17 +66,43 @@ Forbidden dependency directions include evaluator-core -> billing, evaluator-cor
 - Avoid global state for provider credentials, active user, pricing plan, or metric weights.
 - Keep metric formula version separate from implementation build version.
 
-## 5. Enforcement
+## 5. Enforced local-core layers
 
-A documentation rule is not yet machine-enforced. Before implementation is considered mature, add:
-1. package dependency checks or import-linter rules;
-2. CI tests that evaluator-core imports no provider/commercial/UI packages;
-3. deterministic tests showing identical evaluator input produces identical verdict/metrics independent of account plan;
-4. code review checklist item for new cross-boundary imports;
+`scripts/check-boundaries.ts` is the authority for the implemented single-package layout and runs in
+`npm run check`. A documentation rule that no tool checks is a wish, so the directions below are
+machine-verified rather than hoped for. Recognised layers and their forbidden imports:
+
+| Layer | Directory | May import | Must not import |
+| --- | --- | --- | --- |
+| core | `src/core` | itself, nothing else | any runtime dependency, every other layer |
+| website | `src/website` | itself, `node:*`, `parse5` | persistence, reporting, benchmark, app |
+| benchmark | `src/benchmark` | `core`, `node:*` | website, persistence, reporting, app, third-party packages |
+| persistence | `src/persistence` | core, itself, `node:*` | website, reporting, benchmark, app |
+| reporting | `src/reporting` | core, itself, `node:*` | website, persistence, benchmark, app |
+| app | `src/app`, `src/server.ts` | everything above | — |
+| infrastructure | top-level `src/*.ts` | nothing above | core, website, persistence, reporting, benchmark, app |
+
+The `benchmark` row was added by ADR-022. It is the narrow one that matters most for evaluator
+trust: the harness reads evaluator semantics so it can score them, and must never reach live
+database state or the report renderer. `core` is forbidden from importing `benchmark` in the other
+direction, so a judged verdict can never depend on the tool that judges it. A benchmark case
+therefore restates its input pack instead of referencing database ids, which also keeps a case
+reproducible after the project that inspired it is revised or deleted.
+
+## 6. Remaining enforcement work
+
+The following are still not machine-enforced and must be added before the architecture is called
+mature:
+1. package dependency checks or import-linter rules across a real multi-package split;
+2. CI tests that evaluator-core imports no provider/commercial/UI packages (the no-network guard in
+   `tests/unit/no-network.test.ts` covers outbound clients, not a package graph);
+3. deterministic tests showing identical evaluator input produces identical verdicts and metrics
+   independent of account plan, which needs accounts and plans to exist first;
+4. a code-review checklist item for new cross-boundary imports;
 5. an ADR for any necessary exception.
 
 The first code skeleton should not create a circular dependency that is hard to remove later.
 
-## 6. Change control
+## 7. Change control
 
 Any change that violates a boundary requires an ADR specifying why the boundary is insufficient, what alternatives were considered, the risk, tests, and a migration/rollback plan. Do not grant a permanent exception merely to expedite one feature.

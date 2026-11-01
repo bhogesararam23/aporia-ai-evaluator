@@ -28,6 +28,28 @@ const NOTICES: Record<string, string> = {
   'observation-voided': 'Observation voided. The original record is retained.',
   'citation-voided': 'Citation voided. The original record is retained.',
   'observation-assessed': 'Observation assessment recorded.',
+  'answer-claim-created':
+    'Statement recorded and located inside the captured answer. The answer itself was not changed.',
+  'answer-claim-revised':
+    'New statement revision recorded. The earlier wording and its assessments are retained.',
+  'answer-claim-voided':
+    'Statement voided. It leaves the metrics and stays readable in the review history.',
+  'answer-claim-linked': 'Statement linked to a target proposition.',
+  'answer-claim-link-superseded':
+    'Corrected relationship recorded. The earlier link is retained as history.',
+  'answer-claim-citation-mapped': 'Citation mapped to this statement.',
+  'answer-claim-mapping-superseded':
+    'Corrected citation support recorded. The earlier assessment is retained.',
+  'answer-claim-assessed': 'Statement assessment recorded.',
+  'finding-created':
+    'Finding recorded and left open. Nothing has been accepted, fixed, or measured yet.',
+  'finding-transitioned': 'Status change appended to the finding history.',
+  'finding-updated':
+    'Finding amended. The status was not changed, and the earlier wording is kept.',
+  'finding-referenced': 'Record linked. The finding points at the record, not at a copy of it.',
+  'finding-reference-removed': 'Link removed. The finding itself and its history are unchanged.',
+  'finding-comparison-recorded':
+    'Retest comparison stored. It describes two captures; it does not show that anything caused a change.',
   'run-finalized': 'Run finalized and frozen.',
   'run-cancelled': 'Run cancelled.',
   'audit-created': 'Local HTML audit recorded.',
@@ -68,6 +90,7 @@ const PROJECT_LINKS = [
   { key: 'runs', label: 'Runs', suffix: '/runs' },
   { key: 'audits', label: 'HTML audits', suffix: '/audits' },
   { key: 'achievements', label: 'Achievements', suffix: '/achievements' },
+  { key: 'findings', label: 'Findings', suffix: '/findings' },
   { key: 'reports', label: 'Reports', suffix: '/reports' },
   { key: 'activity', label: 'Activity', suffix: '/activity' },
 ] as const;

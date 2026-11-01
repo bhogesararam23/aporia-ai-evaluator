@@ -1,4 +1,13 @@
 import type { ReportRunView, ReportSnapshot } from '../../reporting/types.ts';
+import type { MetricResult } from '../../core/metrics.ts';
+import {
+  ANSWER_STATEMENT_KIND_LABELS,
+  CLAIM_CITATION_SUPPORT_DISPLAY,
+  CLAIM_RELEVANCE_LABELS,
+  type AnswerStatementKind,
+  type ClaimCitationSupportLabel,
+  type ClaimRelevance,
+} from '../../core/answerClaims.ts';
 import { QUERY_INTENT_LABELS } from '../../core/vocabulary.ts';
 import { FINDING_SEVERITY_LABELS, type FindingSeverity } from '../../website/types.ts';
 import {
@@ -122,8 +131,172 @@ function metricTable(run: ReportRunView): Html {
         </tbody>
       </table>
     </div>
-    ${intentCoverageTable(run)}
+    ${intentCoverageTable(run)} ${statementSection(run)}
     <p class="small muted">${run.metrics.notes.join(' ')}</p>
+  `;
+}
+
+function claimMetricRows(run: ReportRunView): MetricResult[] {
+  const claimLevel = run.metrics.claimLevel;
+  if (claimLevel === undefined) {
+    return [];
+  }
+  return [
+    claimLevel.decompositionCoverage,
+    claimLevel.claimFidelityRate,
+    claimLevel.claimContradictionRate,
+    claimLevel.claimUnsupportedRate,
+    claimLevel.claimCitationSupportRate,
+    claimLevel.claimAttributionRate,
+    claimLevel.relevantOmissionRate,
+  ];
+}
+
+/**
+ * The statement-level section.
+ *
+ * Absent is rendered as an explanation, never as a zero: a report generated before answers were
+ * decomposed, or for a run nobody decomposed, has no statement-level answer rather than a bad one.
+ */
+function statementSection(run: ReportRunView): Html {
+  const claimLevel = run.metrics.claimLevel;
+  if (claimLevel === undefined) {
+    return html`
+      <h4>Answer statements</h4>
+      <p class="muted">
+        No answer statements were recorded for this run, so no statement-level figure is available.
+        That is not a zero and not a failure: it means the captured answers were assessed only as
+        whole answers.
+        ${
+          run.metrics.version === 'metrics-v3'
+            ? ''
+            : `This snapshot was produced under ${run.metrics.version}, which predates statement-level metrics.`
+        }
+      </p>
+    `;
+  }
+  const metrics = claimMetricRows(run);
+  const statements = run.observations.flatMap((observation) =>
+    (observation.answerClaims ?? [])
+      .filter((claim) => claim.voidedAt === null)
+      .map((claim) => ({ observation, claim })),
+  );
+  return html`
+    <h4>Answer statements</h4>
+    <p class="small">
+      ${String(claimLevel.observationsWithClaims)} of ${String(claimLevel.eligibleObservations)}
+      eligible answer(s) were decomposed into statements, and ${String(claimLevel.unassessedClaims)}
+      statement(s) carry no assessment.
+      ${
+        claimLevel.partiallyDecomposedObservations > 0
+          ? html` ${String(claimLevel.partiallyDecomposedObservations)} answer(s) were only
+            partially decomposed, so statement denominators are narrower than the answer set.`
+          : ''
+      }
+    </p>
+    <div class="table-wrap">
+      <table class="metric-table">
+        <caption>
+          Statement-level metrics for ${run.name}. These count statements, citations mappings, and
+          propositions, not answers — read the unit column before comparing them with the
+          whole-answer figures above.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">Unit</th>
+            <th scope="col">Value</th>
+            <th scope="col">Numerator / denominator</th>
+            <th scope="col">Exclusions</th>
+            <th scope="col">Definition</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${metrics.map(
+            (metric) => html`
+              <tr>
+                <th scope="row">${metric.label}</th>
+                <td>${metric.unit}</td>
+                <td class="numeric">${formatPercent(metric.value)}</td>
+                <td class="numeric">
+                  ${
+                    metric.numerator === null
+                      ? 'Not available'
+                      : `${metric.numerator} / ${metric.denominator}`
+                  }
+                </td>
+                <td>
+                  ${
+                    metric.exclusions.length === 0
+                      ? html`<span class="muted">None</span>`
+                      : html`<ul class="small">
+                          ${metric.exclusions.map(
+                            (exclusion) => html`<li>${exclusion.description}</li>`,
+                          )}
+                        </ul>`
+                  }
+                </td>
+                <td class="small">${metric.definition}</td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
+    </div>
+    ${
+      statements.length === 0
+        ? html`<p class="muted">
+            No live statement was recorded for a completed answer in this run.
+          </p>`
+        : html`<ul class="statement-list">
+            ${statements.map(
+              ({ observation, claim }) => html`
+                <li>
+                  <strong>
+                    ${
+                      CLAIM_RELEVANCE_LABELS[claim.relevance as ClaimRelevance] ??
+                      humanize(String(claim.relevance))
+                    }
+                  </strong>
+                  <blockquote class="quote-text">${claim.quoteText}</blockquote>
+                  <span class="small muted">
+                    Answer ${observation.queryOrdinal} · statement ${claim.ordinal} · revision
+                    ${claim.revision} ·
+                    ${
+                      ANSWER_STATEMENT_KIND_LABELS[claim.statementKind as AnswerStatementKind] ??
+                      humanize(claim.statementKind)
+                    }
+                    ${
+                      claim.startOffset === null
+                        ? ''
+                        : ` · characters ${claim.startOffset}–${claim.endOffset}`
+                    }
+                  </span>
+                  ${claim.paraphrase === null ? '' : html`<p class="small">${claim.paraphrase}</p>`}
+                  <ul class="small">
+                    ${claim.propositionLinks.map(
+                      (link) => html`<li>Proposition ${link.propositionId}: ${link.relation}</li>`,
+                    )}
+                    ${claim.citationSupports.map(
+                      (support) =>
+                        html`<li>
+                          Citation support:
+                          ${
+                            CLAIM_CITATION_SUPPORT_DISPLAY[support as ClaimCitationSupportLabel] ??
+                            String(support)
+                          }
+                        </li>`,
+                    )}
+                    ${Object.entries(claim.labels).map(
+                      ([dimension, label]) => html`<li>${humanize(dimension)}: ${label}</li>`,
+                    )}
+                  </ul>
+                </li>
+              `,
+            )}
+          </ul>`
+    }
+    <p class="small muted">${claimLevel.notes.join(' ')}</p>
   `;
 }
 
@@ -392,6 +565,157 @@ function runSection(snapshot: ReportSnapshot): Html {
           </article>
         `,
       )}
+    </div>
+  `;
+}
+
+/**
+ * Findings the operator chose to track, as they stood when this snapshot was written.
+ *
+ * Absence is not emptiness: a snapshot from a template that carried no findings section must say so,
+ * rather than reporting that nobody is tracking anything. Owner and actor labels are operator-asserted
+ * and identify nobody, and a stored comparison is an association between two captures.
+ */
+function findingsSection(snapshot: ReportSnapshot): Html {
+  if (snapshot.findings === undefined) {
+    return html`<p class="muted">
+      This snapshot was generated by report template ${snapshot.templateVersion}, which carried no
+      tracked-findings section. It does not show that nothing was being tracked — only that this
+      template did not record it.
+    </p>`;
+  }
+  if (snapshot.findings.length === 0) {
+    return html`<p class="muted">
+      No finding was being tracked for this project when this report was generated. A suggestion
+      above becomes a finding only when somebody decides to track one.
+    </p>`;
+  }
+  return html`
+    <p class="small muted">
+      A finding is a problem somebody has agreed to track, with the status of that tracking. Owner
+      and actor labels are typed by whoever is using this computer and identify nobody: local core
+      has no accounts, so nothing here was independently reviewed or approved. A recorded status
+      such as improved or regressed is the outcome of a stored comparison between two manual
+      captures, and an association is not a cause.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <caption>
+          Tracked findings at generation time
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Reference</th>
+            <th scope="col">Title and status</th>
+            <th scope="col">Severity and cause</th>
+            <th scope="col">Pointers</th>
+            <th scope="col">History</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${snapshot.findings.map(
+            (finding) => html`
+              <tr>
+                <td class="mono">${finding.reference}</td>
+                <td>
+                  <strong>${finding.title}</strong>
+                  <p class="small">${finding.observedIssue}</p>
+                  <p class="small">Recommended action: ${finding.recommendedAction}</p>
+                  <p class="small muted">
+                    Status: ${statusBadge(humanize(finding.status))}. Tracked by
+                    ${finding.ownerLabel}, first observed
+                    ${formatDateTime(finding.firstObservedAt)}, last observed
+                    ${formatDateTime(finding.lastObservedAt)}.
+                  </p>
+                  ${
+                    finding.reportSuggestionKey === null
+                      ? ''
+                      : html`<p class="small muted">
+                          Raised from suggestion ${finding.reportSuggestionKey} in this report's
+                          derived next steps.
+                        </p>`
+                  }
+                </td>
+                <td>
+                  <p class="small">${humanize(finding.severity)}</p>
+                  <p class="small muted">${finding.severityRationale}</p>
+                  <p class="small">Cause: ${humanize(finding.cause)}</p>
+                  ${
+                    finding.statusRationale === null
+                      ? ''
+                      : html`<p class="small muted">${finding.statusRationale}</p>`
+                  }
+                </td>
+                <td>
+                  ${
+                    finding.references.length === 0
+                      ? html`<span class="muted">None pointed at</span>`
+                      : html`<ul class="small">
+                          ${finding.references.map(
+                            (reference) =>
+                              html`<li class="mono">
+                                ${humanize(reference.type)}: ${reference.targetId}
+                              </li>`,
+                          )}
+                        </ul>`
+                  }
+                  <p class="small muted">
+                    A pointer names a record, never a copy of its text, so the record it describes
+                    may have been revised since.
+                  </p>
+                </td>
+                <td>
+                  <ol class="small">
+                    ${finding.updates.map(
+                      (update) => html`
+                        <li>
+                          ${
+                            update.previousStatus === null || update.newStatus === null
+                              ? humanize(update.newStatus ?? update.previousStatus ?? 'opened')
+                              : `${humanize(update.previousStatus)} to ${humanize(update.newStatus)}`
+                          }
+                          — ${update.note}
+                          <span class="muted">(${formatDateTime(update.at)}, ${update.actor})</span>
+                        </li>
+                      `,
+                    )}
+                  </ol>
+                  ${
+                    finding.comparisons.length === 0
+                      ? html`<p class="small muted">No retest comparison recorded.</p>`
+                      : html`<ul class="small">
+                          ${finding.comparisons.map(
+                            (comparison) => html`
+                              <li>
+                                ${statusBadge(humanize(comparison.outcome))} between
+                                <span class="mono">${comparison.baseRunId}</span> and
+                                <span class="mono">${comparison.laterRunId}</span>
+                                ${comparison.comparable ? '' : ' — not configuration-comparable'}
+                                ${
+                                  comparison.statementNote === null
+                                    ? ''
+                                    : html`<ul class="small muted">
+                                        <li>${comparison.statementNote}</li>
+                                      </ul>`
+                                }
+                                ${
+                                  comparison.reasons.length === 0
+                                    ? ''
+                                    : html`<ul class="small muted">
+                                        ${comparison.reasons.map((reason) => html`<li>${reason}</li>`)}
+                                      </ul>`
+                                }
+                              </li>
+                            `,
+                          )}
+                        </ul>`
+                  }
+                </td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -672,8 +996,13 @@ export function renderReport(
         }
       </section>
 
+      <section class="report-section" id="findings">
+        <h2>9. Tracked findings</h2>
+        ${findingsSection(snapshot)}
+      </section>
+
       <section class="report-section" id="limitations">
-        <h2>9. Limitations</h2>
+        <h2>10. Limitations</h2>
         <ul>
           ${snapshot.limitations.map((limitation) => html`<li>${limitation}</li>`)}
         </ul>

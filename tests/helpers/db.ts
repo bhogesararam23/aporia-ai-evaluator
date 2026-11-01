@@ -269,6 +269,9 @@ export function insertRun(
     querySetId?: string;
     name?: string;
     status?: 'OPEN' | 'FINALIZED' | 'CANCELLED';
+    providerLabel?: string;
+    modelLabel?: string;
+    locale?: string;
   } = {},
 ): string {
   const id = options.id ?? 'run_1';
@@ -279,14 +282,16 @@ export function insertRun(
     throw new Error('Test helper requires a query set.');
   }
   const status = options.status ?? 'OPEN';
+  // Run configuration is immutable once written, so a fixture that needs a differing capture has
+  // to state it at insert time rather than create a run and then move it.
   db.prepare(
     `INSERT INTO runs
       (id, project_id, query_set_id, query_set_name, query_set_version, name,
        provider_label, model_label, interface_label, grounding_mode, locale, region,
        capture_from, capture_to, conditions, notes, status, created_by, created_at,
        finalized_at, cancelled_at, cancel_reason)
-     VALUES (?, ?, ?, ?, ?, ?, 'Manual assistant', 'unknown-model', 'Consumer interface',
-       'SEARCH_GROUNDED', 'en', NULL, ?, ?, 'Manual capture under default settings.', NULL,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Consumer interface',
+       'SEARCH_GROUNDED', ?, NULL, ?, ?, 'Manual capture under default settings.', NULL,
        ?, ?, ?, NULL, NULL, NULL)`,
   ).run(
     id,
@@ -295,6 +300,9 @@ export function insertRun(
     String(set['name']),
     Number(set['version']),
     options.name ?? 'Manual baseline',
+    options.providerLabel ?? 'Manual assistant',
+    options.modelLabel ?? 'unknown-model',
+    options.locale ?? 'en',
     TEST_TIME,
     TEST_TIME,
     status,
@@ -508,6 +516,276 @@ export function insertReport(
     TEST_TIME,
     options.snapshotJson ?? '{"schemaVersion":"report-snapshot-v1"}',
     options.supersededBy ?? null,
+    TEST_TIME,
+  );
+  return id;
+}
+
+/**
+ * Derive the statement kind the schema requires from the offset basis, so a fixture cannot store a
+ * paraphrase as a quotation by accident.
+ */
+function statementKindFor(
+  basis: 'EXACT_MATCH' | 'NORMALIZED_MATCH' | 'NOT_ESTABLISHED',
+  relevance: string,
+  override?: 'QUOTED' | 'REVIEWER_DESCRIPTION',
+): string {
+  if (override !== undefined) {
+    return override;
+  }
+  if (relevance === 'OMISSION') {
+    return 'REVIEWER_DESCRIPTION';
+  }
+  return basis === 'NOT_ESTABLISHED' ? 'REVIEWER_DESCRIPTION' : 'QUOTED';
+}
+
+/**
+ * Insert an answer claim with one revision. The quote defaults to a verbatim slice of the fixture
+ * answer text, so `EXACT_MATCH` offset checks pass without the caller computing offsets.
+ */
+export function insertAnswerClaim(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    revisionId?: string;
+    projectId?: string;
+    observationId?: string;
+    ordinal?: number;
+    revision?: number;
+    quoteText?: string;
+    offsetBasis?: 'EXACT_MATCH' | 'NORMALIZED_MATCH' | 'NOT_ESTABLISHED';
+    startOffset?: number | null;
+    endOffset?: number | null;
+    relevance?: string;
+    statementKind?: 'QUOTED' | 'REVIEWER_DESCRIPTION';
+    supersedesRevisionId?: string | null;
+    createRevision?: boolean;
+  } = {},
+): { claimId: string; revisionId: string } {
+  const claimId = options.id ?? 'acs_1';
+  const revisionId = options.revisionId ?? 'acr_1';
+  const projectId = options.projectId ?? 'prj_1';
+  const observationId = options.observationId ?? 'obs_1';
+  const answer = db
+    .prepare('SELECT answer_text FROM observations WHERE id = ?')
+    .get(observationId) as Record<string, unknown>;
+  const basis = options.offsetBasis ?? 'EXACT_MATCH';
+  const quote = options.quoteText ?? String(answer['answer_text'] ?? '');
+  const answerText = String(answer['answer_text'] ?? '');
+  let start = options.startOffset;
+  let end = options.endOffset;
+  if (basis === 'EXACT_MATCH' && start === undefined) {
+    // Offsets count code points, matching the stored definition.
+    const units = answerText.indexOf(quote);
+    start = units === -1 ? 0 : [...answerText.slice(0, units)].length;
+    end = start + [...quote].length;
+  } else if (basis === 'NOT_ESTABLISHED' && options.startOffset === undefined) {
+    start = null;
+    end = null;
+  }
+  db.prepare(
+    `INSERT INTO answer_claims
+      (id, project_id, observation_id, ordinal, current_revision_id, created_at, updated_at,
+       voided_at, void_reason)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, NULL)`,
+  ).run(claimId, projectId, observationId, options.ordinal ?? 1, TEST_TIME, TEST_TIME);
+  if (options.createRevision === false) {
+    return { claimId, revisionId: '' };
+  }
+  db.prepare(
+    `INSERT INTO answer_claim_revisions
+      (id, project_id, claim_id, revision, quote_text, statement_kind, offset_basis,
+       start_offset, end_offset, relevance, paraphrase, note, supersedes_revision_id,
+       decomposition_version, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
+  ).run(
+    revisionId,
+    projectId,
+    claimId,
+    options.revision ?? 1,
+    quote,
+    statementKindFor(basis, options.relevance ?? 'ADDRESSES', options.statementKind),
+    basis,
+    start ?? null,
+    end ?? null,
+    options.relevance ?? 'ADDRESSES',
+    options.supersedesRevisionId ?? null,
+    TEST_ACTOR,
+    TEST_TIME,
+  );
+  db.prepare('UPDATE answer_claims SET current_revision_id = ? WHERE id = ?').run(
+    revisionId,
+    claimId,
+  );
+  return { claimId, revisionId };
+}
+
+/**
+ * Add a revision to an existing answer claim and make it current, the way the repository does when
+ * an operator corrects a statement.
+ */
+export function insertAnswerClaimRevision(
+  db: DatabaseSync,
+  options: {
+    claimId?: string;
+    revisionId?: string;
+    revision?: number;
+    quoteText?: string;
+    offsetBasis?: 'EXACT_MATCH' | 'NORMALIZED_MATCH' | 'NOT_ESTABLISHED';
+    startOffset?: number | null;
+    endOffset?: number | null;
+    relevance?: string;
+    statementKind?: 'QUOTED' | 'REVIEWER_DESCRIPTION';
+    supersedesRevisionId?: string | null;
+    makeCurrent?: boolean;
+  } = {},
+): string {
+  const claimId = options.claimId ?? 'acs_1';
+  const revisionId = options.revisionId ?? 'acr_2';
+  const basis = options.offsetBasis ?? 'EXACT_MATCH';
+  const row = db
+    .prepare(
+      `SELECT c.project_id, o.answer_text
+       FROM answer_claims c
+       JOIN observations o ON o.id = c.observation_id
+       WHERE c.id = ?`,
+    )
+    .get(claimId) as Record<string, unknown>;
+  const answerText = String(row['answer_text'] ?? '');
+  const quote = options.quoteText ?? answerText;
+  let start = options.startOffset;
+  let end = options.endOffset;
+  if (basis === 'EXACT_MATCH' && start === undefined) {
+    const units = answerText.indexOf(quote);
+    start = units === -1 ? 0 : [...answerText.slice(0, units)].length;
+    end = start + [...quote].length;
+  } else if (basis === 'NOT_ESTABLISHED' && options.startOffset === undefined) {
+    start = null;
+    end = null;
+  }
+  db.prepare(
+    `INSERT INTO answer_claim_revisions
+      (id, project_id, claim_id, revision, quote_text, statement_kind, offset_basis,
+       start_offset, end_offset, relevance, paraphrase, note, supersedes_revision_id,
+       decomposition_version, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'answer-claim-decomposition-v1', ?, ?)`,
+  ).run(
+    revisionId,
+    String(row['project_id']),
+    claimId,
+    options.revision ?? 2,
+    quote,
+    statementKindFor(basis, options.relevance ?? 'ADDRESSES', options.statementKind),
+    basis,
+    start ?? null,
+    end ?? null,
+    options.relevance ?? 'ADDRESSES',
+    options.supersedesRevisionId ?? null,
+    TEST_ACTOR,
+    TEST_TIME,
+  );
+  if (options.makeCurrent !== false) {
+    db.prepare('UPDATE answer_claims SET current_revision_id = ? WHERE id = ?').run(
+      revisionId,
+      claimId,
+    );
+  }
+  return revisionId;
+}
+
+export function insertClaimPropositionLink(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    claimRevisionId?: string;
+    propositionId?: string;
+    relation?: string;
+    rationale?: string;
+  } = {},
+): string {
+  const id = options.id ?? 'acp_1';
+  db.prepare(
+    `INSERT INTO answer_claim_propositions
+      (id, project_id, claim_revision_id, proposition_id, relation, rationale, reviewer,
+       created_at, superseded_by, superseded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.claimRevisionId ?? 'acr_1',
+    options.propositionId ?? 'prp_1',
+    options.relation ?? 'SUPPORTS_TARGET',
+    options.rationale ?? 'The answer states what the proposition asserts.',
+    TEST_ACTOR,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertClaimCitationLink(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    claimRevisionId?: string;
+    citationId?: string;
+    support?: string;
+    rationale?: string;
+  } = {},
+): string {
+  const id = options.id ?? 'acc_1';
+  db.prepare(
+    `INSERT INTO answer_claim_citations
+      (id, project_id, claim_revision_id, citation_id, support, rationale, reviewer,
+       created_at, superseded_by, superseded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.claimRevisionId ?? 'acr_1',
+    options.citationId ?? 'cit_1',
+    options.support ?? 'SUPPORTS',
+    options.rationale ?? 'The cited page states the same fact.',
+    TEST_ACTOR,
+    TEST_TIME,
+  );
+  return id;
+}
+
+export function insertClaimAssessment(
+  db: DatabaseSync,
+  options: {
+    id?: string;
+    projectId?: string;
+    claimId?: string;
+    claimRevisionId?: string;
+    dimension?: string;
+    version?: number;
+    label?: string;
+    rationale?: string;
+    attributionSubject?: string | null;
+    attributionRole?: string | null;
+  } = {},
+): string {
+  const id = options.id ?? 'aca_1';
+  db.prepare(
+    `INSERT INTO answer_claim_assessments
+      (id, project_id, claim_id, claim_revision_id, dimension, version, label, rationale,
+       reviewer, attribution_subject, attribution_role, details_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+  ).run(
+    id,
+    options.projectId ?? 'prj_1',
+    options.claimId ?? 'acs_1',
+    options.claimRevisionId ?? 'acr_1',
+    options.dimension ?? 'FIDELITY',
+    options.version ?? 1,
+    options.label ?? 'ACCURATE',
+    options.rationale ?? 'Matches the recorded release artifact.',
+    TEST_ACTOR,
+    options.attributionSubject ?? null,
+    options.attributionRole ?? null,
     TEST_TIME,
   );
   return id;

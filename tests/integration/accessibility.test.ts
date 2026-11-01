@@ -23,12 +23,23 @@ import {
   createQuerySet,
 } from '../../src/persistence/repositories/querySets.ts';
 import {
+  addCitation,
   addObservation,
   createRun,
   finalizeRun,
   recordObservationAssessment,
 } from '../../src/persistence/repositories/runs.ts';
+import {
+  createAnswerClaim,
+  linkAnswerClaimProposition,
+  recordAnswerClaimAssessment,
+} from '../../src/persistence/repositories/answerClaims.ts';
 import { createWebsiteAudit } from '../../src/persistence/repositories/websiteAudits.ts';
+import {
+  addFindingReference,
+  createFinding,
+  transitionFinding,
+} from '../../src/persistence/repositories/findings.ts';
 import { generateReport } from '../../src/app/reportingService.ts';
 import { cookieFrom, getPage, startTestServer } from '../helpers/http.ts';
 
@@ -98,6 +109,21 @@ function accessibilityViolations(html: string): string[] {
   for (const table of all.filter((element) => element.tagName === 'table')) {
     if (!elements(table).some((element) => element.tagName === 'caption')) {
       violations.push('table without caption');
+    }
+  }
+  // A description reference that points at nothing is invisible to a screen reader, so a help text or
+  // a validation message attached this way is silently lost. Every referenced id must exist.
+  const existing = new Set<string>(
+    all.map((element) => attrs(element).get('id')).filter((id): id is string => id !== undefined),
+  );
+  for (const element of all) {
+    const referenced = (attrs(element).get('aria-describedby') ?? '')
+      .split(/\s+/)
+      .filter((token) => token.length > 0);
+    for (const id of referenced) {
+      if (!existing.has(id)) {
+        violations.push(`aria-describedby on <${element.tagName}> points at missing #${id}`);
+      }
     }
   }
   for (const button of all.filter((element) => element.tagName === 'button')) {
@@ -298,6 +324,99 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       context,
     );
     finalizeRun(server.db, project.project.id, run.run.id, context);
+    // A second run stays open so the writable statement workspace, with all of its forms, is part
+    // of the accessibility sweep rather than only its read-only rendering.
+    const openRun = createRun(
+      server.db,
+      project.project.id,
+      querySet.set.id,
+      {
+        name: 'Decomposition run',
+        providerLabel: 'Example assistant',
+        modelLabel: undefined,
+        interfaceLabel: 'Consumer interface',
+        groundingMode: 'UNKNOWN',
+        locale: 'en',
+        region: undefined,
+        captureFrom: '2026-10-28T11:00:00.000Z',
+        captureTo: '2026-10-28T11:30:00.000Z',
+        conditions: 'Manual capture.',
+        notes: undefined,
+      },
+      context,
+    );
+    const statementQuote = 'made by Ram';
+    const statementAnswer = 'The artifact exists and was made by Ram.';
+    const openObservation = addObservation(
+      server.db,
+      project.project.id,
+      openRun.run.id,
+      {
+        queryId: query.id,
+        status: 'COMPLETED',
+        capturedAt: '2026-10-28T11:10:00.000Z',
+        answerText: statementAnswer,
+        errorNote: undefined,
+        citationCapture: 'CAPTURED',
+        contextNotes: undefined,
+      },
+      context,
+    );
+    addCitation(
+      server.db,
+      project.project.id,
+      openRun.run.id,
+      openObservation.id,
+      {
+        url: 'https://example.com/artifact',
+        title: 'Artifact',
+        snippet: undefined,
+        targetOwned: true,
+      },
+      context,
+    );
+    const statement = createAnswerClaim(
+      server.db,
+      project.project.id,
+      openObservation.id,
+      {
+        quoteText: statementQuote,
+        statementKind: 'QUOTED',
+        offsetBasis: 'EXACT_MATCH',
+        startOffset: statementAnswer.indexOf(statementQuote),
+        endOffset: statementAnswer.indexOf(statementQuote) + statementQuote.length,
+        relevance: 'ADDRESSES',
+        paraphrase: undefined,
+        note: undefined,
+      },
+      context,
+    );
+    linkAnswerClaimProposition(
+      server.db,
+      project.project.id,
+      statement.id,
+      {
+        propositionId: proposition.id,
+        relation: 'SUPPORTS_TARGET',
+        rationale: 'The answer asserts what the proposition states.',
+        reviewer: 'Ram',
+      },
+      context,
+    );
+    recordAnswerClaimAssessment(
+      server.db,
+      project.project.id,
+      statement.id,
+      {
+        dimension: 'FIDELITY',
+        label: 'ACCURATE',
+        rationale: 'Matches the recorded artifact.',
+        reviewer: 'Ram',
+        attributionSubject: undefined,
+        attributionRole: undefined,
+      },
+      context,
+    );
     const analysis = analyzeHtml(
       '<html lang="en"><head><title>Artifact</title></head><body><h1>Artifact</h1></body></html>',
     );
@@ -362,6 +481,43 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
 
     const form = await getPage(server, '/projects/new');
     const cookie = cookieFrom(form.response);
+    // A tracked finding with a pointer and one status change, so the remediation pages are walked
+    // like every other workflow surface rather than only being rendered empty.
+    const finding = createFinding(
+      server.db,
+      project.project.id,
+      {
+        title: 'The answer omits the funding body',
+        observedIssue:
+          'Both captured answers describe the project and its author but never the funder.',
+        supportingEvidence: 'Two captured answers recorded under the same configuration omit it.',
+        cause: 'MODEL_MISREAD_OR_OMISSION',
+        severity: 'MEDIUM',
+        severityRationale: 'A reader asking about funding gets no signal from either answer.',
+        recommendedAction: 'State the funding relationship plainly on the project page.',
+        ownerLabel: 'Ram',
+        firstObservedAt: '2026-10-20T10:00:00.000Z',
+        lastObservedAt: '2026-10-28T10:00:00.000Z',
+        references: [{ type: 'run', id: run.run.id }],
+      },
+      context,
+    );
+    addFindingReference(
+      server.db,
+      project.project.id,
+      finding.id,
+      { type: 'website_audit', id: audit.id },
+      context,
+    );
+    transitionFinding(
+      server.db,
+      project.project.id,
+      finding.id,
+      { status: 'ACCEPTED', note: 'Confirmed against the captured answers.' },
+      context,
+    );
+    const findingId = finding.id;
+
     const pages = [
       '/',
       '/projects/new',
@@ -379,6 +535,12 @@ test('all workflow pages are labelled, script-free, and structurally accessible'
       `/projects/${project.project.id}/runs`,
       `/projects/${project.project.id}/runs/new`,
       `/projects/${project.project.id}/runs/${run.run.id}`,
+      `/projects/${project.project.id}/runs/${openRun.run.id}/observations/${openObservation.id}/claims`,
+      `/projects/${project.project.id}/runs/${run.run.id}/observations/${observation.id}/claims`,
+      `/projects/${project.project.id}/findings`,
+      `/projects/${project.project.id}/findings/new`,
+      `/projects/${project.project.id}/findings/${findingId}`,
+      `/projects/${project.project.id}/findings/${findingId}/retest?referenceType=run`,
       `/projects/${project.project.id}/audits`,
       `/projects/${project.project.id}/audits/new`,
       `/projects/${project.project.id}/audits/${audit.id}`,

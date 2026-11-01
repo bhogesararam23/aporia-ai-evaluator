@@ -17,6 +17,10 @@ function issueFor(issues: readonly ValidationIssue[], field: string): string | n
 }
 
 function describedBy(id: string, help: string | null, error: string | null): Html {
+  // The identifiers passed here must be the ones the help and error paragraphs are actually rendered
+  // with, which are derived from the control id (`field-<name>`), not from the bare field name. An
+  // aria-describedby that names a non-existent element leaves a screen reader with nothing to
+  // announce, so a validation message or a definition would be silently lost.
   const ids = [help === null ? null : `${id}-help`, error === null ? null : `${id}-error`].filter(
     (value): value is string => value !== null,
   );
@@ -53,7 +57,7 @@ export function textField(options: TextFieldOptions): Html {
         ${options.placeholder === undefined ? '' : html`placeholder="${options.placeholder}"`}
         ${options.autocomplete === undefined ? '' : html`autocomplete="${options.autocomplete}"`}
         ${options.maxLength === undefined ? '' : html`maxlength="${options.maxLength}"`}
-        ${describedBy(options.name, options.help ?? null, error)}
+        ${describedBy(id, options.help ?? null, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       />
       ${options.help === undefined ? '' : html`<p class="field-help" id="${id}-help">${options.help}</p>`}
@@ -87,7 +91,7 @@ export function textareaField(options: TextareaFieldOptions): Html {
         rows="${options.rows ?? 4}"
         ${options.required ? html`required` : ''}
         ${options.maxLength === undefined ? '' : html`maxlength="${options.maxLength}"`}
-        ${describedBy(options.name, options.help ?? null, error)}
+        ${describedBy(id, options.help ?? null, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       >
 ${options.value ?? ''}</textarea>
@@ -125,7 +129,7 @@ export function selectField(options: SelectFieldOptions): Html {
         id="${id}"
         name="${options.name}"
         ${options.required ? html`required` : ''}
-        ${describedBy(options.name, options.help ?? null, error)}
+        ${describedBy(id, options.help ?? null, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       >
         ${
@@ -169,6 +173,8 @@ export function checkboxField(options: CheckboxFieldOptions): Html {
           type="checkbox"
           value="on"
           ${options.checked ? html`checked` : ''}
+          ${describedBy(id, options.help ?? null, error)}
+          ${error === null ? '' : html`aria-invalid="true"`}
         />
         <span>${options.label}</span>
       </label>
@@ -200,7 +206,7 @@ export function dateTimeField(options: {
         type="datetime-local"
         value="${options.value ?? ''}"
         ${options.required ? html`required` : ''}
-        ${describedBy(options.name, helpText, error)}
+        ${describedBy(id, helpText, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       />
       <p class="field-help" id="${id}-help">${helpText}</p>
@@ -226,7 +232,7 @@ export function dateField(options: {
         name="${options.name}"
         type="date"
         value="${options.value ?? ''}"
-        ${describedBy(options.name, options.help ?? null, error)}
+        ${describedBy(id, options.help ?? null, error)}
         ${error === null ? '' : html`aria-invalid="true"`}
       />
       ${options.help === undefined ? '' : html`<p class="field-help" id="${id}-help">${options.help}</p>`}

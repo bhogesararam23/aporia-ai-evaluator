@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   computeRunMetrics,
   EXCLUSION_REASONS,
+  narrowAssessmentInput,
   type CitationInput,
   type ObservationAssessmentInput,
   type ObservationInput,
@@ -104,7 +105,9 @@ function exclusionCount(
 test('computes separate rates with explicit denominators and exclusions', () => {
   const metrics = computeRunMetrics(baseInput());
 
-  assert.equal(metrics.version, 'metrics-v2');
+  assert.equal(metrics.version, 'metrics-v3');
+  // A run with no recorded answer statements has no claim-level answer, not a claim-level zero.
+  assert.equal(metrics.claimLevel, undefined);
   assert.deepEqual(
     {
       numerator: metrics.mentionRate.numerator,
@@ -509,4 +512,30 @@ test('partial citation support is reported separately from supported', () => {
   assert.equal(metrics.citationSupportRate.denominator, 1);
   assert.equal(metrics.citationSupportRate.value, 0);
   assert.equal(metrics.citationSupportRate.breakdown?.['PARTIALLY_SUPPORTED'], 1);
+});
+
+test('a stored assessment is bound to its own axis, or the read fails loudly', () => {
+  // A label that belongs to another dimension would move a rate nobody intended to move. Refusing at
+  // the point of reading surfaces the bad row instead of scoring it.
+  assert.deepEqual(
+    narrowAssessmentInput({ dimension: 'FIDELITY', version: 2, label: 'ACCURATE' }),
+    { dimension: 'FIDELITY', version: 2, label: 'ACCURATE' },
+  );
+  assert.throws(
+    () => narrowAssessmentInput({ dimension: 'FIDELITY', version: 1, label: 'MENTIONED' }),
+    /outside its own axis/,
+  );
+  assert.throws(
+    () => narrowAssessmentInput({ dimension: 'OVERALL', version: 1, label: 'ACCURATE' }),
+    /Unsupported assessment dimension/,
+  );
+  // An attribution label must not be readable as a citation verdict either.
+  assert.throws(
+    () => narrowAssessmentInput({ dimension: 'CITATION_SUPPORT', version: 1, label: 'CORRECT' }),
+    /outside its own axis/,
+  );
+  assert.deepEqual(
+    narrowAssessmentInput({ dimension: 'ATTRIBUTION', version: 1, label: 'PARTIALLY_CORRECT' }),
+    { dimension: 'ATTRIBUTION', version: 1, label: 'PARTIALLY_CORRECT' },
+  );
 });

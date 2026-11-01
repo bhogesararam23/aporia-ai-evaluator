@@ -15,13 +15,19 @@ import {
   nextReportNumber,
 } from '../persistence/repositories/reports.ts';
 import { getRunOrThrow, listRuns } from '../persistence/repositories/runs.ts';
+import {
+  currentClaimLabels,
+  listAnswerClaimsForObservation,
+} from '../persistence/repositories/answerClaims.ts';
 import { getWebsiteAudit, listWebsiteAudits } from '../persistence/repositories/websiteAudits.ts';
+import { listFindings } from '../persistence/repositories/findings.ts';
 import { exportAchievements } from '../persistence/repositories/achievements.ts';
 import type { WriteContext } from '../persistence/repositories/context.ts';
 import { buildReportSnapshot } from '../reporting/snapshot.ts';
 import type {
   ReportBuildInput,
   ReportClaimInput,
+  ReportFindingInput,
   ReportQuerySetInput,
   ReportRunInput,
   ReportSnapshot,
@@ -249,6 +255,33 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
           attributionRole: assessment.attributionRole,
           createdAt: assessment.createdAt,
         })),
+        answerClaims: listAnswerClaimsForObservation(db, observation.id).map((claim) => {
+          const revision = claim.currentRevision;
+          return {
+            id: claim.id,
+            ordinal: claim.ordinal,
+            revisionId: claim.currentRevisionId ?? '',
+            revision: revision?.revision ?? 0,
+            quoteText: revision?.quoteText ?? '',
+            statementKind: revision?.statementKind ?? 'REVIEWER_DESCRIPTION',
+            offsetBasis: revision?.offsetBasis ?? 'NOT_ESTABLISHED',
+            startOffset: revision?.startOffset ?? null,
+            endOffset: revision?.endOffset ?? null,
+            relevance: revision?.relevance ?? 'NOT_ASSESSABLE',
+            paraphrase: revision?.paraphrase ?? null,
+            propositionLinks: claim.propositionLinks
+              .filter((link) => link.supersededBy === null)
+              .map((link) => ({
+                propositionId: link.propositionId,
+                relation: link.relation,
+              })),
+            citationSupports: claim.citationLinks
+              .filter((link) => link.supersededBy === null)
+              .map((link) => link.support),
+            labels: currentClaimLabels(claim),
+            voidedAt: claim.voidedAt,
+          };
+        }),
       })),
     };
   });
@@ -275,6 +308,61 @@ function mapAudits(db: DatabaseSync, projectId: string): ReportWebsiteAuditInput
     }
   }
   return audits;
+}
+
+/**
+ * Tracked remediation findings, copied as they stand now.
+ *
+ * Named apart from `mapFindings`, which maps the checks inside one website audit. Two different
+ * things have been called findings in this product since v0.1, and the report carries both.
+ */
+function mapTrackedFindings(db: DatabaseSync, projectId: string): ReportFindingInput[] {
+  return listFindings(db, projectId).map((finding) => ({
+    referenceNumber: finding.referenceNumber,
+    title: finding.title,
+    observedIssue: finding.observedIssue,
+    supportingEvidence: finding.supportingEvidence,
+    cause: finding.cause,
+    severity: finding.severity,
+    severityRationale: finding.severityRationale,
+    recommendedAction: finding.recommendedAction,
+    ownerLabel: finding.ownerLabel,
+    status: finding.status,
+    statusRationale: finding.statusRationale,
+    reportSuggestionKey: finding.reportSuggestionKey,
+    firstObservedAt: finding.firstObservedAt,
+    lastObservedAt: finding.lastObservedAt,
+    createdBy: finding.createdBy,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+    references: finding.references.map((reference) => ({
+      type: reference.type,
+      targetId: reference.targetId,
+    })),
+    // A comparison is referenced by position because the stored update row carries the comparison
+    // identifier, and a report must not leak an internal identifier to earn meaning it cannot show.
+    updates: finding.updates.map((update) => ({
+      sequence: update.sequence,
+      previousStatus: update.previousStatus,
+      newStatus: update.newStatus,
+      note: update.note,
+      actor: update.actor,
+      at: update.createdAt,
+      comparisonIndex: finding.comparisons.findIndex(
+        (comparison) => comparison.id === update.comparisonId,
+      ),
+    })),
+    comparisons: finding.comparisons.map((comparison) => ({
+      baseRunId: comparison.baseRunId,
+      laterRunId: comparison.laterRunId,
+      comparable: comparison.comparable,
+      outcome: comparison.outcome,
+      reasons: comparison.reasons,
+      statementNote: comparison.statementNote,
+      createdBy: comparison.createdBy,
+      at: comparison.createdAt,
+    })),
+  }));
 }
 
 function buildSource(
@@ -327,6 +415,7 @@ function buildSource(
     querySets: mapQuerySets(db, projectId),
     runs: mapRuns(db, projectId),
     websiteAudits: mapAudits(db, projectId),
+    findings: mapTrackedFindings(db, projectId),
     audit: {
       eventCount: countAuditEvents(db, projectId),
       lastEventAt: auditEvents[0]?.createdAt ?? null,
