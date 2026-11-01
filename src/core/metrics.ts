@@ -22,6 +22,7 @@ import type {
   QueryIntent,
   RunStatus,
 } from './vocabulary.ts';
+import { ASSESSMENT_DIMENSIONS, isAssessmentLabelForDimension, isOneOf } from './vocabulary.ts';
 
 // The shared exclusion vocabulary moved to `metricsCommon.ts` so the claim-level metrics can use it
 // without importing this module. It is re-exported here because callers read it from `metrics.ts`.
@@ -66,6 +67,50 @@ export interface ObservationInput {
 export interface QueryInput {
   readonly id: string;
   readonly intent: QueryIntent;
+}
+
+/**
+ * Bind a stored assessment to its dimension without casting.
+ *
+ * Label sets differ per dimension, so a row whose label belongs to another axis is a data problem.
+ * Silently casting it would let a mis-stored label move a rate; refusing makes the bad row visible
+ * at the point it is read. The dimension is checked before the label, because an unrecognised
+ * dimension has no label set to look in.
+ */
+export function narrowAssessmentInput(input: {
+  readonly dimension: string;
+  readonly version: number;
+  readonly label: string;
+}): ObservationAssessmentInput {
+  if (!isOneOf(input.dimension, ASSESSMENT_DIMENSIONS)) {
+    throw new Error(`Unsupported assessment dimension: ${input.dimension}`);
+  }
+  const dimension = input.dimension;
+  if (!isAssessmentLabelForDimension(dimension, input.label)) {
+    throw new Error(
+      `${input.dimension} assessment has a label outside its own axis: ${input.label}`,
+    );
+  }
+  switch (dimension) {
+    case 'PRESENCE':
+      return { dimension: 'PRESENCE', version: input.version, label: input.label as PresenceLabel };
+    case 'FIDELITY':
+      return { dimension: 'FIDELITY', version: input.version, label: input.label as FidelityLabel };
+    case 'CITATION_SUPPORT':
+      return {
+        dimension: 'CITATION_SUPPORT',
+        version: input.version,
+        label: input.label as CitationSupportLabel,
+      };
+    case 'ATTRIBUTION':
+      return {
+        dimension: 'ATTRIBUTION',
+        version: input.version,
+        label: input.label as AttributionLabel,
+      };
+    default:
+      throw new Error(`Unsupported assessment dimension: ${input.dimension}`);
+  }
 }
 
 export interface RunMetricsInput {
