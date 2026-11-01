@@ -26,6 +26,11 @@ is rendered from the JSON written with it and is never recomputed, so a report g
 Every claim-level measure states its unit explicitly, because assuming "observations" would misread
 all of them:
 
+Claim-level metric identifiers are prefixed `answer_` so they can never collide with an
+observation-level identifier. The pre-existing whole-answer `claim_fidelity_rate` measures
+observations, and the new `answer_statement_fidelity_rate` measures statements; sharing an id would
+put two different numbers in the same CSV column with the same name.
+
 | Unit | One unit means |
 | --- | --- |
 | `answer statements` | One factual statement the reviewer recorded from a captured answer, at its current revision |
@@ -56,7 +61,7 @@ turn a refusal into a de facto factual verdict — the specific error the produc
 
 ## 5. The claim-level measures
 
-### 5.1 `decomposition_coverage` — Answer decomposition coverage
+### 5.1 `answer_decomposition_coverage` — Answer decomposition coverage
 
 - **Numerator** — eligible observations with at least one recorded statement.
 - **Denominator** — eligible observations.
@@ -70,7 +75,7 @@ not evidence the answer was wrong.
 The block also reports `observationsWithClaims`, `eligibleObservations`,
 `partiallyDecomposedObservations`, and `unassessedClaims` as plain counts.
 
-### 5.2 `claim_fidelity_rate` — Statement fidelity rate
+### 5.2 `answer_statement_fidelity_rate` — Statement fidelity rate
 
 - **Numerator** — statements whose latest fidelity assessment on the current revision is `ACCURATE`.
 - **Denominator** — statements with a definitive fidelity assessment: `ACCURATE`,
@@ -88,15 +93,15 @@ recorded. It is not a claim that the statement is independently proven or univer
 the denominator as a non-accurate outcome and outside the numerator, and it is reported separately so
 an evidence gap cannot be mistaken for a contradiction.
 
-### 5.3 `claim_contradiction_rate` and `claim_unsupported_rate`
+### 5.3 `answer_statement_contradiction_rate` and `answer_statement_unsupported_rate`
 
 - **Numerators** — statements assessed `CONTRADICTED`, and statements assessed `UNSUPPORTED`.
-- **Denominator** — the same definitive-fidelity denominator as `claim_fidelity_rate`.
+- **Denominator** — the same definitive-fidelity denominator as `answer_statement_fidelity_rate`.
 
 These exist so a favourable fidelity rate cannot conceal recorded contradictions, and so an evidence
 gap is reported at its own size rather than folded into accuracy or error.
 
-### 5.4 `claim_citation_support_rate` — Statement citation support rate
+### 5.4 `answer_statement_citation_support_rate` — Statement citation support rate
 
 - **Numerator** — claim-to-citation mappings assessed `SUPPORTS`.
 - **Denominator** — mappings with a definitive assessment: `SUPPORTS`, `PARTIALLY_SUPPORTS`,
@@ -111,7 +116,7 @@ never counted as supported. One citation mapped to several statements is assesse
 so a shared citation stays visible instead of being averaged. A statement with no citation is not a
 citation failure — it is an absence, and it is reported as such.
 
-### 5.5 `claim_attribution_rate` — Statement attribution rate
+### 5.5 `answer_statement_attribution_rate` — Statement attribution rate
 
 - **Numerator** — statements assessed `CORRECT`.
 - **Denominator** — statements with a definitive attribution assessment: `CORRECT`,

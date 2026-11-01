@@ -294,7 +294,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
     partiallyDecomposedObservations: countPartiallyDecomposed(scoredClaims),
     unassessedClaims,
     decompositionCoverage: claimMetric({
-      id: 'decomposition_coverage',
+      id: 'answer_decomposition_coverage',
       label: 'Answer decomposition coverage',
       definition:
         'Eligible completed observations with at least one recorded answer statement, divided by eligible completed observations. Read this before any other claim-level rate: a small denominator here means the claim-level figures describe a chosen subset of the answers.',
@@ -309,7 +309,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       ],
     }),
     claimFidelityRate: claimMetric({
-      id: 'claim_fidelity_rate',
+      id: 'answer_statement_fidelity_rate',
       label: 'Statement fidelity rate',
       definition:
         'Recorded statements assessed accurate within the recorded scope, divided by statements with a definitive fidelity assessment (accurate, partially accurate, contradicted, or unsupported by recorded evidence). Omissions, refusals, unavailable checks, non-assertions, and unassessed statements are excluded and reported.',
@@ -324,7 +324,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       ],
     }),
     claimContradictionRate: claimMetric({
-      id: 'claim_contradiction_rate',
+      id: 'answer_statement_contradiction_rate',
       label: 'Statement contradiction rate',
       definition:
         'Statements assessed contradicted by recorded evidence, divided by statements with a definitive fidelity assessment. Reported separately so a favourable fidelity rate cannot conceal recorded contradictions.',
@@ -338,7 +338,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       ],
     }),
     claimUnsupportedRate: claimMetric({
-      id: 'claim_unsupported_rate',
+      id: 'answer_statement_unsupported_rate',
       label: 'Statement unsupported rate',
       definition:
         'Statements assessed unsupported by the recorded evidence, divided by statements with a definitive fidelity assessment. Absence of recorded support is not treated as contradiction.',
@@ -349,7 +349,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       notes: ['Unsupported is an evidence gap, not a negative verdict on the statement.'],
     }),
     claimCitationSupportRate: claimMetric({
-      id: 'claim_citation_support_rate',
+      id: 'answer_statement_citation_support_rate',
       label: 'Statement citation support rate',
       definition:
         'Claim-to-citation mappings assessed as supported by the cited material, divided by mappings with a definitive assessment. Partial support and support only under conditions stay in the denominator and are shown separately, never folded into supported.',
@@ -364,7 +364,7 @@ export function computeClaimLevelMetrics(input: ClaimLevelMetricsInput): ClaimLe
       ],
     }),
     claimAttributionRate: claimMetric({
-      id: 'claim_attribution_rate',
+      id: 'answer_statement_attribution_rate',
       label: 'Statement attribution rate',
       definition:
         'Statements assessed as correctly attributed (party and contribution role), divided by statements where the answer made an attribution claim with a definitive assessment. Wrong role, wrong person, ambiguity, incomplete collaborative credit, false sole credit, and unattributed statements are broken out separately.',
