@@ -19,6 +19,7 @@ import {
   type ReportBuildInput,
   type ReportClaimInput,
   type ReportClaimView,
+  type ReportFindingView,
   type ReportObservationAssessmentInput,
   type ReportObservationInput,
   type ReportObservationView,
@@ -387,6 +388,33 @@ function addSuggestion(
   }
 }
 
+/**
+ * Findings as tracked at generation time.
+ *
+ * The snapshot records the finding's own narrative and its pointers by identity, and never the text
+ * of the record pointed at, because that text can be revised afterwards and a report must keep saying
+ * what was believed when it was written. The update log is copied whole so a later reader can see how
+ * a status was reached, not only where it ended.
+ */
+function buildFindings(input: ReportBuildInput): ReportFindingView[] | undefined {
+  if (input.findings === undefined) {
+    return undefined;
+  }
+  return input.findings
+    .slice()
+    .sort((left, right) => left.referenceNumber - right.referenceNumber)
+    .map((finding) => ({
+      ...finding,
+      references: finding.references.map((reference) => ({ ...reference })),
+      updates: finding.updates.map((update) => ({ ...update })),
+      comparisons: finding.comparisons.map((comparison) => ({
+        ...comparison,
+        reasons: [...comparison.reasons],
+      })),
+      reference: `F-${String(finding.referenceNumber).padStart(4, '0')}`,
+    }));
+}
+
 function buildRemediation(
   input: ReportBuildInput,
   claims: readonly ReportClaimView[],
@@ -622,6 +650,16 @@ function buildLimitations(
       'Some metric denominators are empty; those values are unknown and were not reported as zero.',
     );
   }
+  if (input.findings !== undefined && input.findings.length > 0) {
+    limitations.push(
+      'Findings are operator-tracked records. Owner and actor labels are typed by whoever is using this computer and identify nobody: local core has no accounts, so a finding is never independently reviewed or approved.',
+    );
+    if (input.findings.some((finding) => finding.comparisons.length > 0)) {
+      limitations.push(
+        'Every stored retest comparison is an association between two manual captures. None of them shows that a change to the website, or to anything else, caused a difference in an answer.',
+      );
+    }
+  }
   if (
     runs.some((run) =>
       run.metrics.citationSupportRate.exclusions.some(
@@ -764,6 +802,7 @@ export function buildReportSnapshot(input: ReportBuildInput): ReportSnapshot {
     ).length,
   };
   const remediation = buildRemediation(input, claimViews, runViews);
+  const findings = buildFindings(input);
   const limitations = buildLimitations(input, claimViews, runViews);
   const unavailableChecks = Array.from(
     new Map(
@@ -821,6 +860,7 @@ export function buildReportSnapshot(input: ReportBuildInput): ReportSnapshot {
     comparisons,
     websiteAudits: input.websiteAudits,
     remediation,
+    ...(findings === undefined ? {} : { findings }),
     limitations,
     unavailableChecks,
     audit: input.audit,

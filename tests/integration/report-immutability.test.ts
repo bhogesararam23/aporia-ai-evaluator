@@ -179,7 +179,8 @@ test('reports preserve the snapshot after underlying records change', async () =
       '6. Manual AI answer runs and metrics',
       '7. Change over time',
       '8. Suggested next steps',
-      '9. Limitations',
+      '9. Tracked findings',
+      '10. Limitations',
     ]) {
       assert.ok(firstView.text.includes(heading), heading);
     }
@@ -240,7 +241,8 @@ test('an empty project produces a complete honest report', async () => {
       '6. Manual AI answer runs and metrics',
       '7. Change over time',
       '8. Suggested next steps',
-      '9. Limitations',
+      '9. Tracked findings',
+      '10. Limitations',
     ]) {
       assert.ok(view.text.includes(heading), heading);
     }

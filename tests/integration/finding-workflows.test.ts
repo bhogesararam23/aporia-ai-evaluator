@@ -416,6 +416,39 @@ test('a finding from another project is not reachable, and its text cannot injec
   assert.match(foreign.text, /not found|No such record/i);
 });
 
+test('a generated report carries the tracked finding and its limits', async (t) => {
+  const server = await seeded();
+  t.after(() => server.close());
+  const { cookie, path } = await raised(server);
+  const detail = await getPage(server, path, cookie);
+  await postForm(server, `${path}/transition`, cookie, csrfFrom(detail.text), {
+    status: 'ACCEPTED',
+    note: 'Confirmed the omission against both answers.',
+  });
+
+  const generated = await postForm(
+    server,
+    '/projects/prj_1/reports',
+    cookie,
+    csrfFrom(detail.text),
+    { title: 'Findings appear in the report' },
+  );
+  assert.equal(generated.status, 303);
+  const reportPath = pathOf(locationOf(generated));
+  const report = await getPage(server, reportPath, cookie);
+  assert.match(report.text, /Tracked findings/);
+  assert.match(report.text, /F-0001/);
+  assert.match(report.text, /The answer omits the funding body/);
+  assert.match(report.text, /No retest comparison recorded/);
+  // The report says what a finding cannot claim, rather than letting a status read as a verified fix.
+  assert.match(report.text, /Owner and actor labels are typed by whoever is using this computer/);
+  assert.match(report.text, /identify nobody/);
+
+  const json = await getPage(server, `${reportPath}/export.json`, cookie);
+  const snapshot = JSON.parse(json.text) as { findings?: unknown[] };
+  assert.equal(snapshot.findings?.length, 1);
+});
+
 test('a pointer may be added and removed from the finding page, and both are audited', async (t) => {
   const server = await seeded();
   t.after(() => server.close());

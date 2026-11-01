@@ -305,6 +305,66 @@ export interface ReportAuditInput {
   readonly lastEventAt: string | null;
 }
 
+/**
+ * A tracked remediation finding, as it stood when the report was generated (ADR-021).
+ *
+ * The snapshot copies the finding's own text rather than the text of the records it points at,
+ * because a pointer stores an identity and the record behind it may be revised later. A report has
+ * to keep saying what was believed at the time it was written.
+ *
+ * Status, severity, cause and outcome stay plain strings here on purpose: a stored snapshot must
+ * still render when the vocabulary has gained a value since it was written, rather than failing to
+ * parse its own history.
+ */
+export interface ReportFindingUpdateInput {
+  readonly sequence: number;
+  readonly previousStatus: string | null;
+  readonly newStatus: string | null;
+  readonly note: string;
+  readonly actor: string;
+  readonly at: string;
+  readonly comparisonIndex: number | null;
+}
+
+export interface ReportFindingComparisonInput {
+  readonly baseRunId: string;
+  readonly laterRunId: string;
+  readonly comparable: boolean;
+  readonly outcome: string;
+  readonly reasons: readonly string[];
+  readonly statementNote: string | null;
+  readonly createdBy: string;
+  readonly at: string;
+}
+
+export interface ReportFindingInput {
+  readonly referenceNumber: number;
+  readonly title: string;
+  readonly observedIssue: string;
+  readonly supportingEvidence: string;
+  readonly cause: string;
+  readonly severity: string;
+  readonly severityRationale: string;
+  readonly recommendedAction: string;
+  readonly ownerLabel: string;
+  readonly status: string;
+  readonly statusRationale: string | null;
+  readonly reportSuggestionKey: string | null;
+  readonly firstObservedAt: string;
+  readonly lastObservedAt: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly references: readonly { readonly type: string; readonly targetId: string }[];
+  readonly updates: readonly ReportFindingUpdateInput[];
+  readonly comparisons: readonly ReportFindingComparisonInput[];
+}
+
+export interface ReportFindingView extends ReportFindingInput {
+  /** The project-scoped human reference, rendered rather than stored. */
+  readonly reference: string;
+}
+
 export interface ReportBuildInput {
   readonly reportNumber: number;
   readonly title: string;
@@ -316,6 +376,12 @@ export interface ReportBuildInput {
   readonly querySets: readonly ReportQuerySetInput[];
   readonly runs: readonly ReportRunInput[];
   readonly websiteAudits: readonly ReportWebsiteAuditInput[];
+  /**
+   * Tracked findings at generation time. Absent in a `report-template-v1` or `v2` snapshot, which
+   * had no findings section at all; the renderer must say "not carried by this template" rather than
+   * "nothing is being tracked".
+   */
+  readonly findings?: readonly ReportFindingInput[];
   readonly audit: ReportAuditInput;
 }
 
@@ -476,6 +542,11 @@ export interface ReportSnapshot {
   readonly comparisons: readonly RunComparison[];
   readonly websiteAudits: readonly ReportWebsiteAuditInput[];
   readonly remediation: readonly RemediationSuggestion[];
+  /**
+   * Added with `report-template-v3`. Absent in older snapshots, where findings were not carried;
+   * an empty list means this project was tracking nothing at the time.
+   */
+  readonly findings?: readonly ReportFindingView[];
   readonly limitations: readonly string[];
   readonly unavailableChecks: readonly ReportUnavailableCheckInput[];
   readonly audit: ReportAuditInput;
