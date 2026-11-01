@@ -269,6 +269,9 @@ export function insertRun(
     querySetId?: string;
     name?: string;
     status?: 'OPEN' | 'FINALIZED' | 'CANCELLED';
+    providerLabel?: string;
+    modelLabel?: string;
+    locale?: string;
   } = {},
 ): string {
   const id = options.id ?? 'run_1';
@@ -279,14 +282,16 @@ export function insertRun(
     throw new Error('Test helper requires a query set.');
   }
   const status = options.status ?? 'OPEN';
+  // Run configuration is immutable once written, so a fixture that needs a differing capture has
+  // to state it at insert time rather than create a run and then move it.
   db.prepare(
     `INSERT INTO runs
       (id, project_id, query_set_id, query_set_name, query_set_version, name,
        provider_label, model_label, interface_label, grounding_mode, locale, region,
        capture_from, capture_to, conditions, notes, status, created_by, created_at,
        finalized_at, cancelled_at, cancel_reason)
-     VALUES (?, ?, ?, ?, ?, ?, 'Manual assistant', 'unknown-model', 'Consumer interface',
-       'SEARCH_GROUNDED', 'en', NULL, ?, ?, 'Manual capture under default settings.', NULL,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Consumer interface',
+       'SEARCH_GROUNDED', ?, NULL, ?, ?, 'Manual capture under default settings.', NULL,
        ?, ?, ?, NULL, NULL, NULL)`,
   ).run(
     id,
@@ -295,6 +300,9 @@ export function insertRun(
     String(set['name']),
     Number(set['version']),
     options.name ?? 'Manual baseline',
+    options.providerLabel ?? 'Manual assistant',
+    options.modelLabel ?? 'unknown-model',
+    options.locale ?? 'en',
     TEST_TIME,
     TEST_TIME,
     status,
