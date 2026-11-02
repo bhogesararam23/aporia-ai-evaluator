@@ -258,7 +258,7 @@ function addStatementForm(target: Target, state: FormState): Html {
 function reviseStatementForm(claim: AnswerClaimRecord, target: Target, state: FormState): Html {
   const { issues, values } = state;
   const revision = claim.currentRevision;
-  const action = `${claimPath(claim, target)}/${claim.id}/revise`;
+  const action = `${claimPath(claim, target)}/revise`;
   return html`
     <form method="post" action="${action}">
       ${csrfField(target.csrf)}
@@ -331,7 +331,7 @@ function propositionLinkForm(
     </p>`;
   }
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/propositions">
+    <form method="post" action="${claimPath(claim, target)}/propositions">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'propositionId',
@@ -408,7 +408,7 @@ function citationLinkForm(
     return html`<p class="muted">No unmapped citation remains for this answer.</p>`;
   }
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/citations">
+    <form method="post" action="${claimPath(claim, target)}/citations">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'citationId',
@@ -458,7 +458,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
   const { issues, values } = state;
   const key = `${claim.id}-assess`;
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/assessments">
+    <form method="post" action="${claimPath(claim, target)}/assessments">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'dimension',
@@ -530,7 +530,7 @@ function voidStatementForm(claim: AnswerClaimRecord, target: Target, state: Form
   const { issues, values } = state;
   const key = `${claim.id}-void`;
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/void">
+    <form method="post" action="${claimPath(claim, target)}/void">
       ${csrfField(target.csrf)}
       ${textareaField({
         name: 'reason',
