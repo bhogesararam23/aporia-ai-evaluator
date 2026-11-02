@@ -550,7 +550,6 @@ function voidStatementForm(claim: AnswerClaimRecord, target: Target, state: Form
 function linkRow(
   link: ClaimPropositionLinkRecord,
   workspace: AnswerClaimWorkspace,
-  claim: AnswerClaimRecord,
   target: Target,
   state: FormState,
 ): Html {
@@ -571,7 +570,7 @@ function linkRow(
         target.writable
           ? html`<form
               method="post"
-              action="${claimPath(claim, target)}/propositions/${link.id}/supersede"
+              action="${claimsPath(target)}/propositions/${link.id}/supersede"
             >
               ${csrfField(target.csrf)}
               <input type="hidden" name="propositionId" value="${link.propositionId}" />
@@ -611,7 +610,6 @@ function linkRow(
 function citationRow(
   link: ClaimCitationLinkRecord,
   workspace: AnswerClaimWorkspace,
-  claim: AnswerClaimRecord,
   target: Target,
   state: FormState,
 ): Html {
@@ -636,10 +634,7 @@ function citationRow(
       <p class="muted">${link.rationale} — ${link.reviewer}, ${formatDateTime(link.createdAt)}</p>
       ${
         target.writable
-          ? html`<form
-              method="post"
-              action="${claimPath(claim, target)}/citations/${link.id}/supersede"
-            >
+          ? html`<form method="post" action="${claimsPath(target)}/citations/${link.id}/supersede">
               ${csrfField(target.csrf)}
               <input type="hidden" name="citationId" value="${link.citationId}" />
               ${selectField({
@@ -809,7 +804,7 @@ function claimPanel(
               qualifies, or omits a specific target.
             </p>`
           : html`<ul class="claim-links">
-              ${activePropositions.map((link) => linkRow(link, workspace, claim, target, state))}
+              ${activePropositions.map((link) => linkRow(link, workspace, target, state))}
             </ul>`
       }
       ${
@@ -828,7 +823,7 @@ function claimPanel(
               None mapped. A statement without a citation is an absence, not a citation failure.
             </p>`
           : html`<ul class="claim-links">
-              ${activeCitations.map((link) => citationRow(link, workspace, claim, target, state))}
+              ${activeCitations.map((link) => citationRow(link, workspace, target, state))}
             </ul>`
       }
       ${
