@@ -152,7 +152,44 @@ function answerPanel(workspace: AnswerClaimWorkspace, target: Target): Html {
         'Target propositions available',
         html`<span>${plural(workspace.propositions.length, 'proposition')}</span>`,
       )}
+      ${reviewProgressNote(workspace)}
     </section>
+  `;
+}
+
+function reviewProgressNote(workspace: AnswerClaimWorkspace): Html {
+  // §2.5: how much of an answer has been reviewed is a fact about the reviewer, not about the AI. The
+  // report carries the same split; this is where the operator is while doing the reviewing, so the two
+  // must not tell different stories. Nothing here is presented as a rate, and a statement that has not
+  // been assessed yet is described as unrecorded rather than as a failure.
+  const live = workspace.claims.filter((claim) => claim.voidedAt === null);
+  const labels = live.map((claim) => currentClaimLabels(claim));
+  const fidelity = labels.filter((entry) => entry.FIDELITY !== undefined).length;
+  const attribution = labels.filter((entry) => entry.ATTRIBUTION !== undefined).length;
+  const withdrawn = new Set(
+    workspace.citations.filter((citation) => citation.voided).map((citation) => citation.id),
+  );
+  const mappings = live.flatMap((claim) =>
+    claim.citationLinks.filter((link) => link.supersededBy === null),
+  );
+  const countable = mappings.filter((link) => !withdrawn.has(link.citationId)).length;
+  const voided = workspace.claims.length - live.length;
+  return html`
+    ${definitionRow(
+      'Review progress',
+      html`<span
+        >${`fidelity recorded on ${String(fidelity)} of ${String(live.length)} live statement(s), attribution on ${String(attribution)} of ${String(live.length)}, citation mappings that can support: ${String(countable)} of ${String(mappings.length)}.`}
+      </span>`,
+    )}
+    <p class="field-help">
+      These count how much of the answer has been reviewed. They are not answer results, and a
+      statement nobody has assessed yet leaves the figures rather than counting against the
+      answer.${
+        voided > 0
+          ? html` ${String(voided)} statement(s) on this answer were voided and stay readable above.`
+          : ''
+      }
+    </p>
   `;
 }
 
