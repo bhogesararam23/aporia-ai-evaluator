@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parse, type DefaultTreeAdapterTypes } from 'parse5';
 import { analyzeHtml } from '../../src/website/analyze.ts';
 import {
   addProposition,
@@ -42,109 +41,7 @@ import {
 } from '../../src/persistence/repositories/findings.ts';
 import { generateReport } from '../../src/app/reportingService.ts';
 import { cookieFrom, getPage, startTestServer } from '../helpers/http.ts';
-
-type Element = DefaultTreeAdapterTypes.Element;
-type Node = DefaultTreeAdapterTypes.Node;
-
-function elements(root: Node): Element[] {
-  const found: Element[] = [];
-  const stack: Node[] = [root];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (node === undefined) continue;
-    if ('tagName' in node) found.push(node);
-    if ('childNodes' in node) {
-      for (const child of node.childNodes) stack.push(child);
-    }
-  }
-  return found;
-}
-
-function attrs(element: Element): Map<string, string> {
-  return new Map(element.attrs.map((attr) => [attr.name.toLowerCase(), attr.value]));
-}
-
-function accessibilityViolations(html: string): string[] {
-  const document = parse(html);
-  const all = elements(document);
-  const labels = new Map<string, Element>();
-  for (const label of all.filter((element) => element.tagName === 'label')) {
-    const forId = attrs(label).get('for');
-    if (forId !== undefined) labels.set(forId, label);
-  }
-  const violations: string[] = [];
-  const htmlElement = all.find((element) => element.tagName === 'html');
-  if (htmlElement === undefined || (attrs(htmlElement).get('lang') ?? '').length === 0) {
-    violations.push('html[lang] is missing');
-  }
-  if (!all.some((element) => element.tagName === 'main')) {
-    violations.push('main landmark is missing');
-  }
-  const h1s = all.filter((element) => element.tagName === 'h1');
-  if (h1s.length !== 1) violations.push(`expected exactly one h1, found ${h1s.length}`);
-  for (const element of all) {
-    const attributes = attrs(element);
-    if (attributes.has('style')) violations.push(`inline style on <${element.tagName}>`);
-    if ([...attributes.keys()].some((name) => name.startsWith('on'))) {
-      violations.push(`event handler attribute on <${element.tagName}>`);
-    }
-    if (element.tagName === 'script') violations.push('script element present');
-  }
-  for (const control of all.filter((element) =>
-    ['input', 'select', 'textarea'].includes(element.tagName),
-  )) {
-    const attributes = attrs(control);
-    if (attributes.get('type') === 'hidden') continue;
-    const id = attributes.get('id');
-    const hasLabel =
-      (id !== undefined && labels.has(id)) ||
-      (control.parentNode !== null &&
-        control.parentNode !== undefined &&
-        'tagName' in control.parentNode &&
-        control.parentNode.tagName === 'label') ||
-      (attributes.get('aria-label') ?? '').length > 0 ||
-      (attributes.get('aria-labelledby') ?? '').length > 0;
-    if (!hasLabel) violations.push(`unlabelled <${control.tagName}> ${id ?? '(no id)'}`);
-  }
-  for (const table of all.filter((element) => element.tagName === 'table')) {
-    if (!elements(table).some((element) => element.tagName === 'caption')) {
-      violations.push('table without caption');
-    }
-  }
-  // A description reference that points at nothing is invisible to a screen reader, so a help text or
-  // a validation message attached this way is silently lost. Every referenced id must exist.
-  const existing = new Set<string>(
-    all.map((element) => attrs(element).get('id')).filter((id): id is string => id !== undefined),
-  );
-  for (const element of all) {
-    const referenced = (attrs(element).get('aria-describedby') ?? '')
-      .split(/\s+/)
-      .filter((token) => token.length > 0);
-    for (const id of referenced) {
-      if (!existing.has(id)) {
-        violations.push(`aria-describedby on <${element.tagName}> points at missing #${id}`);
-      }
-    }
-  }
-  for (const button of all.filter((element) => element.tagName === 'button')) {
-    const stack: Node[] = [button];
-    let text = '';
-    while (stack.length > 0) {
-      const node = stack.pop();
-      if (node === undefined) continue;
-      if (node.nodeName === '#text' && 'value' in node) {
-        text += node.value;
-      }
-      if ('childNodes' in node) {
-        for (const child of node.childNodes) stack.push(child);
-      }
-    }
-    if (text.trim().length === 0 && (attrs(button).get('aria-label') ?? '').length === 0) {
-      violations.push('button without accessible name');
-    }
-  }
-  return violations;
-}
+import { accessibilityViolations } from '../helpers/dom-a11y.ts';
 
 test('all workflow pages are labelled, script-free, and structurally accessible', async () => {
   const server = await startTestServer();
