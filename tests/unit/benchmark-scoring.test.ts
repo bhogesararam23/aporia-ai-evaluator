@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   agreementRows,
+  annotationSummaries,
   regressionRows,
   scoreByDimension,
   scoreDimension,
@@ -172,14 +173,14 @@ test('dimensions are scored separately and never merged into one benchmark score
 
 function caseWith(input: Partial<BenchmarkCase>): BenchmarkCase {
   return {
-    version: 'benchmark-case-v1',
+    version: 'benchmark-case-v2',
     id: 'case-1',
     stratum: 'SUPPORTED_PRIMARY_EVIDENCE',
     title: 'Fixture',
     provenance: {
       origin: 'Synthetic validator fixture.',
       authorizedForStorage: true,
-      reviewedBy: ['reviewer-a'],
+      reviewedBy: ['reviewer-a', 'reviewer-b', 'a', 'b', 'c'],
       reviewedAt: '2026-11-01',
       unverified: [],
       limitation: 'Fixture only.',
@@ -194,6 +195,9 @@ function caseWith(input: Partial<BenchmarkCase>): BenchmarkCase {
             {
               id: 'ev-1',
               relation: 'SUPPORTS',
+              // Separate from the relationship id, so two excerpts of one source collapse to one
+              // source when the deterministic rule counts corroboration.
+              sourceId: 'src-1',
               sourceType: 'PRIMARY_ARTIFACT',
               independence: 'INDEPENDENT',
               locator: 'section 1',
@@ -210,7 +214,7 @@ function caseWith(input: Partial<BenchmarkCase>): BenchmarkCase {
     },
     expected: [],
     reviewerLabels: [],
-    adjudication: null,
+    adjudications: [],
     limitations: [],
     ...input,
   } as BenchmarkCase;
@@ -317,7 +321,7 @@ test('a gold label with no produced value is a miss, not a silent skip', () => {
   assert.equal(rows[0]?.matched, false);
 });
 
-test('reviewer agreement needs two labels on the same subject', () => {
+test('a single reviewer is recorded as one opinion, not skipped as agreement', () => {
   const benchmarkCase = caseWith({
     reviewerLabels: [
       {
@@ -329,11 +333,49 @@ test('reviewer agreement needs two labels on the same subject', () => {
       },
     ],
   });
-  assert.deepEqual(agreementRows([benchmarkCase]), []);
+  const rows = agreementRows([benchmarkCase]);
+  // The old rule dropped the row entirely, so a corpus of single opinions reported no disagreement at
+  // all. A row now exists and says it cannot support an agreement claim.
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.status, 'NOT_ENOUGH_REVIEWERS');
+  assert.equal(rows[0]?.unanimous, true);
 });
 
-test('unanimous reviewers are not reported as a disagreement', () => {
+test('the same reviewer labelling twice is not two reviewers', () => {
+  const rows = agreementRows([
+    caseWith({
+      reviewerLabels: [
+        {
+          reviewer: 'a',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-1',
+          note: null,
+        },
+        {
+          reviewer: 'a',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'CONTRADICTED',
+          subjectId: 'prop-1',
+          note: null,
+        },
+      ],
+    }),
+  ]);
+  assert.equal(rows[0]?.status, 'NOT_ENOUGH_REVIEWERS');
+  assert.deepEqual(rows[0]?.reviewers, ['a']);
+});
+
+test('unanimous reviewers are reported as agreement, with the gold label beside it', () => {
   const benchmarkCase = caseWith({
+    expected: [
+      {
+        dimension: 'EVIDENCE_SUPPORT',
+        label: 'SUPPORTED_WITHIN_SCOPE',
+        subjectId: 'prop-1',
+        rationale: 'The recorded primary artifact states it.',
+      },
+    ],
     reviewerLabels: [
       {
         reviewer: 'a',
@@ -354,7 +396,8 @@ test('unanimous reviewers are not reported as a disagreement', () => {
   const rows = agreementRows([benchmarkCase]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.unanimous, true);
-  assert.equal(rows[0]?.adjudication, 'NOT_APPLICABLE');
+  assert.equal(rows[0]?.status, 'UNANIMOUS');
+  assert.equal(rows[0]?.goldLabel, 'SUPPORTED_WITHIN_SCOPE');
 });
 
 test('disagreement without adjudication stays UNRESOLVED rather than being averaged', () => {
@@ -370,18 +413,196 @@ test('disagreement without adjudication stays UNRESOLVED rather than being avera
       reviewerLabels: [labels('a', 'SUPPORTED_WITHIN_SCOPE'), labels('b', 'CONTRADICTED')],
     }),
   ]);
-  assert.equal(unresolved[0]?.adjudication, 'UNRESOLVED');
+  assert.equal(unresolved[0]?.status, 'UNRESOLVED');
   assert.equal(unresolved[0]?.unanimous, false);
 
-  const adjudicated = agreementRows([
+  const ambiguous = agreementRows([
     caseWith({
       reviewerLabels: [labels('a', 'SUPPORTED_WITHIN_SCOPE'), labels('b', 'CONTRADICTED')],
+      adjudications: [
+        {
+          dimension: 'EVIDENCE_SUPPORT',
+          subjectId: 'prop-1',
+          outcome: 'GENUINELY_AMBIGUOUS',
+          label: null,
+          reason: 'The recorded locator is too coarse to decide.',
+          adjudicatedBy: 'c',
+        },
+      ],
+    }),
+  ]);
+  assert.equal(ambiguous[0]?.status, 'GENUINELY_AMBIGUOUS');
+  assert.equal(ambiguous[0]?.adjudicatedLabel, null);
+});
+
+test('a scoped resolved adjudication supplies the settled label, and only for its own subject', () => {
+  const labels = (reviewer: string, subjectId: string, a: string, b: string) => [
+    { reviewer, dimension: 'EVIDENCE_SUPPORT' as const, label: a, subjectId, note: null },
+    {
+      reviewer: reviewer === 'a' ? 'b' : 'a',
+      dimension: 'EVIDENCE_SUPPORT' as const,
+      label: b,
+      subjectId,
+      note: null,
+    },
+  ];
+  const rows = agreementRows([
+    caseWith({
+      reviewerLabels: [
+        ...labels('a', 'prop-1', 'SUPPORTED_WITHIN_SCOPE', 'CONTRADICTED'),
+        ...labels('a', 'prop-2', 'SUPPORTED_WITHIN_SCOPE', 'CONTRADICTED'),
+      ],
+      adjudications: [
+        {
+          dimension: 'EVIDENCE_SUPPORT',
+          subjectId: 'prop-1',
+          outcome: 'RESOLVED',
+          label: 'CONTRADICTED',
+          reason: 'The artifact postdates the claim, so the support relationship does not hold.',
+          adjudicatedBy: 'c',
+        },
+      ],
+    }),
+  ]);
+  const settled = rows.find((row) => row.subjectId === 'prop-1');
+  const other = rows.find((row) => row.subjectId === 'prop-2');
+  assert.equal(settled?.status, 'RESOLVED_BY_ADJUDICATION');
+  assert.equal(settled?.adjudicatedLabel, 'CONTRADICTED');
+  // The point of scoping: a second disagreement in the same case is not settled by the first decision.
+  assert.equal(other?.status, 'UNRESOLVED');
+});
+
+test('a v1 unscoped adjudication is honoured only where it can name one subject', () => {
+  const labels = (subjectId: string, a: string, b: string) => [
+    { reviewer: 'a', dimension: 'EVIDENCE_SUPPORT' as const, label: a, subjectId, note: null },
+    { reviewer: 'b', dimension: 'EVIDENCE_SUPPORT' as const, label: b, subjectId, note: null },
+  ];
+  const single = agreementRows([
+    caseWith({
+      version: 'benchmark-case-v1',
+      reviewerLabels: labels('prop-1', 'SUPPORTED_WITHIN_SCOPE', 'CONTRADICTED'),
       adjudication: {
         outcome: 'GENUINELY_AMBIGUOUS',
-        reason: 'The recorded locator is too coarse to decide.',
+        reason: 'The recorded locator is too coarse.',
         adjudicatedBy: 'c',
       },
     }),
   ]);
-  assert.equal(adjudicated[0]?.adjudication, 'GENUINELY_AMBIGUOUS');
+  assert.equal(single[0]?.status, 'GENUINELY_AMBIGUOUS');
+
+  const several = agreementRows([
+    caseWith({
+      version: 'benchmark-case-v1',
+      reviewerLabels: [
+        ...labels('prop-1', 'SUPPORTED_WITHIN_SCOPE', 'CONTRADICTED'),
+        ...labels('prop-2', 'SUPPORTED_WITHIN_SCOPE', 'CONTRADICTED'),
+      ],
+      adjudication: {
+        outcome: 'RESOLVED',
+        reason: 'Decided.',
+        adjudicatedBy: 'c',
+      },
+    }),
+  ]);
+  // One unnamed decision cannot settle two disputes.
+  assert.deepEqual(
+    several.map((row) => row.status),
+    ['UNRESOLVED', 'UNRESOLVED'],
+  );
+});
+
+test('annotation agreement excludes what it cannot defend and counts it openly', () => {
+  const rows = agreementRows([
+    caseWith({
+      expected: [
+        {
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-1',
+          rationale: 'Recorded artifact.',
+        },
+        {
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'CONTRADICTED',
+          subjectId: 'prop-2',
+          rationale: 'Recorded artifact contradicts.',
+        },
+      ],
+      reviewerLabels: [
+        {
+          reviewer: 'a',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-1',
+          note: null,
+        },
+        {
+          reviewer: 'b',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-1',
+          note: null,
+        },
+        // A disagreement the reviewers never settled.
+        {
+          reviewer: 'a',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'CONTRADICTED',
+          subjectId: 'prop-2',
+          note: null,
+        },
+        {
+          reviewer: 'b',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-2',
+          note: null,
+        },
+      ],
+    }),
+  ]);
+  const summaries = annotationSummaries(rows, ['EVIDENCE_SUPPORT']);
+  const summary = summaries[0];
+  assert.notEqual(summary, undefined);
+  assert.equal(summary?.subjects, 2);
+  assert.equal(summary?.scorable, 1, 'only the unanimous subject has a defensible value');
+  assert.equal(summary?.agreeingWithGold, 1);
+  assert.equal(summary?.agreementRate, 1);
+  assert.equal(summary?.excludedUnresolved, 1);
+  // Nothing was hidden to make the rate look clean: the excluded subject is counted, not erased.
+  assert.equal((summary?.subjects ?? 0) - (summary?.scorable ?? 0), summary?.excludedUnresolved);
+});
+
+test('no consensus is inferred from a sorted label list', () => {
+  // The v0.3 rule took `labels.sort()[0]`, so one dissenting ACCURATE beat two UNSUPPORTED. With no
+  // consensus step at all, a majority and an alphabetical ordering cannot be confused.
+  const rows = agreementRows([
+    caseWith({
+      reviewerLabels: [
+        {
+          reviewer: 'a',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'SUPPORTED_WITHIN_SCOPE',
+          subjectId: 'prop-1',
+          note: null,
+        },
+        {
+          reviewer: 'b',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'CONTRADICTED',
+          subjectId: 'prop-1',
+          note: null,
+        },
+        {
+          reviewer: 'c',
+          dimension: 'EVIDENCE_SUPPORT',
+          label: 'CONTRADICTED',
+          subjectId: 'prop-1',
+          note: null,
+        },
+      ],
+    }),
+  ]);
+  assert.equal(rows[0]?.status, 'UNRESOLVED');
+  assert.equal(rows[0]?.adjudicatedLabel, null);
 });

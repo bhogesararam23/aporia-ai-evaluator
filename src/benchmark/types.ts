@@ -1,5 +1,14 @@
 /**
- * The `benchmark-case-v1` contract (ADR-020).
+ * Benchmark case contracts.
+ *
+ * `benchmark-case-v1` (ADR-020) used one identifier per evidence record, which the scorer copied into
+ * both the relationship id and the source id. Two excerpts from one press release therefore looked
+ * like two independent sources, so the `DUPLICATE_OR_SYNDICATED_SOURCES` stratum could be listed as
+ * required and still be untestable. v2 separates the two identities and scopes adjudication to the
+ * subject it resolves.
+ *
+ * v1 is still accepted, because a corpus file is a record someone wrote; a v1 case is read with its
+ * evidence ids standing in for source ids, and the report says the corpus is on the older contract.
  *
  * A benchmark case is a frozen input pack plus the gold labels a human reviewer assigned to it, and
  * optionally the labels individual reviewers assigned before adjudication. Nothing in this module
@@ -7,7 +16,13 @@
  * project that inspired it changes or is deleted.
  */
 
-export const BENCHMARK_CASE_VERSION = 'benchmark-case-v1';
+export const BENCHMARK_CASE_VERSION = 'benchmark-case-v2';
+/** Accepted for reading. A v1 case cannot express a shared source, which the report states. */
+export const BENCHMARK_CASE_VERSION_V1 = 'benchmark-case-v1';
+export const KNOWN_BENCHMARK_CASE_VERSIONS = [
+  BENCHMARK_CASE_VERSION_V1,
+  BENCHMARK_CASE_VERSION,
+] as const;
 
 /** The four scored dimensions. There is no overall benchmark score (ADR-003). */
 export const BENCHMARK_DIMENSIONS = [
@@ -79,10 +94,20 @@ export interface BenchmarkProvenance {
   readonly limitation: string;
 }
 
+/**
+ * One recorded relationship between a proposition and a piece of material.
+ *
+ * `id` identifies the relationship; `sourceId` identifies the underlying source. They are separate
+ * because two excerpts from one press release are two relationships and one source, and the
+ * anti-corroboration rule in `deriveEvidenceStatus` counts sources. A v1 case has no `sourceId`, and
+ * the loader substitutes the evidence id — which is precisely the behaviour v2 exists to remove.
+ */
 export interface BenchmarkEvidenceRecord {
   readonly id: string;
   /** A reviewer-recorded relationship, not a verified property of the source. */
   readonly relation: string;
+  /** Identity of the underlying source, so duplicate and syndicated material collapses. Absent on a v1 case, where the relationship id stands in — which is reported, not repaired silently. */
+  readonly sourceId?: string;
   readonly sourceType: string;
   readonly independence: string;
   readonly locator: string;
@@ -94,10 +119,19 @@ export interface BenchmarkProposition {
   readonly evidence: readonly BenchmarkEvidenceRecord[];
 }
 
+/**
+ * One citation the reviewer read in the captured answer.
+ *
+ * `supportsStatement` is a judgement about the material. `voided` is the reviewer withdrawing the
+ * cited record afterwards — a different fact, and the one that decides whether a mapping still
+ * counts as support under `metrics-v4`.
+ */
 export interface BenchmarkCitation {
   readonly id: string;
   readonly url: string;
   readonly supportsStatement: boolean;
+  /** v2. Whether the reviewer withdrew this cited record. */
+  readonly voided?: boolean;
   readonly note: string | null;
 }
 
@@ -130,7 +164,14 @@ export interface BenchmarkGoldLabel {
   readonly subjectId: string;
 }
 
-/** A single reviewer's pre-adjudication label, retained so disagreement stays visible. */
+/**
+ * How one reviewer resolved one subject on one dimension.
+ *
+ * `label` is the value the reviewer recorded; the vocabulary it must come from is the one belonging
+ * to `dimension`, which the validator checks. `reviewer` is an operator-asserted name: the
+ * application has no authentication, so this records who the operator says reviewed it and proves
+ * nothing about who did.
+ */
 export interface BenchmarkReviewerLabel {
   readonly reviewer: string;
   readonly dimension: BenchmarkDimension;
@@ -139,10 +180,55 @@ export interface BenchmarkReviewerLabel {
   readonly note: string | null;
 }
 
+/**
+ * An adjudication of one disagreement, scoped to the subject it settles.
+ *
+ * v1 carried a single unscoped `adjudication` per case, which let one `RESOLVED` record mask every
+ * disagreeing subject in that case, across unrelated dimensions. v2 requires the scope, and requires
+ * the settled label when the outcome is `RESOLVED`: an adjudication that decides nothing cannot
+ * become a gold label.
+ */
 export interface BenchmarkAdjudication {
+  readonly dimension: BenchmarkDimension;
+  readonly subjectId: string;
+  readonly outcome: 'RESOLVED' | 'GENUINELY_AMBIGUOUS';
+  /** The label the adjudicator settled on. Required when `outcome` is `RESOLVED`. */
+  readonly label: string | null;
+  readonly reason: string;
+  readonly adjudicatedBy: string;
+}
+
+/**
+ * A v1 case's unscoped adjudication, kept so an older file still reads.
+ *
+ * It is applied only when the case has exactly one disagreeing subject; otherwise the disagreement
+ * stays unresolved, because a decision that names nothing cannot be attributed to a subject.
+ */
+export interface BenchmarkLegacyAdjudication {
   readonly outcome: 'RESOLVED' | 'GENUINELY_AMBIGUOUS';
   readonly reason: string;
   readonly adjudicatedBy: string;
+}
+
+/**
+ * Annotation agreement for one dimension.
+ *
+ * A human-versus-human and human-versus-gold figure. It says nothing about software behaviour and is
+ * not evaluator accuracy: reviewer identity in a case file is operator-asserted, and the harness cannot
+ * verify that two names are two independent reviewers.
+ */
+export interface AnnotationSummary {
+  readonly dimension: BenchmarkDimension;
+  readonly subjects: number;
+  readonly scorable: number;
+  readonly agreeingWithGold: number;
+  readonly agreementRate: number | null;
+  readonly excludedUnresolved: number;
+  readonly excludedAmbiguous: number;
+  readonly excludedSingleReviewer: number;
+  readonly excludedNoGoldLabel: number;
+  readonly excludedAdjudicatedWithoutLabel: number;
+  readonly note: string;
 }
 
 export interface BenchmarkCase {
@@ -154,7 +240,10 @@ export interface BenchmarkCase {
   readonly input: BenchmarkInputPack;
   readonly expected: readonly BenchmarkGoldLabel[];
   readonly reviewerLabels: readonly BenchmarkReviewerLabel[];
-  readonly adjudication: BenchmarkAdjudication | null;
+  /** v2. Each entry names the dimension and subject it settles. */
+  readonly adjudications?: readonly BenchmarkAdjudication[];
+  /** v1 only, and only read when it can be attached to exactly one disagreement. */
+  readonly adjudication?: BenchmarkLegacyAdjudication | null;
   readonly limitations: readonly string[];
 }
 
@@ -211,6 +300,13 @@ export interface RegressionResultRow {
   readonly component: string;
 }
 
+/**
+ * One (dimension, subject) pair of reviewer labels, with how far they got.
+ *
+ * `reviewers` is the list of operator-asserted names that labelled this subject. Fewer than two
+ * entries means the pair is a single reviewer's note, not agreement, and `status` says so rather
+ * than leaving a reader to infer it from a count.
+ */
 export interface AgreementRow {
   readonly caseId: string;
   readonly dimension: BenchmarkDimension;
@@ -218,5 +314,14 @@ export interface AgreementRow {
   readonly reviewers: readonly string[];
   readonly labels: readonly string[];
   readonly unanimous: boolean;
-  readonly adjudication: 'RESOLVED' | 'GENUINELY_AMBIGUOUS' | 'UNRESOLVED' | 'NOT_APPLICABLE';
+  readonly status:
+    | 'NOT_ENOUGH_REVIEWERS'
+    | 'UNANIMOUS'
+    | 'RESOLVED_BY_ADJUDICATION'
+    | 'GENUINELY_AMBIGUOUS'
+    | 'UNRESOLVED';
+  /** The label the adjudication settled on, when one resolved this subject. */
+  readonly adjudicatedLabel: string | null;
+  /** The case's gold label for the same subject, when one exists. */
+  readonly goldLabel: string | null;
 }

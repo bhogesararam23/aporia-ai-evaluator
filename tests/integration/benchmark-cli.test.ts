@@ -43,7 +43,7 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
     provenance: {
       origin: 'Synthetic CLI fixture. Not a gold case.',
       authorizedForStorage: true,
-      reviewedBy: ['reviewer-a'],
+      reviewedBy: ['reviewer-a', 'reviewer-b'],
       reviewedAt: '2026-11-01',
       unverified: [],
       limitation: 'Fixture only.',
@@ -58,6 +58,9 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
             {
               id: 'ev-1',
               relation: 'SUPPORTS',
+              // A v2 case separates the relationship from the source it came from, so the
+              // duplicate-and-syndication stratum is expressible at all.
+              sourceId: 'src-1',
               sourceType: 'PRIMARY_ARTIFACT',
               independence: 'INDEPENDENT',
               locator: 'section 1',
@@ -67,14 +70,21 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
       ],
       answerText: 'A fixture answer.',
       citationCapture: 'CAPTURED',
-      citations: [],
+      citations: [
+        {
+          id: 'cit-1',
+          url: 'https://example.invalid/source',
+          supportsStatement: true,
+          note: null,
+        },
+      ],
       statements: [
         {
           id: 'stmt-1',
           text: 'A fixture statement.',
           relevance: 'ADDRESSES',
           propositionIds: ['prop-1'],
-          citationIds: [],
+          citationIds: ['cit-1'],
         },
       ],
       providerLabel: 'Fixture',
@@ -89,7 +99,7 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
       },
     ],
     reviewerLabels: [],
-    adjudication: null,
+    adjudications: [],
     limitations: ['Synthetic fixture used only to exercise the runner.'],
     ...overrides,
   });
