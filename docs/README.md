@@ -11,6 +11,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [User Journeys](product/USER_JOURNEYS.md) — achievement records, AI disagreement, website readiness, and monitoring.
 - [Implementation Roadmap](product/IMPLEMENTATION_ROADMAP.md) — dependency-ordered delivery phases and exit criteria.
 - [v0.3 Requirements Traceability](product/V03_REQUIREMENTS_TRACEABILITY.md) — audited requirement-to-code-to-test matrix for the claim-level milestone.
+- [v0.4 Requirements Traceability](product/V04_REQUIREMENTS_TRACEABILITY.md) — each v0.4 obligation in evaluator semantics, citation lifecycle, benchmark integrity, retest provenance, persistence and boundaries, mapped to the code that satisfies it and the check that would fail without it.
 - [Product Governance and Boundaries](business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md) — product promises and separation from evaluator verdicts.
 
 ## Technical design
