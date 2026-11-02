@@ -575,9 +575,15 @@ export function omissionEligibility(input: {
   return ELIGIBLE;
 }
 
-/** Whether a value is inside the relevance vocabulary at all. */
-export function isKnownRelevance(value: string): value is ClaimRelevance {
-  return (CLAIM_RELEVANCES as readonly string[]).includes(value);
+/**
+ * Whether a value is inside the relevance vocabulary at all.
+ *
+ * Accepts the shapes a stored or submitted row can actually arrive in — including `null` from a
+ * missing column — so a caller that narrows with this guard ends up with a real relevance value
+ * rather than a cast.
+ */
+export function isKnownRelevance(value: string | null | undefined): value is ClaimRelevance {
+  return typeof value === 'string' && (CLAIM_RELEVANCES as readonly string[]).includes(value);
 }
 
 /** The four fidelity labels that assert a factual verdict, and so belong in a denominator. */

@@ -504,12 +504,30 @@ test('claim assessments only accept the label set for their dimension', () => {
 test('omission, refusal and unavailability are storable fidelity states', () => {
   const db = setup();
   try {
-    insertAnswerClaim(db);
-    for (const [index, label] of ['OMITTED', 'REFUSED', 'UNAVAILABLE'].entries()) {
+    // Each gap label is recorded against the relevance that makes it honest. This test used to store
+    // all three on one ADDRESSES statement, which is the contradiction `metrics-v4` refuses: a
+    // statement that addresses the target did not also omit it.
+    const states = [
+      { label: 'OMITTED', relevance: 'OMISSION' },
+      { label: 'REFUSED', relevance: 'REFUSAL' },
+      { label: 'UNAVAILABLE', relevance: 'UNAVAILABLE' },
+    ];
+    for (const [index, state] of states.entries()) {
+      const claimId = `acs_gap_${index + 1}`;
+      const revisionId = `acr_gap_${index + 1}`;
+      insertAnswerClaim(db, {
+        id: claimId,
+        revisionId,
+        ordinal: index + 1,
+        relevance: state.relevance,
+        offsetBasis: state.relevance === 'OMISSION' ? 'NOT_ESTABLISHED' : 'EXACT_MATCH',
+      });
       insertClaimAssessment(db, {
-        id: `aca_${index + 1}`,
-        version: index + 1,
-        label,
+        id: `aca_gap_${index + 1}`,
+        claimId,
+        claimRevisionId: revisionId,
+        version: 1,
+        label: state.label,
       });
     }
     assert.equal(count(db, 'answer_claim_assessments'), 3);

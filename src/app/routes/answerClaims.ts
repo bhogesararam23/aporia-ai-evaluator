@@ -29,11 +29,14 @@ import {
 import type { ValidationIssue } from '../../core/validation.ts';
 import { requiredText } from '../../core/validation.ts';
 import {
+  citationMappingRelevance,
   createAnswerClaim,
   currentClaimLabels,
+  currentClaimRelevance,
   getAnswerClaimWorkspace,
   linkAnswerClaimCitation,
   linkAnswerClaimProposition,
+  propositionLinkRelevance,
   recordAnswerClaimAssessment,
   reviseAnswerClaim,
   supersedeAnswerClaimCitation,
@@ -1112,7 +1115,10 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
-      const result = validateClaimPropositionLinkInput(rawFields(context));
+      // The relevance is read from the stored statement rather than the form, so a tampered or stale
+      // field cannot present a pairing the record does not support.
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateClaimPropositionLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1137,7 +1143,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const linkId = context.params['linkId'] ?? '';
-      const result = validateClaimPropositionLinkInput(rawFields(context));
+      const relevance = propositionLinkRelevance(context.deps.db, projectId, linkId);
+      const result = validateClaimPropositionLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1164,7 +1171,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const linkId = context.params['linkId'] ?? '';
-      const result = validateClaimCitationLinkInput(rawFields(context));
+      const relevance = citationMappingRelevance(context.deps.db, projectId, linkId);
+      const result = validateClaimCitationLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1189,7 +1197,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
-      const result = validateClaimCitationLinkInput(rawFields(context));
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateClaimCitationLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1215,13 +1224,17 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
       const dimension = context.fields.get('dimension') ?? 'FIDELITY';
-      const result = validateAnswerClaimAssessmentInput({
-        ...rawFields(context),
-        label:
-          dimension === 'FIDELITY'
-            ? context.fields.get('fidelityLabel')
-            : context.fields.get('attributionLabel'),
-      });
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateAnswerClaimAssessmentInput(
+        {
+          ...rawFields(context),
+          label:
+            dimension === 'FIDELITY'
+              ? context.fields.get('fidelityLabel')
+              : context.fields.get('attributionLabel'),
+        },
+        relevance,
+      );
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }

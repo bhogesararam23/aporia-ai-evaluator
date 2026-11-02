@@ -85,13 +85,17 @@ function draftOf(overrides: Record<string, unknown> = {}) {
 }
 
 function propositionLinkOf(overrides: Record<string, unknown> = {}) {
-  const result = validateClaimPropositionLinkInput({
-    propositionId: 'prp_1',
-    relation: 'SUPPORTS_TARGET',
-    rationale: 'The answer states what the proposition asserts.',
-    reviewer: TEST_ACTOR,
-    ...overrides,
-  });
+  const { relevance = 'ADDRESSES', ...fields } = overrides;
+  const result = validateClaimPropositionLinkInput(
+    {
+      propositionId: 'prp_1',
+      relation: 'SUPPORTS_TARGET',
+      rationale: 'The answer states what the proposition asserts.',
+      reviewer: TEST_ACTOR,
+      ...fields,
+    },
+    relevance as string,
+  );
   if (!result.ok) {
     throw new Error(`fixture link invalid: ${JSON.stringify(result.issues)}`);
   }
@@ -99,13 +103,17 @@ function propositionLinkOf(overrides: Record<string, unknown> = {}) {
 }
 
 function citationLinkOf(overrides: Record<string, unknown> = {}) {
-  const result = validateClaimCitationLinkInput({
-    citationId: 'cit_1',
-    support: 'SUPPORTS',
-    rationale: 'The cited page states the same fact.',
-    reviewer: TEST_ACTOR,
-    ...overrides,
-  });
+  const { relevance = 'ADDRESSES', ...fields } = overrides;
+  const result = validateClaimCitationLinkInput(
+    {
+      citationId: 'cit_1',
+      support: 'SUPPORTS',
+      rationale: 'The cited page states the same fact.',
+      reviewer: TEST_ACTOR,
+      ...fields,
+    },
+    relevance as string,
+  );
   if (!result.ok) {
     throw new Error(`fixture citation invalid: ${JSON.stringify(result.issues)}`);
   }
@@ -113,13 +121,17 @@ function citationLinkOf(overrides: Record<string, unknown> = {}) {
 }
 
 function assessmentOf(overrides: Record<string, unknown> = {}) {
-  const result = validateAnswerClaimAssessmentInput({
-    dimension: 'FIDELITY',
-    label: 'ACCURATE',
-    rationale: 'Matches the recorded release artifact.',
-    reviewer: TEST_ACTOR,
-    ...overrides,
-  });
+  const { relevance = 'ADDRESSES', ...fields } = overrides;
+  const result = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'FIDELITY',
+      label: 'ACCURATE',
+      rationale: 'Matches the recorded release artifact.',
+      reviewer: TEST_ACTOR,
+      ...fields,
+    },
+    relevance as string,
+  );
   if (!result.ok) {
     throw new Error(`fixture assessment invalid: ${JSON.stringify(result.issues)}`);
   }
@@ -139,6 +151,15 @@ function claimRowCount(db: ReturnType<typeof createTestDatabase>): number {
     string,
     unknown
   >;
+  return Number(row['n']);
+}
+
+/**
+ * Rows in one table, named the same way `claimRowCount` does. Called only with a literal table name
+ * from inside this file.
+ */
+function rowCount(db: ReturnType<typeof createTestDatabase>, table: string): number {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as Record<string, unknown>;
   return Number(row['n']);
 }
 
@@ -393,7 +414,11 @@ test('an omission cannot be stored as a located quotation', () => {
       db,
       'prj_1',
       honest.id,
-      assessmentOf({ label: 'OMITTED', rationale: 'The answer left the funding body unsaid.' }),
+      assessmentOf({
+        relevance: 'OMISSION',
+        label: 'OMITTED',
+        rationale: 'The answer left the funding body unsaid.',
+      }),
       context,
     );
     assert.equal(claimFidelityLabel(assessed), 'OMITTED');
@@ -497,11 +522,96 @@ test('superseding a link twice is refused', () => {
           db,
           'prj_1',
           linkId,
-          propositionLinkOf({ relation: 'OMITS_TARGET' }),
+          propositionLinkOf({ relation: 'CONTRADICTS_TARGET' }),
           context,
         ),
       /already been superseded/,
     );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+// These three tests are the second gate: they call the repository directly, which is how a
+// restored database or a script would write, and the form is not in the path at all.
+test('the repository refuses a fidelity assessment the recorded relevance cannot support', () => {
+  const db = setup();
+  try {
+    const claim = addClaim(db, { relevance: 'REFUSAL' });
+    assert.equal(claim.currentRevision?.relevance, 'REFUSAL');
+    // Written straight to the repository, bypassing the form: this is how a restored database or a
+    // script would write, and the second gate has to hold without the form in the path.
+    assert.throws(
+      () =>
+        recordAnswerClaimAssessment(
+          db,
+          'prj_1',
+          claim.id,
+          {
+            dimension: 'FIDELITY',
+            label: 'ACCURATE',
+            rationale: 'A refusal cannot be an accurate factual statement.',
+            reviewer: TEST_ACTOR,
+            attributionSubject: undefined,
+            attributionRole: undefined,
+          },
+          context,
+        ),
+      /contradicts the recorded relevance/,
+    );
+    assert.equal(rowCount(db, 'answer_claim_assessments'), 0, 'the refused write left no row');
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('the repository refuses a proposition link that contradicts the recorded relevance', () => {
+  const db = setup();
+  try {
+    const claim = addClaim(db, { relevance: 'UNRELATED' });
+    assert.throws(
+      () =>
+        linkAnswerClaimProposition(
+          db,
+          'prj_1',
+          claim.id,
+          {
+            propositionId: 'prp_1',
+            relation: 'OMITS_TARGET',
+            rationale: 'An unrelated statement cannot show that anything was omitted.',
+            reviewer: TEST_ACTOR,
+          },
+          context,
+        ),
+      /contradicts the recorded relevance/,
+    );
+    assert.equal(rowCount(db, 'answer_claim_propositions'), 0);
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('the repository refuses a citation mapping that supports a statement asserting nothing', () => {
+  const db = setup();
+  try {
+    const claim = addClaim(db, { relevance: 'ABSTENTION' });
+    assert.throws(
+      () =>
+        linkAnswerClaimCitation(
+          db,
+          'prj_1',
+          claim.id,
+          {
+            citationId: 'cit_1',
+            support: 'SUPPORTS',
+            rationale: 'An abstention credits nothing and asserts nothing.',
+            reviewer: TEST_ACTOR,
+          },
+          context,
+        ),
+      /contradicts the recorded relevance/,
+    );
+    assert.equal(rowCount(db, 'answer_claim_citations'), 0);
   } finally {
     closeDatabase(db);
   }

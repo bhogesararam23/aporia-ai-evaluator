@@ -5,6 +5,11 @@ import type {
   ClaimCitationLinkInput,
   ClaimPropositionLinkInput,
 } from '../../core/answerClaimInputs.ts';
+import {
+  validateAnswerClaimAssessmentInput,
+  validateClaimCitationLinkInput,
+  validateClaimPropositionLinkInput,
+} from '../../core/answerClaimInputs.ts';
 import type {
   AnswerOffsetBasis,
   AnswerStatementKind,
@@ -20,6 +25,7 @@ import {
   isClaimAttributionLabel,
   isClaimFidelityLabel,
 } from '../../core/answerClaims.ts';
+import type { ValidationResult } from '../../core/validation.ts';
 import { AppError } from '../../errors.ts';
 import { appendAuditEvent } from '../audit.ts';
 import { withTransaction } from '../db.ts';
@@ -631,6 +637,84 @@ export function voidAnswerClaim(
   });
 }
 
+/**
+ * The relevance recorded on a statement's current revision.
+ *
+ * Cross-axis validation needs this before anything is written, so the form can refuse an assessment
+ * that the relevance cannot support instead of storing a row the metrics later have to exclude. One
+ * query, no assembly: the caller wants one column, not the whole record.
+ */
+export function currentClaimRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  claimId: string,
+): string | null {
+  const row = db
+    .prepare(
+      `SELECT revision.relevance
+       FROM answer_claims claim
+       JOIN answer_claim_revisions revision ON revision.id = claim.current_revision_id
+       WHERE claim.id = ? AND claim.project_id = ?`,
+    )
+    .get(claimId, projectId) as Row | undefined;
+  return row === undefined ? null : stringValue(row, 'relevance');
+}
+
+/** The relevance on the revision a stored proposition link belongs to, or `null` when it is absent. */
+export function propositionLinkRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  linkId: string,
+): string | null {
+  const row = db
+    .prepare(
+      'SELECT claim_revision_id FROM answer_claim_propositions WHERE id = ? AND project_id = ?',
+    )
+    .get(linkId, projectId) as Row | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  const revision = db
+    .prepare('SELECT relevance FROM answer_claim_revisions WHERE id = ?')
+    .get(stringValue(row, 'claim_revision_id')) as Row | undefined;
+  return revision === undefined ? null : stringValue(revision, 'relevance');
+}
+
+/** The relevance on the revision a stored citation mapping belongs to, or `null` when it is absent. */
+export function citationMappingRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  linkId: string,
+): string | null {
+  const row = db
+    .prepare('SELECT claim_revision_id FROM answer_claim_citations WHERE id = ? AND project_id = ?')
+    .get(linkId, projectId) as Row | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  const revision = db
+    .prepare('SELECT relevance FROM answer_claim_revisions WHERE id = ?')
+    .get(stringValue(row, 'claim_revision_id')) as Row | undefined;
+  return revision === undefined ? null : stringValue(revision, 'relevance');
+}
+
+/**
+ * Re-check the claim eligibility contract on the way into storage.
+ *
+ * The form already refuses an inconsistent pairing. This is the second gate, for a write that did not
+ * arrive through a form: a restored database, a script, or a caller that assembled the input itself.
+ * A row the metric block would have to exclude is refused here instead, so what is stored and what is
+ * reported cannot drift apart.
+ */
+function requireConsistent(check: ValidationResult<unknown>, what: string): void {
+  if (!check.ok) {
+    throw new AppError(
+      'CONFLICT',
+      `${what}: ${check.issues.map((issue) => issue.message).join(' ')}`,
+    );
+  }
+}
+
 function currentRevisionId(db: DatabaseSync, projectId: string, claimId: string): string {
   const claim = getAnswerClaimOrThrow(db, projectId, claimId);
   if (claim.currentRevisionId === null) {
@@ -653,6 +737,18 @@ export function linkAnswerClaimProposition(
     const claim = getAnswerClaimOrThrow(db, projectId, claimId);
     requireWritableRun(db, claim.observationId);
     const revisionId = currentRevisionId(db, projectId, claimId);
+    requireConsistent(
+      validateClaimPropositionLinkInput(
+        {
+          propositionId: input.propositionId,
+          relation: input.relation,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That proposition link contradicts the recorded relevance',
+    );
     const existing = claim.propositionLinks.find(
       (link) => link.propositionId === input.propositionId && link.supersededBy === null,
     );
@@ -732,6 +828,18 @@ export function supersedeAnswerClaimProposition(
         'Only the current revision of a statement can be corrected. The statement was revised; start a new link.',
       );
     }
+    requireConsistent(
+      validateClaimPropositionLinkInput(
+        {
+          propositionId: prior.propositionId,
+          relation: input.relation,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That corrected relationship contradicts the recorded relevance',
+    );
     const replacementId = newId('acp');
     db.prepare(
       'UPDATE answer_claim_propositions SET superseded_by = ?, superseded_at = ? WHERE id = ?',
@@ -798,6 +906,18 @@ export function linkAnswerClaimCitation(
         'The citation was voided; record the support as metadata missing instead.',
       );
     }
+    requireConsistent(
+      validateClaimCitationLinkInput(
+        {
+          citationId: input.citationId,
+          support: input.support,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That support assessment contradicts the recorded relevance',
+    );
     if (
       claim.citationLinks.some(
         (link) => link.citationId === input.citationId && link.supersededBy === null,
@@ -869,6 +989,18 @@ export function supersedeAnswerClaimCitation(
         'Only the current revision of a statement can be corrected. The statement was revised; start a new mapping.',
       );
     }
+    requireConsistent(
+      validateClaimCitationLinkInput(
+        {
+          citationId: prior.citationId,
+          support: input.support,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That corrected support assessment contradicts the recorded relevance',
+    );
     const replacementId = newId('acc');
     db.prepare(
       'UPDATE answer_claim_citations SET superseded_by = ?, superseded_at = ? WHERE id = ?',
@@ -925,6 +1057,20 @@ export function recordAnswerClaimAssessment(
     const highest = claim.assessments
       .filter((assessment) => assessment.dimension === input.dimension)
       .reduce((max, assessment) => Math.max(max, assessment.version), 0);
+    requireConsistent(
+      validateAnswerClaimAssessmentInput(
+        {
+          dimension: input.dimension,
+          label: input.label,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+          attributionSubject: input.attributionSubject,
+          attributionRole: input.attributionRole,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That assessment contradicts the recorded relevance',
+    );
     // Numbering continues per (revision, dimension), so a second opinion on the same revision is a
     // new version rather than a replacement of the earlier judgement.
     db.prepare(
