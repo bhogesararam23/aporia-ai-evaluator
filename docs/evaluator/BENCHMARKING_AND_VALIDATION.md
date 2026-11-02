@@ -1,7 +1,30 @@
 # Benchmarking and Validation Plan
 
-- Status: Required before public reliability claims.
+- Status: Required before public reliability claims. No accuracy claim is currently supportable.
 - Goal: Validate claim/evidence judgments and AI-answer metrics against human-reviewed cases.
+- Implementation record: [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-023](../agents/adrs/ADR-023-claim-eligibility-metrics-v4.md), `npm run benchmark -- --corpus <directory>`
+
+## 0. What exists and what is only planned
+
+This document is a plan, and plans outgrow their implementation. Each section below says which part
+is code in this repository today, because a document that reads like a completed method is exactly how
+a benchmark becomes decoration.
+
+| Section | Implemented | Not implemented |
+| --- | --- | --- |
+| 2. Strata | 16 required strata, enforced by `src/benchmark/validate.ts`; a corpus missing one fails the run unless `--allow-partial-strata`, and the absence is printed either way | Any real case material. There is no gold corpus in this repository. |
+| 3. Gold labels | Case contract `benchmark-case-v2`: provenance and authorisation, named reviewers, per-dimension gold labels with rationale and subject, reviewer labels retained separately, scoped adjudications | Independent review. The application has no authentication, so reviewer identity is operator-asserted. Two names agreeing is not proof two people reviewed. |
+| 4. Performance measures | Per-class precision/recall, confusion matrices, macro-F1 with an explicit reason when withheld, per-dimension and per-label reporting, no composite score | Confidence intervals, calibration, class-balance reporting. Sample sizes in any plausible local corpus are too small to justify either. |
+| 5. Ablation | Deterministic regression of `evidence-aggregation-v1` plus metric-formula checks over a frozen input pack. Duplicate-source counting is expressible and tested since v2 | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
+| 6. Leakage | Not applicable to an offline corpus of reviewer-recorded cases | Development/validation/held-out splits and time splits. Meaningless until a real corpus exists. |
+| 7. Provider integration | — | Everything. There are no providers, no adapters, and no network access in this build. |
+| 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata | Any release gate that depends on measured results. |
+| 9. Monitoring | — | Nothing. Local single-operator use has no monitoring pipeline. |
+| 10. Public claims | `accuracyClaimable` is reported as `false` in every artifact, with the reason beside it | — |
+
+**A green `npm run benchmark` is not evidence that the evaluator is accurate.** It means the software
+produced the labels recorded in the corpus it was given. Those are different claims, and the report
+keeps them in separate sections.
 
 ## 1. Why validation is required
 
@@ -34,6 +57,36 @@ Include cases for:
 - Store rationale and evidence locators, not only labels.
 - Distinguish insufficient evidence from contradiction.
 - Version labeling guidance; changes require an impact review.
+
+### 3.1 How agreement is computed, and how it is never invented
+
+The harness reports four things separately and does not convert one into another:
+
+- **deterministic regression** — what the current code produced versus the recorded gold label;
+- **reviewer agreement** — subjects whose reviewers were unanimous;
+- **adjudicated labels** — subjects a scoped adjudication settled, naming the subject, the settled
+  label, the reason and the adjudicator;
+- **unresolved disagreement** — subjects with no settling adjudication, and subjects recorded as
+  genuinely ambiguous.
+
+The rules that follow from that split:
+
+1. A subject labelled by fewer than two distinct reviewers is `NOT_ENOUGH_REVIEWERS`. One reviewer is
+   one opinion. The same reviewer writing twice does not become two reviewers.
+2. Disagreement without an adjudication stays `UNRESOLVED`. It is excluded from any agreement rate and
+   counted in the open, so a clean figure cannot be produced by quietly dropping the hard cases.
+3. `GENUINELY_AMBIGUOUS` may not carry a label. Choosing one would score an unresolved subject as an
+   ordinary gold verdict.
+4. A `RESOLVED` adjudication must name the label it settled and the subject it settled it for. A v1
+   case's unscoped adjudication is honoured only where the case disagrees on exactly one subject;
+   one unnamed decision cannot settle two disputes.
+5. Nothing selects a reviewer label to manufacture a consensus. `metrics-v3`'s harness took the
+   alphabetically first label, which made one dissenting `ACCURATE` outrank two `UNSUPPORTED` and
+   folded the result into the same accuracy figure as software output. There is no such step now.
+
+Reviewer identifiers remain operator-asserted strings. Local core has no authentication, so agreement
+between two labels is not proof of independent review, and no number in a benchmark report establishes
+it.
 
 ## 4. Evaluator performance measures
 
