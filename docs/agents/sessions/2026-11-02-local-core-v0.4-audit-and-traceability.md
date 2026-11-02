@@ -363,3 +363,74 @@ One correction to this report's own earlier draft: the traceability row for metr
 defect "D-6" that has no entry in section 5. It was never a separate finding — the second silent void
 filter it was meant to name is described inside D-2 (`snapshot.ts` and `findings.ts`), and the
 terminology problem belongs to D-5. The row now reads D-1, D-2, D-4, D-5.
+
+## 10. Gates, checkpoints, and what is still not verified
+
+### Mandatory gates, as run on this checkout
+
+| Gate | Result |
+|---|---|
+| `npm ci` | pass |
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm run format:check` | pass |
+| `npm run check:boundaries` | pass |
+| `npm test` | **690 passing, 0 failing** (374 unit, 316 integration) |
+| `npm run check` | exit 0 |
+| `npm run verify:workflow` | exit 0, 25 entries passed, 0 failed, 0 not run |
+| Benchmark failure modes | `tests/unit/benchmark-validate.test.ts`, `tests/unit/benchmark-scoring.test.ts`, `tests/integration/benchmark-cli.test.ts` — unknown case version, missing rationale, unauthorised provenance, unnamed reviewer, dangling references, empty decomposition, duplicate identifiers, partial invalid case excluded from scoring, disagreement never resolved silently |
+| v1/v2/v3 snapshot readability | `tests/unit/report-compatibility.test.ts`, `tests/integration/upgrade-v03-to-v04.test.ts` — a stored v3 file whose fidelity figures are impossible under v4 still prints what it recorded |
+| Migration and backup with populated data | `tests/integration/upgrade-v03-to-v04.test.ts`, `tests/integration/backup-restore.test.ts`, `tests/integration/backup-cli.test.ts`, and workflow steps 22–24 |
+| Cross-project rejection | repository, HTTP and trigger tests, including a comparison cited across projects and a reference into another project |
+| Every lifecycle transition | `tests/unit/lifecycle.test.ts`, `tests/unit/findings-lifecycle.test.ts`, `tests/integration/schema-*.test.ts` |
+| Partial-write rollback | `tests/integration/write-atomicity.test.ts` (fifteen paths), `tests/integration/audit-atomicity.test.ts` |
+| Query counts before and after | `tests/integration/query-counts.test.ts` — measured: 49 → 5, flat in record count |
+| Final diff review | `git diff origin/main...HEAD` reviewed commit by commit; no applied migration edited (`009_remediation.sql` proved byte-identical after a stat-only modification flag), no secret or database file staged |
+
+An earlier commit in this session (`b7694f5`) was created with a failing typecheck, because the gate was
+piped through `grep | head`, whose exit code replaced npm's. It was corrected forward in `696676a`, whose
+message says so, and every gate since has been run as `npm run check > file 2>&1; echo $?` so the real
+exit status is what gets read. Nothing was force-pushed, no published commit was amended, and no test was
+weakened to make a gate pass.
+
+### Push checkpoints and hosted CI
+
+Destination branch throughout: `feat/aporia-local-core-v0.4-evaluator-integrity`. `main` was never pushed
+to directly, no force-push was used, and no checkpoint was pushed while an earlier one was failing.
+
+| Checkpoint | Commits | Head | CI run | Result |
+|---|---|---|---|---|
+| 1 | 5 (`53d0cf6`–`14f26cb`) | `14f26cb` | [41366691530](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41366691530) | success |
+| 2 | 3 (`14f26cb`–`f9ac365`) | `f9ac365` | [41369253429](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41369253429) | success |
+| 3 | 3 (`f9ac365`–`15ef735`) | `15ef735` | [41372724713](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41372724713) | success |
+| 4 | 5 (`15ef735`–`8f8f422`) | `8f8f422` | [41378884860](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41378884860) | success |
+| 5 | 9 (`8f8f422`–`b22b5fb`) | `b22b5fb` | [41389015942](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41389015942) | success |
+| 6 | 15 (`b22b5fb`–`413d53c`) | `413d53c` | [41408176196](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41408176196) | success |
+
+### Still not verified, stated plainly
+
+- **Accuracy is not established.** No reviewed gold case exists in this repository; the only benchmark
+  material is synthetic fixtures inside test files. The harness reports structural readiness and refuses
+  an accuracy claim, and it must stay that way until real annotators label real material.
+- **Screen-reader, mobile and cross-browser checks were not performed.** The accessibility assertions
+  here are structural — labels resolve, `aria-describedby` targets exist, a rejected submission
+  announces itself, no script element, one `h1`, tables captioned. None of that demonstrates that an NVDA,
+  JAWS or VoiceOver user understands a page, and no second browser or small viewport was used.
+- **macOS and Linux were not exercised.** The gates, the workflow driver and the backup path ran on
+  Windows x64 with Node v24.13.1.
+- **`node:sqlite` remains experimental** in the tested Node release, and crash recovery and power-loss
+  durability are not tested; restore tests cover corrupt files and deliberate failures.
+- **No independent review, no owner acceptance.** ADR-018 to ADR-024 are implemented and tested and stay
+  **Proposed**; this milestone did not change their status, and ADR-025 (recorded here as a proposal) is
+  explicitly not implemented.
+- **Aporia is not production-ready, not provider-validated, and not independently audited**, and nothing
+  in this report should be read as claiming otherwise.
+
+### Handoff
+
+1. Owner decision on ADR-018 to ADR-024; until they are accepted, neither v0.3 nor v0.4 is an accepted release.
+2. ADR-025 (`evidence-aggregation-v2`) if the independence defect below D-9 in section 5 is to be fixed; it
+   changes a stored rule and therefore needs its own version, not an edit.
+3. Recruit real reviewed cases with at least two annotators. This is the only gate between the harness and
+   any statement about accuracy.
+4. Run `npm run verify:workflow` on macOS and Linux, and add a screen-reader pass with a human.
