@@ -149,3 +149,28 @@ to answer "did this specific finding change?".
 - Per-project finding numbering is monotonic and unique, and does not reuse a number after deletion.
 - Backup/restore preserves findings, references, update history, and status exactly.
 - Project deletion cascades findings and their update log.
+
+## Amendment (2026-11-02, local core v0.4)
+
+Item 10 overstated the version change. `report-template-v3` had already been introduced by
+[ADR-019](ADR-019-metrics-v3-claim-level.md) inside the same unreleased milestone, when the report
+gained its statement-level block. The findings section did not create a template version; it joined
+`report-template-v3`, and both sections shipped together under it. The decision to bump the template
+when a report gains a section stands, and no earlier wording is being rewritten here — this note
+records that the described bump was not a new version at the time it was written.
+
+Two further things are true now, and they are recorded rather than assumed:
+
+- `report-template-v4` is the current template for newly generated reports as of local core v0.4,
+  because the report renders the claim-eligibility exclusions and the review-progress counts
+  ([ADR-023](ADR-023-claim-eligibility-metrics-v4.md)). A stored `report-template-v1`, `v2` or `v3`
+  snapshot still renders the figures it was written with and is never recomputed.
+- The guard in item 7 and the "one selected metric determines the outcome" rule are now durable
+  rather than only computed at view time: the focus metric, its label, both runs' metric versions and
+  the comparison rule version are stored beside the comparison, the comparison is recomputed from the
+  persisted runs inside the write transaction, and a measured status is accepted only when the cited
+  comparison belongs to that finding and carries that outcome — enforced in the repository and by
+  SQLite triggers ([ADR-024](ADR-024-retest-provenance-and-comparability.md)).
+
+Status remains **Proposed**. This amendment does not accept the decision; owner review is still
+pending.
