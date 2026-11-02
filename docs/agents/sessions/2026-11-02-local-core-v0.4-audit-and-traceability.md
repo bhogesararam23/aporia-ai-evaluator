@@ -269,3 +269,65 @@ Changing that is a metric-rule change to `evidence-aggregation-v1`, which needs 
 ADR, not a side effect of a benchmark fix. It is recorded as an open limitation instead, and the test
 that documents it says so in its own name ("a single source cannot corroborate itself into a strong
 status").
+
+## 8. Live workflow verification (§6)
+
+`npm run verify:workflow` (`scripts/local-workflow.ts`) boots the real server with
+`APORIA_DATA_DIR` pointing at a fresh temporary directory, on a port the script asks the operating
+system for (port 3000 is Grafana on this machine, so a fixed port would collide with something), and
+walks the §6 sequence. Every submission is assembled from the form the application just served: its
+action, its method, its field names, its select choices, and each field's own default value, so a
+hidden statement id, a datetime default and the CSRF token are sent the way a browser sends them. A
+value the page never offered, a required field the workflow cannot fill, or a name the form does not
+have stops that step rather than quietly submitting less. Failures print the page's own error summary.
+
+Result on 2026-11-02, Windows x64, Node v24.13.1: **25 entries, 25 passed, 0 failed, 0 left not-run,
+exit code 0.** `/health` reported `0.4.0`.
+
+| §6 step | What the run proved |
+|---|---|
+| 1 project and target entity | Project `prj_…` created; entity entered through its own form with identity status, method and scope; the entities page shows a current target |
+| 2 manually supplied claim | Claim stored at revision 1 and readable on its page |
+| 3 proposition decomposition | Two propositions recorded, each with its evidence requirement |
+| 4 source and evidence relationship | A `PRIMARY_ARTIFACT` source becomes selectable in the evidence form; the stored excerpt reads back |
+| 5 human proposition assessment | The reviewed-conclusion form only exists once review has started — the run starts review through the claim's own form first, then records the conclusion beside the rule output |
+| 6 query set approved | One verbatim attribution query; approval freezes the text and the page reports the approved state |
+| 7 run created | Open run against the approved set, with conditions, capture window and both labels |
+| 8 captured answer | The raw answer renders in full on the run page; its character positions are computed from it |
+| 8b observation assessments | Presence and fidelity recorded against the observation, each with its rationale, through the dimension-specific form |
+| 9 multiple statements | Two statements; the workspace lists exactly two and the verbatim quote carries the character range |
+| 10 quote locations and states | Verbatim range, normalised range and reviewer description all accepted; two bad submissions refused (below); workspace still holds exactly three statements afterwards |
+| 11 statement → proposition links | Two links recorded, each readable and each with its own correction form |
+| 12 citation mapping | One citation mapped to two statements: one `SUPPORTS`, one explicitly `NOT_ASSESSABLE` |
+| 13 fidelity and attribution | `CONTRADICTED` and `WRONG_ROLE` recorded; the inconsistent pairing refused (below) |
+| 14 correction and voiding | Three void forms existed; a link was superseded with the original retained; a statement was voided and its reason stayed readable; the citation was withdrawn and its mappings stayed on the page |
+| 15 finalize | The run finalizes and the page reports it frozen |
+| 16 report and claim-level metrics | The report carries all four statement rates, decomposition coverage, `metrics-v4`, the review-progress block and the voided-statement sentence |
+| 17 offline benchmark | Ran against a temporary synthetic corpus **outside** the application, exited non-zero on incomplete strata, named the missing ones, and refused to present an accuracy claim |
+| 18 remediation finding | Created, amended without changing status, walked to retest-required; the page withholds `IMPROVED` while no comparison exists, and a hand-built `IMPROVED` transition was refused |
+| 19 later run and retest comparison | Preview reached with the page's own get form; the record form carries only the two run ids and the metric; `UNCHANGED` recorded citing `rtc_…`; a fabricated `IMPROVED` citing that same comparison was refused and the stored outcome did not move |
+| 20 second report | New snapshot is current, the older one says "has been superseded by report …" and still renders its own frozen figures |
+| 21 exports | Project JSON contains its sections including findings; each report offers JSON plus metrics, findings and observations CSVs, with the claim-level rows present |
+| 22 backup, verify, restore | Schema 11, 34 tables counted, `answer_claims` 3 and `retest_comparisons` 1 in the manifest; verification passed; a restore over live data **without** `--replace --confirm` was refused; restore into a separate fresh directory succeeded |
+| 23 restart on restored data | The server boots against the restored directory and answers `/health` |
+| 24 read back | The restored project, claim, propositions, voided statement with its reason, both reports, and the finding with its recorded comparison all serve through the running application |
+
+The refusals the run depends on, in the application's own words:
+
+- a reviewer description claiming a verbatim position — *"A reviewer description cannot claim a
+  position inside the answer. Remove the position basis, or record the statement as a quote only if the
+  answer really contained these words."*
+- a quote absent from the captured answer — *"The quote is not present verbatim in the captured answer.
+  Choose an exact-match quote from the original text, or record the basis as 'not established'."*
+- a `REFUSED` fidelity label on an `ADDRESSES` statement — *"A statement recorded as 'ADDRESSES' makes
+  no assertion the REFUSED verdict could describe. ACCURATE, PARTIALLY_ACCURATE, CONTRADICTED,
+  UNSUPPORTED, NOT_ASSESSABLE are the assessments this relevance supports. If the statement does assert
+  something, correct its relevance instead."*
+- a measured status with no comparison, and a measured status citing a comparison that measured a
+  different outcome — both returned non-redirect and left the stored status unchanged.
+
+Boundary conditions honoured: no provider, no search API, no remote fetch, no network call, no
+authentication, no publication and no seeded application data. The only synthetic content is text an
+operator would type, entered through the forms, plus one temporary benchmark file that is written
+outside the data directory and deleted in the same step. The run creates no fake gold case and no fake
+reviewer: `workflow-operator` is the configured local operator label, and it is recorded as such.
