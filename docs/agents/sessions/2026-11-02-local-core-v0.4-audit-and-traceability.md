@@ -442,3 +442,23 @@ to directly, no force-push was used, and no checkpoint was pushed while an earli
 3. Recruit real reviewed cases with at least two annotators. This is the only gate between the harness and
    any statement about accuracy.
 4. Run `npm run verify:workflow` on macOS and Linux, and add a screen-reader pass with a human.
+
+### Checkpoint 7 and the pull request
+
+Two further checkpoints completed the campaign after the table above was written:
+
+| Checkpoint | Commits | Head | CI run | Result |
+|---|---|---|---|---|
+| 7 | 8 (`413d53c`–`e20fe2b`) | `e20fe2b` | [41411498290](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41411498290) | success |
+| PR | — | `e20fe2b` | [41411848878](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/41411848878) | opened against `main` |
+
+**Pull request #6** — [github.com/bhogesararam23/aporia-ai-evaluator/pull/6](https://github.com/bhogesararam23/aporia-ai-evaluator/pull/6) —
+`feat/aporia-local-core-v0.4-evaluator-integrity` → `main`, 48 commits, 86 files, +13,266 / −1,148.
+**Created, not merged**, as instructed; `mergedAt` is null and no merge was attempted. GitGuardian's
+security scan on the PR passed; the milestone gate on the pushed head had already passed.
+
+Commit count versus the brief: **48 of the 50 minimum**. The shortfall is stated rather than papered
+over. §10 forbids empty, no-op, rename-only and no-op-formatting commits, and by the end of the campaign
+the remaining work was not divisible into further genuine units without inventing changes to commit. Each
+of the 48 is a distinct unit: a rule, a fix, a test, a migration, a measurement, or one document brought
+into line. Nothing was split to reach a number, and the count is reported here as it stands.
