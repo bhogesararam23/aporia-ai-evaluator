@@ -1,6 +1,6 @@
 # Local Operations Runbook
 
-- Scope: local core v0.2 on a single operator workstation
+- Scope: local core v0.4 on a single operator workstation
 - Status: Implemented, not a production operations plan
 - Date: 2026-10-30
 
@@ -121,7 +121,7 @@ Aporia cannot revoke copies made outside its data directory.
 ## 7. Upgrade and rollback
 
 - Back up the data directory before upgrading code with `npm run backup -- --data-dir <dir>`.
-- Apply migrations by starting the new revision; never edit an applied migration.
+- Apply migrations by starting the new revision; never edit an applied migration. Local core v0.4 adds `010_evaluator_integrity.sql` (labels and relationships that contradict a recorded relevance are refused at the database too) and `011_retest_provenance.sql` (the focus metric, both metric versions and the comparison rule version stored beside each comparison, plus the triggers binding a status to it). Both are additive: no earlier column is redefined and no stored row is rewritten.
 - There are no down migrations. Rollback means restoring the pre-upgrade database backup and running the earlier code revision. Restore requires the backup schema to match the earlier code's migrations exactly.
 - Re-run `npm run check` after any dependency or Node upgrade. The `node:sqlite` API is experimental and must be revalidated.
 - Report snapshots store method and template versions, so older reports remain interpretable after an evaluator change.
@@ -130,8 +130,22 @@ Aporia cannot revoke copies made outside its data directory.
 
 ```bash
 npm run check
+npm run verify:workflow   # boots a server on a free loopback port and a fresh temp data directory
 npm start
 curl -s http://127.0.0.1:4310/health
 ```
 
-`/health` returns a local status JSON without exposing the database path or secrets. The automated suite and manual browser verification are described in [Testing](../TESTING.md).
+`/health` returns a local status JSON, including the application version, without exposing the database
+path or secrets.
+
+`npm run verify:workflow` is the check that the application is usable, not only that its modules are
+correct. It drives the whole working sequence through the forms the running server actually served —
+project and target entity through claim, proposition, evidence, reviewed conclusion, query set, run,
+captured answer, statement decomposition, citation mappings, assessments, corrections and voids,
+finalization, reports, the offline benchmark, findings, a retest comparison, exports, and finally
+backup, verification, restore and a read-back of the restored records. It exits zero only when every
+step passed and none was left unrun; a step it could not complete is reported as unverified with the
+page's own refusal message. Run it after any change to a form, a route, a metric, or a lifecycle rule.
+It binds a port and writes temporary directories, so it is run locally rather than in CI.
+
+The automated suite and the manual browser verification are described in [Testing](../TESTING.md).
