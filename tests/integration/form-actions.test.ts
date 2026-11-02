@@ -406,6 +406,16 @@ test('the statement workspace forms post where they say they do, and the applica
     });
     assert.equal(link.status, 303, 'linking a statement to a proposition failed from the page');
 
+    const citationId = /value="(cit_[A-Za-z0-9-]+)"/.exec(page.text)?.[1];
+    assert.ok(citationId, 'the workspace offers no citation to map, so mapping cannot be verified');
+    const mapping = await postForm(fixture.server, actionFor('/citations'), cookie, token, {
+      citationId,
+      support: 'SUPPORTS',
+      rationale: 'The cited record names the same maker.',
+      reviewer: 'Ram',
+    });
+    assert.equal(mapping.status, 303, 'mapping a citation to a statement failed from the page');
+
     const assessment = await postForm(fixture.server, actionFor('/assessments'), cookie, token, {
       dimension: 'FIDELITY',
       fidelityLabel: 'ACCURATE',
@@ -416,6 +426,61 @@ test('the statement workspace forms post where they say they do, and the applica
       reviewer: 'Ram',
     });
     assert.equal(assessment.status, 303, 'recording a statement assessment failed from the page');
+
+    // The correction forms only exist once there is a link or a mapping to correct, so the page is
+    // read again rather than a URL being assembled by hand.
+    const afterLinks = await getPage(fixture.server, fixture.workspacePath, cookie);
+    const correctionAction = (suffix: string, fieldName: string): string => {
+      const form = formsIn(afterLinks.text, fixture.workspacePath).find(
+        (candidate) => candidate.action.endsWith(suffix) && candidate.fields.includes(fieldName),
+      );
+      assert.ok(
+        form,
+        `no rendered form ends ${suffix} and carries ${fieldName}. Actions: ${formsIn(
+          afterLinks.text,
+          fixture.workspacePath,
+        )
+          .map((candidate) => candidate.action)
+          .join(', ')}`,
+      );
+      return form.action;
+    };
+
+    const supersedeLink = await postForm(
+      fixture.server,
+      correctionAction('/supersede', 'relation'),
+      cookie,
+      token,
+      {
+        propositionId: fixture.propositionId,
+        relation: 'QUALIFIES_TARGET',
+        rationale: 'On review the statement gives the year only under the recorded condition.',
+        reviewer: 'Ram',
+      },
+    );
+    assert.equal(
+      supersedeLink.status,
+      303,
+      'correcting a proposition link failed from the page it was rendered on',
+    );
+
+    const supersedeMapping = await postForm(
+      fixture.server,
+      correctionAction('/supersede', 'support'),
+      cookie,
+      token,
+      {
+        citationId,
+        support: 'SUPPORTS_WITH_CONDITIONS',
+        rationale: 'The record supports the year, not the maintenance claim.',
+        reviewer: 'Ram',
+      },
+    );
+    assert.equal(
+      supersedeMapping.status,
+      303,
+      'correcting a citation mapping failed from the page it was rendered on',
+    );
 
     const revise = await postForm(fixture.server, actionFor('/revise'), cookie, token, {
       quoteText: QUOTE,
@@ -430,20 +495,6 @@ test('the statement workspace forms post where they say they do, and the applica
       reason: 'Superseded by the revision just saved.',
     });
     assert.equal(voided.status, 303, 'voiding a statement failed from the page');
-
-    const mapping = await postForm(fixture.server, actionFor('/citations'), cookie, token, {
-      citationId: 'cit_does_not_exist',
-      support: 'SUPPORTS',
-      rationale: 'The cited record names the same maker.',
-      reviewer: 'Ram',
-    });
-    // The citation id cannot be read from the markup, so an unknown one has to be refused as a
-    // validation problem — never as a missing route, which is what the duplicated path produced.
-    assert.notEqual(
-      mapping.status,
-      404,
-      'the citation mapping form posts to a route that does not exist',
-    );
   } finally {
     await fixture.close();
   }
