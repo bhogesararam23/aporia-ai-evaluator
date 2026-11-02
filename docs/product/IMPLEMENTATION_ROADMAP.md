@@ -1,7 +1,17 @@
 # Implementation Roadmap
 
 - Status: Proposed sequencing, not a delivery commitment
-- Date: 2026-10-28
+- Date: 2026-11-02
+
+## Implementation note — 2026-11-02
+
+Local core v0.4 was an audit-and-correction milestone rather than a new phase. It changed what v0.3 had shipped, not what v0.3 had skipped: statement-level metrics became `metrics-v4`, where the recorded relevance decides whether a statement asserts anything, so a refusal, abstention, ambiguity, unrelated remark, reviewer description of an omission or voided record is excluded with a named reason instead of being scored — enforced in the pure calculation, the form validator, the repository transaction and SQLite triggers. A voided statement or withdrawn citation now stays readable with its reason and simply stops counting. A retest comparison stores the metric that decided it, both runs' metric versions and the rule version, is recomputed from the persisted runs inside its own write transaction, and a measured finding status is accepted only against a comparison on that finding that carries that outcome. The benchmark case contract became `benchmark-case-v2`, separating an evidence record from the underlying source and refusing to turn reviewer disagreement, a single annotator, or a genuinely ambiguous case into gold. Performance and durability were measured rather than assumed: the statement reader's query count no longer grows with the number of records, and every multi-record write was tested by failing it partway.
+
+Most importantly for Phase 1's exit criteria, the whole workflow is now verified through the forms the running application serves (`npm run verify:workflow`, 25 entries passed, none left unrun), which found four defects the documentation described as working: two sets of workspace forms returning 404, a withdrawal reason never displayed, and a project export missing the remediation backlog. Phase 2's publication half, Phase 3's reviewed gold set, and Phases 4–6 remain unimplemented, and Phase 3 stays open in the only way that matters: no dataset ships, so no accuracy figure is established. See [Implementation Status](../IMPLEMENTATION_STATUS.md) and the [v0.4 session report](../agents/sessions/2026-11-02-local-core-v0.4-audit-and-traceability.md).
+
+## Implementation note — 2026-11-01
+
+Local core v0.3 added answer-statement decomposition (`answer_claims` and its revisions, proposition links, citation mappings and assessments), the first claim-level metric block under `metrics-v3`, tracked remediation findings with an append-only lifecycle and stored retest comparisons, and the offline benchmark harness with a versioned case format. It did not add a benchmark dataset, provider integration, or publication path. Its own session report recorded six of nineteen manual workflow steps as unresolved because the driver had guessed field names — an end-to-end gap that v0.4 closed, together with the label-versus-relevance defect in its claim-level denominators.
 
 ## Implementation note — 2026-10-30
 
