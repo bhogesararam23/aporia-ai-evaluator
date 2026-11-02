@@ -157,6 +157,7 @@ The broader Product Requirements acceptance criterion that includes “run at le
 | ADR-022 benchmark module layer | Implemented | Boundary enforcement covers `src/benchmark`. **Status remains Proposed** | `tests/unit/boundaries.test.ts` |
 | ADR-023 claim eligibility and metrics-v4 | Implemented, **Proposed** — awaiting owner review | Four-layer enforcement plus the separate review-progress counts | `tests/unit/claim-eligibility.test.ts`, `tests/integration/report-retest-parity.test.ts` |
 | ADR-024 retest provenance and comparability | Implemented, **Proposed** — awaiting owner review | Durable focus metric and rule version, comparison recomputed in the write transaction, status bound to the cited comparison by trigger | `tests/integration/upgrade-v03-to-v04.test.ts`, `scripts/local-workflow.ts` steps 18–19 |
+| ADR-025 corroboration by underlying source | **Not implemented** — recorded as a proposal only | `evidence-aggregation-v1` still counts distinct `sourceId`, so two `RELATED` copies of one underlying source corroborate twice; the corrected rule needs its own version and owner decision | No test asserts the v2 behaviour. `tests/unit/benchmark-source-identity.test.ts` documents the gap from the benchmark side and names it as uncorrected |
 
 The ADRs remain **Proposed** in the index pending owner review; implementation does not equal owner acceptance.
 
