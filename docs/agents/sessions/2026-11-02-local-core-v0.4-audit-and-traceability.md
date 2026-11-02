@@ -71,7 +71,7 @@ validation is enforceable through the UI but not against a hand-edited or restor
 | 12 | Statement→proposition mappings | `routes/answerClaims.ts` | `core/answerClaimInputs.ts:306` | `repositories/answerClaims.ts:645` | `008` project + supersede pair triggers | `propositionLinks` | link tests | **Defect D-5: relation is never checked against statement relevance** |
 | 13 | Statement→citation mappings | `routes/answerClaims.ts` | `core/answerClaimInputs.ts:336` | `repositories/answerClaims.ts:772` | `008` same-observation trigger | `citationSupports` | link tests | Implemented at link time; see D-3 |
 | 14 | Fidelity and attribution assessments | `routes/answerClaims.ts` | `core/answerClaimInputs.ts:372` | `repositories/answerClaims.ts:914` | `008` `answer_claim_assessments_label_matches_dimension` | `labels` | v0.3 `fix(metrics)` commit 6913871 | **Defect D-1: label axis checked, label-vs-relevance not** |
-| 15 | Metric computation | — | `core/metrics.ts`, `core/claimMetrics.ts` | — | — | snapshot + views | 571-test baseline | **Defects D-1, D-2, D-4, D-6** |
+| 15 | Metric computation | — | `core/metrics.ts`, `core/claimMetrics.ts` | — | — | snapshot + views | 571-test baseline | **Defects D-1, D-2, D-4, D-5** |
 | 16 | Report generation and export | `routes/reports.ts` | `reporting/snapshot.ts` | `repositories/reports.ts` | `006` version columns | `views/report.ts` | reporting tests | Implemented; see D-2 parity |
 | 17 | Achievement creation, approval, export | `routes/achievements.ts` | `core/achievements.ts` | `repositories/achievements.ts` | `007` | achievement export | achievement tests | Implemented (local only) |
 | 18 | Benchmark corpus validation and scoring | `scripts/benchmark.ts` | `benchmark/*.ts` | — | — | `benchmark/report.ts` | 4 benchmark test files | **Defects D-7, D-8, D-9, D-10** |
@@ -331,3 +331,35 @@ authentication, no publication and no seeded application data. The only syntheti
 operator would type, entered through the forms, plus one temporary benchmark file that is written
 outside the data directory and deleted in the same step. The run creates no fake gold case and no fake
 reviewer: `workflow-operator` is the configured local operator label, and it is recorded as such.
+
+## 9. Fix record for the remaining defects, and what only running the application could show
+
+The table in section 7 stopped at D-10. These are the rest.
+
+| Defect | Fix | Commit | Test that fails without the fix |
+|---|---|---|---|
+| D-11 a status transition could cite an unrelated comparison | The cited comparison must belong to this project, this finding, and carry the outcome being recorded; enforced in `transitionFinding` and by four triggers in `011_retest_provenance.sql` | `ba7a231` | `tests/integration/findings-workflows.test.ts` (cross-finding and wrong-outcome citations); `scripts/local-workflow.ts` step 19 |
+| D-12 the focus metric survived only in an audit detail | `focus_metric`, `focus_label`, `rule_version`, `base_metrics_version` and `later_metrics_version` added to `retest_comparisons` and written with the row; a trigger requires the focus metric to be one of the metrics actually compared | `ba7a231`, `8f8f422` | `tests/integration/upgrade-v03-to-v04.test.ts`; `tests/integration/project-export-findings.test.ts` reads the stored metric back out of the portable record |
+| D-13 the repository trusted a caller-supplied comparison | `recordRetestComparison` recomputes the whole comparison from the persisted runs inside its own transaction; the route passes only the two run ids and the chosen metric | `ba7a231` | `tests/integration/findings-workflows.test.ts` — a fabricated outcome cannot reach the table; step 19 posts one anyway to prove it is refused |
+| D-14 comparability ignored the field that says what varied | `comparison-rule-v2` compares recorded `conditions`, and `COMPARABILITY_EXCLUSIONS` names what a local comparison cannot see at all; v1 rows keep their original meaning | `ba7a231` | `tests/unit/findings-lifecycle.test.ts`, `tests/unit/reporting-claim-level.test.ts` |
+| D-15 the statement reader was one N+1 with a comment denying it | One assembled pass over the claim rows bucketed by observation; the per-record loaders and `assembleClaim` were deleted rather than left as dead alternates | `6a5f360` | `tests/integration/query-counts.test.ts` — measured, not asserted: 49 prepared statements for twelve statements before, **5** after, identical for one statement or twelve, and identical for a whole run read one way or the other |
+| D-16 multi-record writes were unproven under partial failure | Fifteen write paths tested by making the second statement or the audit append fail | `b7694f5`, `696676a` | `tests/integration/write-atomicity.test.ts`, `tests/integration/audit-atomicity.test.ts` |
+| D-17 the build and the documents named the wrong milestone | Version 0.4.0 in `package.json`, `package-lock.json` and `src/version.ts`; README, testing, limitations, status, runbook, route map, schema, architecture, data model, security matrix and the evaluator specifications brought to what v0.4 does; ADR-021 amended rather than rewritten | `a922081` … `b35677f` (13 commits) | `npm run verify:workflow` prints the version `/health` reports; `tests/unit/route-map.test.ts` and `tests/unit/docs-links.test.ts` keep the route and link claims honest |
+
+### D-18 to D-22 — found by driving the running application, not by reading it
+
+These four defects were each described as working in the documentation, and each had green tests. None
+of them was reachable by an operator.
+
+| Defect | What it looked like | Fix | Test that fails without the fix |
+|---|---|---|---|
+| D-18 five workspace forms posted to a duplicated path | `claimPath()` already ends with the statement id, and the templates appended it again, so linking a statement, mapping a citation, recording an assessment, voiding a statement and saving a revision all returned **404**. The suite stayed green because `answer-claim-workflows.test.ts` composed the correct URL from repository ids instead of reading the page | `b0cba40` | `tests/integration/form-actions.test.ts` submits each through the rendered action; step 11–14 of the workflow run |
+| D-19 both correction forms posted to a path that does not exist | The routes are `/claims/propositions/:linkId/supersede` and `/claims/citations/:linkId/supersede`; the views inserted the statement id as well, so a recorded link or mapping could never be amended — precisely the amend-with-history behaviour §2.3 requires | `960af01` | `tests/integration/form-actions.test.ts` (the third test supersedes both through the rendered actions) |
+| D-20 a withdrawn citation's reason was stored and never shown | The run page rendered `Void reason` only while `voidedAt === null`, so a withdrawal was indistinguishable from a deletion, which is the thing §2.3 forbids | `0f8c939` | `tests/integration/citation-void-visibility.test.ts` |
+| D-21 the project export carried no findings at all | `project-export-v1` predated the remediation workflow, so exporting and wiping lost the backlog and every measurement behind a status — while `LOCAL_RUNBOOK.md` listed the sections and, by omission, described the gap accurately | `242d766` | `tests/integration/project-export-findings.test.ts`; step 21 requires a comparison inside the export |
+| D-22 the workspace could not show how much of an answer had been reviewed | §2.5 required decomposition to be separated from assessment. The metrics and the report did; the page where the reviewing happens still said only "Statements recorded: 3", so a partially reviewed answer looked finished | `fa8e60b` | `tests/integration/answer-claim-workflows.test.ts` — "the workspace separates what was recorded from what was reviewed" |
+
+One correction to this report's own earlier draft: the traceability row for metric computation cited a
+defect "D-6" that has no entry in section 5. It was never a separate finding — the second silent void
+filter it was meant to name is described inside D-2 (`snapshot.ts` and `findings.ts`), and the
+terminology problem belongs to D-5. The row now reads D-1, D-2, D-4, D-5.
