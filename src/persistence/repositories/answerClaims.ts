@@ -212,86 +212,166 @@ function claimRow(db: DatabaseSync, projectId: string, claimId: string): Row | u
     .get(projectId, claimId);
 }
 
-function revisionsFor(db: DatabaseSync, claimId: string): AnswerClaimRevisionRecord[] {
-  return db
-    .prepare('SELECT * FROM answer_claim_revisions WHERE claim_id = ? ORDER BY revision ASC')
-    .all(claimId)
-    .map(mapRevision);
+/**
+ * Group rows by one of their own columns, preserving the order the query produced inside each group.
+ *
+ * Grouping happens in JavaScript rather than through a second query per parent row, which is the
+ * whole point of the batch loader below.
+ */
+function groupRows(rows: readonly Row[], column: string): Map<string, Row[]> {
+  const grouped = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = stringValue(row, column);
+    const bucket = grouped.get(key);
+    if (bucket === undefined) {
+      grouped.set(key, [row]);
+    } else {
+      bucket.push(row);
+    }
+  }
+  return grouped;
 }
 
-function propositionLinksFor(db: DatabaseSync, claimId: string): ClaimPropositionLinkRecord[] {
-  return db
-    .prepare(
-      `SELECT link.* FROM answer_claim_propositions link
-       JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
-       WHERE revision.claim_id = ?
-       ORDER BY link.created_at ASC, link.rowid ASC`,
-    )
-    .all(claimId)
-    .map(mapPropositionLink);
-}
-
-function citationLinksFor(db: DatabaseSync, claimId: string): ClaimCitationLinkRecord[] {
-  return db
-    .prepare(
-      `SELECT link.* FROM answer_claim_citations link
-       JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
-       WHERE revision.claim_id = ?
-       ORDER BY link.created_at ASC, link.rowid ASC`,
-    )
-    .all(claimId)
-    .map(mapCitationLink);
-}
-
-function assessmentsFor(db: DatabaseSync, claimId: string): AnswerClaimAssessmentRecord[] {
-  return db
-    .prepare(
-      `SELECT * FROM answer_claim_assessments
-       WHERE claim_id = ?
-       ORDER BY dimension ASC, version ASC`,
-    )
-    .all(claimId)
-    .map(mapAssessment);
-}
-
-function assembleClaim(db: DatabaseSync, row: Row): AnswerClaimRecord {
-  const claimId = stringValue(row, 'id');
-  const revisions = revisionsFor(db, claimId);
-  const currentRevisionId = nullableStringValue(row, 'current_revision_id');
-  return {
-    id: claimId,
-    projectId: stringValue(row, 'project_id'),
-    observationId: stringValue(row, 'observation_id'),
-    ordinal: numberValue(row, 'ordinal'),
-    currentRevisionId,
-    createdAt: stringValue(row, 'created_at'),
-    updatedAt: stringValue(row, 'updated_at'),
-    voidedAt: nullableStringValue(row, 'voided_at'),
-    voidReason: nullableStringValue(row, 'void_reason'),
-    currentRevision:
-      revisions.find((revision) => revision.id === currentRevisionId) ?? revisions.at(-1) ?? null,
-    revisions,
-    propositionLinks: propositionLinksFor(db, claimId),
-    citationLinks: citationLinksFor(db, claimId),
-    assessments: assessmentsFor(db, claimId),
-  };
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
 }
 
 /**
- * Read the claim rows for one observation in a single pass per table rather than one pass per claim,
- * because a long answer can hold a dozen statements and the workspace page would otherwise issue
- * dozens of identical queries.
+ * Assemble claim records from a set of already-loaded claim rows, using one query per child table.
  *
- * Exported for report generation, which needs the same records the workspace shows.
+ * Five queries for the whole set, whatever its size. The per-claim version of this — which is what
+ * `metrics-v3` shipped, under a comment claiming the opposite — issued four queries per statement, so
+ * a twelve-statement answer cost 49 queries and a report over a 40-observation run cost thousands.
+ *
+ * Ordering is fixed in every query and preserved by the grouping, so two calls over the same data
+ * return byte-identical records. The report digest depends on that.
+ */
+function assembleClaims(db: DatabaseSync, rows: readonly Row[]): AnswerClaimRecord[] {
+  const claimIds = rows.map((row) => stringValue(row, 'id'));
+  if (claimIds.length === 0) {
+    return [];
+  }
+  const marks = placeholders(claimIds.length);
+  const revisions = groupRows(
+    db
+      .prepare(
+        `SELECT * FROM answer_claim_revisions
+         WHERE claim_id IN (${marks})
+         ORDER BY claim_id ASC, revision ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const propositionLinks = groupRows(
+    db
+      .prepare(
+        `SELECT link.*, revision.claim_id AS claim_id
+         FROM answer_claim_propositions link
+         JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
+         WHERE revision.claim_id IN (${marks})
+         ORDER BY revision.claim_id ASC, link.created_at ASC, link.rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const citationLinks = groupRows(
+    db
+      .prepare(
+        `SELECT link.*, revision.claim_id AS claim_id
+         FROM answer_claim_citations link
+         JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
+         WHERE revision.claim_id IN (${marks})
+         ORDER BY revision.claim_id ASC, link.created_at ASC, link.rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const assessments = groupRows(
+    db
+      .prepare(
+        `SELECT * FROM answer_claim_assessments
+         WHERE claim_id IN (${marks})
+         ORDER BY claim_id ASC, dimension ASC, version ASC, rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+
+  return rows.map((row) => {
+    const claimId = stringValue(row, 'id');
+    const claimRevisions = (revisions.get(claimId) ?? []).map(mapRevision);
+    const currentRevisionId = nullableStringValue(row, 'current_revision_id');
+    return {
+      id: claimId,
+      projectId: stringValue(row, 'project_id'),
+      observationId: stringValue(row, 'observation_id'),
+      ordinal: numberValue(row, 'ordinal'),
+      currentRevisionId,
+      createdAt: stringValue(row, 'created_at'),
+      updatedAt: stringValue(row, 'updated_at'),
+      voidedAt: nullableStringValue(row, 'voided_at'),
+      voidReason: nullableStringValue(row, 'void_reason'),
+      currentRevision:
+        claimRevisions.find((revision) => revision.id === currentRevisionId) ??
+        claimRevisions.at(-1) ??
+        null,
+      revisions: claimRevisions,
+      propositionLinks: (propositionLinks.get(claimId) ?? []).map(mapPropositionLink),
+      citationLinks: (citationLinks.get(claimId) ?? []).map(mapCitationLink),
+      assessments: (assessments.get(claimId) ?? []).map(mapAssessment),
+    };
+  });
+}
+
+/**
+ * Read the claim rows for one observation.
+ *
+ * Exported for report generation and for the retest comparison, both of which need exactly the
+ * records the workspace shows — one definition of "what a statement contributes to a metric", shared
+ * by every reader, so a report and a retest cannot drift apart.
  */
 export function listAnswerClaimsForObservation(
   db: DatabaseSync,
   observationId: string,
 ): AnswerClaimRecord[] {
+  return listAnswerClaimsForObservations(db, [observationId]).get(observationId) ?? [];
+}
+
+/**
+ * Read every statement for several observations at once.
+ *
+ * A run report and a retest comparison both walk all the observations of a run. Doing it through the
+ * single-observation entry point costs five queries per observation; this costs five for the whole
+ * run, keyed by observation id so each caller still gets its own rows in ordinal order.
+ */
+export function listAnswerClaimsForObservations(
+  db: DatabaseSync,
+  observationIds: readonly string[],
+): Map<string, AnswerClaimRecord[]> {
+  const byObservation = new Map<string, AnswerClaimRecord[]>();
+  if (observationIds.length === 0) {
+    return byObservation;
+  }
+  for (const id of observationIds) {
+    byObservation.set(id, []);
+  }
   const rows = db
-    .prepare('SELECT * FROM answer_claims WHERE observation_id = ? ORDER BY ordinal ASC')
-    .all(observationId);
-  return rows.map((row) => assembleClaim(db, row));
+    .prepare(
+      `SELECT * FROM answer_claims
+       WHERE observation_id IN (${placeholders(observationIds.length)})
+       ORDER BY observation_id ASC, ordinal ASC`,
+    )
+    .all(...observationIds) as Row[];
+  // Assembled once for every claim in the set. Assembling per observation would put the four child
+  // queries back inside a loop and leave the run cost growing with the observations, which is the
+  // shape this replaced.
+  for (const record of assembleClaims(db, rows)) {
+    const bucket = byObservation.get(record.observationId);
+    if (bucket !== undefined) {
+      bucket.push(record);
+    }
+  }
+  return byObservation;
 }
 
 /**
@@ -338,7 +418,12 @@ export function getAnswerClaim(
   claimId: string,
 ): AnswerClaimRecord | null {
   const row = claimRow(db, projectId, claimId);
-  return row === undefined ? null : assembleClaim(db, row);
+  if (row === undefined) {
+    return null;
+  }
+  // Same assembly path as the list readers, so a single record cannot be shaped differently from the
+  // set it belongs to.
+  return assembleClaims(db, [row])[0] ?? null;
 }
 
 export function getAnswerClaimOrThrow(

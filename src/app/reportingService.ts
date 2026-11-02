@@ -17,7 +17,7 @@ import {
 import { getRunOrThrow, listRuns } from '../persistence/repositories/runs.ts';
 import {
   currentClaimLabels,
-  listAnswerClaimsForObservation,
+  listAnswerClaimsForObservations,
 } from '../persistence/repositories/answerClaims.ts';
 import { getWebsiteAudit, listWebsiteAudits } from '../persistence/repositories/websiteAudits.ts';
 import { listFindings } from '../persistence/repositories/findings.ts';
@@ -199,6 +199,12 @@ function mapQuerySets(db: DatabaseSync, projectId: string): ReportQuerySetInput[
 function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
   return listRuns(db, projectId).map((summary) => {
     const detail = getRunOrThrow(db, projectId, summary.id);
+    // One batch read for the whole run instead of one per observation. The five queries are fixed in
+    // the repository; the previous shape was five times the number of statements in the run.
+    const claimsByObservation = listAnswerClaimsForObservations(
+      db,
+      detail.observations.map((observation) => observation.id),
+    );
     return {
       run: {
         id: detail.run.id,
@@ -255,7 +261,7 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
           attributionRole: assessment.attributionRole,
           createdAt: assessment.createdAt,
         })),
-        answerClaims: listAnswerClaimsForObservation(db, observation.id).map((claim) => {
+        answerClaims: (claimsByObservation.get(observation.id) ?? []).map((claim) => {
           const revision = claim.currentRevision;
           // The cited record's state is read here rather than inferred from the mapping row, because
           // a citation can be voided after a statement was linked to it and the mapping must stop

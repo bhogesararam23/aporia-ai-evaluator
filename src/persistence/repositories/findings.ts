@@ -45,7 +45,7 @@ import {
 } from '../rows.ts';
 import type { WriteContext } from './context.ts';
 import { getRunOrThrow } from './runs.ts';
-import { listAnswerClaimsForObservation, currentClaimLabels } from './answerClaims.ts';
+import { listAnswerClaimsForObservations, currentClaimLabels } from './answerClaims.ts';
 
 export interface FindingInput {
   readonly title: string;
@@ -830,9 +830,15 @@ function claimInputs(
   );
   const claims: AnswerClaimInput[] = [];
   let decomposed = 0;
+  // One batch read for the run. Before this the retest path issued five queries per observation on
+  // top of five per statement, which is what made a 40-observation comparison expensive.
+  const claimsByObservation = listAnswerClaimsForObservations(
+    db,
+    rows.map((row) => stringValue(row, 'id')),
+  );
   for (const row of rows) {
     const observationId = stringValue(row, 'id');
-    const records = listAnswerClaimsForObservation(db, observationId);
+    const records = claimsByObservation.get(observationId) ?? [];
     if (records.some((record) => record.voidedAt === null)) {
       decomposed += 1;
     }
