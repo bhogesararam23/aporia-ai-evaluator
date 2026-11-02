@@ -16,10 +16,16 @@ import {
   approveQuerySet,
   createQuerySet,
 } from '../../src/persistence/repositories/querySets.ts';
-import { addCitation, addObservation, createRun } from '../../src/persistence/repositories/runs.ts';
+import {
+  addCitation,
+  addObservation,
+  createRun,
+  finalizeRun,
+} from '../../src/persistence/repositories/runs.ts';
 import {
   createAnswerClaim,
   linkAnswerClaimCitation,
+  voidAnswerClaim,
 } from '../../src/persistence/repositories/answerClaims.ts';
 import { cookieFrom, csrfFrom, getPage, postForm, startTestServer } from '../helpers/http.ts';
 
@@ -34,7 +40,9 @@ async function seeded(): Promise<{
   observationId: string;
   propositionId: string;
   citationId: string;
+  statementId: string;
   runPath: string;
+  workspacePath: string;
   close: () => Promise<void>;
 }> {
   const server = await startTestServer();
@@ -192,7 +200,9 @@ async function seeded(): Promise<{
       observationId: observation.id,
       propositionId: proposition.id,
       citationId: citation.id,
+      statementId: statement.id,
       runPath: `/projects/${projectId}/runs/${run.run.id}`,
+      workspacePath: `/projects/${projectId}/runs/${run.run.id}/observations/${observation.id}/claims`,
       close: () => server.close(),
     };
   } catch (error) {
@@ -283,6 +293,72 @@ test('voiding a citation through its form leaves the reason and the mapping read
       report.text,
       /cited record was voided/,
       'the report does not say that the retained mapping supports nothing in the current figures',
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('voiding a statement that carries a citation mapping keeps both and removes neither from sight', async () => {
+  const fixture = await seeded();
+  try {
+    voidAnswerClaim(
+      fixture.server.db,
+      fixture.projectId,
+      fixture.statementId,
+      'The same sentence was recorded twice while checking the lifecycle.',
+      context,
+    );
+    finalizeRun(fixture.server.db, fixture.projectId, fixture.runId, context);
+
+    const entry = await getPage(fixture.server, fixture.workspacePath);
+    const cookie = cookieFrom(entry.response);
+    const workspace = await getPage(fixture.server, fixture.workspacePath, cookie);
+    assert.equal(workspace.response.status, 200);
+    assert.match(
+      workspace.text,
+      /The same sentence was recorded twice while checking the lifecycle\./,
+      'the voided statement lost its reason',
+    );
+    // §2.3: the mapping is history. It must stay listed against the statement it was made for.
+    assert.match(
+      workspace.text,
+      /Cited material supports the statement/,
+      'voiding the statement deleted its citation mapping from the record',
+    );
+
+    const reportsPage = await getPage(
+      fixture.server,
+      `/projects/${fixture.projectId}/reports`,
+      cookie,
+    );
+    const generated = await postForm(
+      fixture.server,
+      `/projects/${fixture.projectId}/reports`,
+      cookie,
+      csrfFrom(reportsPage.text),
+      { title: 'Void lifecycle report' },
+    );
+    assert.equal(generated.status, 303);
+    const reportId = /\/reports\/(rep_[A-Za-z0-9-]+)/.exec(
+      (await getPage(fixture.server, `/projects/${fixture.projectId}/reports`, cookie)).text,
+    )?.[1];
+    assert.ok(reportId, 'no report was generated');
+    const report = await getPage(
+      fixture.server,
+      `/projects/${fixture.projectId}/reports/${reportId}`,
+      cookie,
+    );
+    assert.match(
+      report.text,
+      /voided by the reviewer and contribute to/,
+      'the report does not say the voided statement was excluded and why',
+    );
+    // A voided statement is not a failed statement: its rate must not be reported as zero support.
+    assert.match(
+      report.text,
+      /not recorded|No statements were eligible|0 of 0/,
+      'the report presents an unreviewed or voided decomposition as a measured result',
     );
   } finally {
     await fixture.close();
