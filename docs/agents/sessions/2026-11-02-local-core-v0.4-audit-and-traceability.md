@@ -251,4 +251,21 @@ Recorded here as they land, so the row that says `Fixed` in section 4 points at 
 | D-5 `partiallyDecomposedObservations` measured review, not decomposition | Renamed `partiallyAssessedObservations`; the block carries `statementsRecorded`, `statementsFidelityAssessed`, `statementsAttributionAssessed`, `citationMappingsRecorded`, `citationMappingsAssessed`; the report renders them as review progress | `9f202a1` | `tests/unit/claim-metrics.test.ts` — "unfinished review is reported as reviewer progress, never as an answer result" |
 | D-1…D-5 enforcement outside the calculation | The same contract is applied in the form validator, again inside the repository transaction, and again by SQLite triggers in `010_evaluator_integrity.sql` | `14f26cb` | `tests/integration/repositories-answer-claims.test.ts` (three direct-write refusals); `tests/integration/schema-evaluator-integrity.test.ts` (parses the migration and compares every arm against the TypeScript table) |
 | Version integrity for the changed semantics | `metrics-v4` under `report-template-v4`; v1–v3 snapshots render as stored; ADR-023 records the decision | `5418c2d`, `238e9d0` | `tests/unit/report-compatibility.test.ts` — a stored v3 file whose fidelity figures are impossible under v4 still prints what it recorded |
-| Report/retest divergence risk | Both paths pass every statement through the same contract; a parity test compares the two figure by figure on one finalized run | (this commit) | `tests/integration/report-retest-parity.test.ts` — "the report and the retest comparison agree on every claim-level figure" |
+| Report/retest divergence risk | Both paths pass every statement through the same contract; a parity test compares the two figure by figure on one finalized run | `f9ac365` | `tests/integration/report-retest-parity.test.ts` — "the report and the retest comparison agree on every claim-level figure" |
+| D-7 validator skipped nested semantics | `src/benchmark/validate.ts` rewritten: every nested object and array checked against the core vocabularies, issues addressed to the element that carries them, cross-references checked in both directions, byte and case ceilings moved into the validator | `0671ae7` | `tests/unit/benchmark-validate.test.ts` — evidence vocabulary, gold-label vocabulary, subject kind, URL shape, undeclared reviewer, non-object entries, multi-case file counting |
+| D-8 alphabetical "consensus" | `methodologyPairs()` removed. Unanimity is agreement; disagreement without a settling adjudication stays unresolved; genuinely ambiguous subjects are never scored as ordinary gold labels; annotation agreement reported in its own block with exclusions counted | `0671ae7` | `tests/unit/benchmark-scoring.test.ts` — "no consensus is inferred from a sorted label list", "a scoped resolved adjudication supplies the settled label, and only for its own subject" |
+| D-9 evidence id doubled as source id | `benchmark-case-v2` adds `sourceId`, a citation `voided` state and scoped `adjudications`; v1 files still read and are reported as legacy contract | `0671ae7` | `tests/unit/benchmark-source-identity.test.ts` (9 tests: duplicate excerpts, distinct sources, syndication, self-published, v1 inability to express it, end-to-end scoring) |
+| D-10 scorer dropped unreadable evidence silently | `toRelationships` returns `unusable` records, which the report and the CLI surface instead of discarding | `0671ae7` | `tests/unit/benchmark-validate.test.ts` plus the CLI report field `regression.unusableEvidence` |
+
+### Found while fixing D-9, and deliberately not changed
+
+`deriveEvidenceStatus` (`evidence-aggregation-v1`) counts distinct `sourceId` for corroboration, but it
+does not collapse relationships marked `independence: 'RELATED'` that carry *different* source ids. So
+syndicated material from separate publishers is representable in a benchmark case and is testable
+(`tests/unit/benchmark-source-identity.test.ts` proves both), yet the deterministic rule still counts
+those publishers as distinct sources; only the self-published check consults independence.
+
+Changing that is a metric-rule change to `evidence-aggregation-v1`, which needs its own version and
+ADR, not a side effect of a benchmark fix. It is recorded as an open limitation instead, and the test
+that documents it says so in its own name ("a single source cannot corroborate itself into a strong
+status").
