@@ -2,7 +2,24 @@
 
 ## Report purpose
 
-A report must allow a reader to understand what was tested, what was observed, what evidence supports the finding, and what cannot be concluded. It must not imply comprehensive coverage when only a sample was tested.
+A report must allow a reader to understand what was tested, what was observed, what evidence supports the
+finding, and what cannot be concluded. It must not imply comprehensive coverage when only a sample was
+tested.
+
+## What local core v0.4 renders
+
+A report is an immutable snapshot built from persisted records at generation time: scope and
+authorization basis, method, the metric version that produced every figure, evidence-rule version,
+template version, per-metric numerator, denominator, exclusions and null states, claims with their
+recorded evidence and any rule/human disagreement, local HTML audits, finalized runs, the statement-level
+block with its eligibility exclusions named, review progress counted apart from every rate, tracked
+findings with their history and recorded comparisons, remediation suggestions, limitations, and the checks
+that were unavailable rather than passed. The current template is `report-template-v4`; `report-template-v1`
+to `v3` and `metrics-v1` to `v3` snapshots render exactly the figures they were written with and are never
+recalculated under newer semantics, and an absent block is shown as "not recorded", never as zero. A newer
+report marks an older one superseded by reference; it does not rewrite it. Findings, statement narratives
+and comparison reasons are included, so a report or export may carry an operator's written account of a
+wrong statement about a real person, and sharing it remains the operator's judgement.
 
 ## Required sections
 

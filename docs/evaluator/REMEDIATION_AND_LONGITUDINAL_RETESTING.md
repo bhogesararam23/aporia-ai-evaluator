@@ -4,6 +4,29 @@
 
 Turn evaluation findings into evidence-linked actions and measure subsequent outcomes without promising that a third-party AI system will crawl, index, remember, recommend, or cite the subject.
 
+## What local core v0.4 implements
+
+A finding is persisted with its severity and rationale, cause, recommended action, owner label, first and
+last observation, an append-only status history, and typed pointers to the claim, proposition, query, run,
+observation, answer statement, citation or local audit it concerns. Legal status transitions are enforced
+by SQLite trigger, a closure requires a written rationale, and per-project numbering is monotonic.
+
+A retest comparison is computed, never accepted. `POST …/retest/record` carries only the earlier run, the
+later run and the single focus metric, and the repository recomputes the comparison from the two persisted
+finalized runs inside the same write transaction, so no derived value — outcome, comparability, reasons or
+deltas — travels through a caller-supplied object. The comparison row stores the focus metric and its
+label, both runs' metric versions, and the comparability rule version that produced the verdict
+(`comparison-rule-v2`, which also compares recorded conditions; `comparison-rule-v1` rows keep their
+original meaning). A measured status — improved, unchanged, regressed, unable to verify — is written only
+when the cited comparison belongs to this project, belongs to this finding, and carries that outcome; four
+triggers enforce it, and the citation is stored in the history row so a later reader can check the status
+against the measurement behind it.
+
+Two limits remain, and they are the point of the wording in the UI rather than a caveat bolted on:
+a comparison is an association between two captures, and conditions outside Aporia's view (the provider's
+own behaviour, the passage of time, a different account state) may have moved the number. Nothing here
+establishes that a change caused anything, and no finding record implies that a fix was deployed.
+
 ## Finding record
 
 Each finding should include a stable ID, affected claim/query, observed result, evidence and provenance, confidence/limitations, severity rationale, recommended action, owner, status, and first/last observed timestamps. Separate a factual error from missing visibility, source-access failure, ambiguous intent, and attribution error.

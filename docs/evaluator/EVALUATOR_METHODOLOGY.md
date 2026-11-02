@@ -4,6 +4,28 @@
 - Primary objective: Make evaluations inspectable, repeatable, and appropriately uncertain.
 - This document does not claim that the methodology has already been validated empirically.
 
+## 0. What local core v0.4 implements of this specification
+
+Implemented: claim intake with immutable revisions, atomic proposition decomposition, human-recorded
+evidence relationships with a transparent precedence rule (`evidence-aggregation-v1`), separately stored
+human proposition assessments with visible rule/human disagreement, approved and frozen query sets,
+manual observation capture with declared conditions, citation metadata including unavailable states,
+answer-statement decomposition whose quote is re-verified against the stored raw answer, statement-level
+fidelity, attribution and citation-support assessments, `metrics-v4` with the eligibility contract below,
+immutable report snapshots that keep rendering the metric version they were written with, tracked
+remediation findings whose measured status is bound to the stored comparison that produced it, an offline
+benchmark harness that scores a supplied corpus, and the `claimEligibility` rule that keeps a refusal, an
+abstention, an ambiguity, an unrelated remark, a reviewer description of an omission and a voided record
+out of a factual denominator.
+
+Not implemented, so this remains a proposal: independent adjudication between two trained reviewers (there
+is no reviewer pool and no dataset), calibration, inter-rater agreement, provider or search integration,
+and any statement about empirical accuracy. The eligibility rule corrected what v0.3 counted wrongly; a
+corrected denominator is not evidence that the underlying human classifications are right. See
+[Implemented metrics v4](IMPLEMENTED_METRICS_V4.md),
+[Benchmarking and validation](BENCHMARKING_AND_VALIDATION.md), and the
+[v0.4 session report](../agents/sessions/2026-11-02-local-core-v0.4-audit-and-traceability.md).
+
 ## 1. Evaluation questions
 
 Aporia evaluates four questions separately:
