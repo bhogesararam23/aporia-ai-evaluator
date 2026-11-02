@@ -16,6 +16,7 @@ import {
   comparabilityReasons,
   compareMetrics,
   COMPARISON_METRICS,
+  COMPARISON_RULE_VERSION,
   FOCUS_METRICS,
   isFocusMetric,
   outcomeFromComparison,
@@ -94,6 +95,16 @@ export interface ComparisonRecord {
   readonly reasons: readonly string[];
   readonly deltas: readonly MetricComparisonRow[];
   readonly statementNote: string | null;
+  /**
+   * The single metric ADR-021 says decides the outcome. Null on rows written before v0.4: those were
+   * produced under the earlier comparability rule and never stored their focus metric, and a reader has
+   * to be able to tell old semantics from no semantics.
+   */
+  readonly focusMetric: string | null;
+  readonly focusLabel: string | null;
+  readonly ruleVersion: string | null;
+  readonly baseMetricsVersion: string | null;
+  readonly laterMetricsVersion: string | null;
   readonly createdBy: string;
   readonly createdAt: string;
 }
@@ -184,6 +195,11 @@ function mapComparison(row: Row): ComparisonRecord {
     reasons: jsonValue<readonly string[]>(row, 'reasons_json'),
     deltas: jsonValue<readonly MetricComparisonRow[]>(row, 'deltas_json'),
     statementNote: nullableStringValue(row, 'statement_note'),
+    focusMetric: nullableStringValue(row, 'focus_metric'),
+    focusLabel: nullableStringValue(row, 'focus_label'),
+    ruleVersion: nullableStringValue(row, 'rule_version'),
+    baseMetricsVersion: nullableStringValue(row, 'base_metrics_version'),
+    laterMetricsVersion: nullableStringValue(row, 'later_metrics_version'),
     createdBy: stringValue(row, 'created_by'),
     createdAt: stringValue(row, 'created_at'),
   };
@@ -425,13 +441,39 @@ export function transitionFinding(
     const rationale =
       input.rationale === undefined ? null : checkedNote(input.rationale, 'The rationale');
     if (isMeasurementOnlyStatus(input.status)) {
-      const supporting = finding.comparisons.filter((comparison) =>
-        statusAllowedForOutcome(input.status, comparison.outcome),
-      );
-      if (supporting.length === 0) {
+      // The cited comparison is the justification, so it is the thing that gets checked. The v0.3 rule
+      // accepted *some* acceptable comparison on the finding while writing whatever id the caller
+      // supplied, which let a valid comparison elsewhere stand behind a citation of an unrelated one.
+      const cited =
+        input.comparisonId === undefined
+          ? undefined
+          : finding.comparisons.find((comparison) => comparison.id === input.comparisonId);
+      if (cited === undefined) {
+        if (input.comparisonId === undefined) {
+          throw new AppError(
+            'CONFLICT',
+            `${input.status} must cite the retest comparison that measured it. Record the retest first.`,
+          );
+        }
         throw new AppError(
           'CONFLICT',
-          `${input.status} requires a stored retest comparison with that outcome. Record the retest first; if the runs cannot be compared, the honest status is “unable to verify”.`,
+          `"${input.comparisonId}" is not a comparison on this finding in this project, so it cannot justify ${input.status}.`,
+        );
+      }
+      if (!statusAllowedForOutcome(input.status, cited.outcome)) {
+        throw new AppError(
+          'CONFLICT',
+          `The cited comparison recorded ${cited.outcome}, which cannot justify ${input.status}. Choose the status the measurement actually supports.`,
+        );
+      }
+    } else if (input.comparisonId !== undefined) {
+      // A citation on any other transition is still a claim about a specific record, and a dangling one
+      // is a defect even when the status itself needs no measurement.
+      const cited = finding.comparisons.find((comparison) => comparison.id === input.comparisonId);
+      if (cited === undefined) {
+        throw new AppError(
+          'CONFLICT',
+          `"${input.comparisonId}" is not a comparison on this finding in this project.`,
         );
       }
     }
@@ -755,6 +797,9 @@ interface MetricBearingRun {
   readonly metrics: Readonly<Record<string, MetricSnapshotInput>>;
   readonly observations: number;
   readonly decomposed: number;
+  /** The metric definitions these numbers were produced under. */
+  readonly metricsVersion: string;
+  readonly conditions: string;
 }
 
 function claimInputs(
@@ -913,9 +958,11 @@ function loadRunForComparison(
     groundingMode: detail.run.groundingMode,
     locale: detail.run.locale,
     region: detail.run.region,
+    conditions: detail.run.conditions,
     metrics: snapshots,
     observations: claimData.observations,
     decomposed: claimData.decomposed,
+    metricsVersion: metrics.version,
   };
 }
 
@@ -928,6 +975,13 @@ export interface RetestComparisonPreview {
   readonly statementNote: string | null;
   readonly outcome: ComparisonOutcome;
   readonly causalBoundary: string;
+  /** The metric this comparison decides on, and the label the report gives it. */
+  readonly focusMetric: string;
+  readonly focusLabel: string | null;
+  /** Which comparability rule produced this verdict. */
+  readonly ruleVersion: string;
+  readonly baseMetricsVersion: string;
+  readonly laterMetricsVersion: string;
 }
 
 /**
@@ -971,6 +1025,11 @@ export function previewRetestComparison(
     statementNote,
     outcome,
     causalBoundary: CAUSAL_BOUNDARY,
+    focusMetric,
+    focusLabel: deltas.find((row) => row.metricId === focusMetric)?.label ?? null,
+    ruleVersion: COMPARISON_RULE_VERSION,
+    baseMetricsVersion: prior.metricsVersion,
+    laterMetricsVersion: current.metricsVersion,
   };
 }
 
@@ -978,12 +1037,26 @@ function isStatementMetric(metric: string): boolean {
   return metric.startsWith('answer_statement_') || metric === 'relevant_omission_rate';
 }
 
+/**
+ * What a caller may ask a retest to record: which two runs, and which metric the finding was about.
+ *
+ * Nothing else. `metrics-v3`'s signature took a finished preview object and wrote its `comparable`,
+ * `outcome`, `reasons` and `deltas` as given, so the repository stored whatever derived data a caller
+ * supplied — a fabricated `IMPROVED` or an invented delta would have passed. The route recomputed
+ * honestly, which left the trust boundary in the wrong place: an internal contract nobody enforced, and
+ * no test that ever called it with a hand-made preview.
+ */
+export interface RetestComparisonRequest {
+  readonly baseRunId: string;
+  readonly laterRunId: string;
+  readonly focusMetric: string;
+}
+
 export function recordRetestComparison(
   db: DatabaseSync,
   projectId: string,
   findingId: string,
-  preview: RetestComparisonPreview,
-  focusMetric: FocusMetric,
+  request: RetestComparisonRequest,
   context: WriteContext,
 ): FindingRecord {
   return withTransaction(db, () => {
@@ -994,12 +1067,22 @@ export function recordRetestComparison(
         'A retest is recorded against a finding that is waiting for one. Move it to “retest required” first.',
       );
     }
+    // Recomputed here, inside the same transaction as the write, from the persisted runs. The stored
+    // row is therefore the output of the comparison code, not an echo of the request.
+    const preview = previewRetestComparison(
+      db,
+      projectId,
+      request.baseRunId,
+      request.laterRunId,
+      request.focusMetric,
+    );
     const id = newId('rtc');
     db.prepare(
       `INSERT INTO retest_comparisons
         (id, project_id, finding_id, base_run_id, later_run_id, base_report_id, later_report_id,
-         comparable, outcome, reasons_json, deltas_json, statement_note, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+         comparable, outcome, reasons_json, deltas_json, statement_note, focus_metric, focus_label,
+         rule_version, base_metrics_version, later_metrics_version, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       projectId,
@@ -1011,6 +1094,11 @@ export function recordRetestComparison(
       JSON.stringify(preview.reasons),
       JSON.stringify(preview.deltas),
       preview.statementNote,
+      preview.focusMetric,
+      preview.focusLabel,
+      preview.ruleVersion,
+      preview.baseMetricsVersion,
+      preview.laterMetricsVersion,
       context.actor,
       context.at,
     );
@@ -1018,9 +1106,17 @@ export function recordRetestComparison(
       projectId,
       actor: context.actor,
       action: 'finding.comparison-recorded',
+      // Filed against the finding, so the finding's own audit trail shows every measurement taken for
+      // it. The comparison id, the deciding metric and the rule version travel in the details.
       entityType: 'remediation_finding',
       entityId: findingId,
-      details: { comparisonId: id, outcome: preview.outcome, focusMetric },
+      details: {
+        comparisonId: id,
+        outcome: preview.outcome,
+        focusMetric: preview.focusMetric,
+        ruleVersion: preview.ruleVersion,
+        comparable: preview.comparable,
+      },
       at: context.at,
     });
     return getFindingOrThrow(db, projectId, findingId);

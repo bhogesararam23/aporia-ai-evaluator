@@ -272,6 +272,8 @@ export function insertRun(
     providerLabel?: string;
     modelLabel?: string;
     locale?: string;
+    /** The recorded capture conditions. Comparability now reads this field. */
+    conditions?: string;
   } = {},
 ): string {
   const id = options.id ?? 'run_1';
@@ -291,8 +293,7 @@ export function insertRun(
        capture_from, capture_to, conditions, notes, status, created_by, created_at,
        finalized_at, cancelled_at, cancel_reason)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Consumer interface',
-       'SEARCH_GROUNDED', ?, NULL, ?, ?, 'Manual capture under default settings.', NULL,
-       ?, ?, ?, NULL, NULL, NULL)`,
+       'SEARCH_GROUNDED', ?, NULL, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL)`,
   ).run(
     id,
     options.projectId ?? 'prj_1',
@@ -305,6 +306,7 @@ export function insertRun(
     options.locale ?? 'en',
     TEST_TIME,
     TEST_TIME,
+    options.conditions ?? 'Manual capture under default settings.',
     status,
     TEST_ACTOR,
     TEST_TIME,

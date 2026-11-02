@@ -6,6 +6,25 @@
  * disagree and one of them would start calling an incomparable pair a trend.
  */
 
+/**
+ * The comparability rules this build knows.
+ *
+ * v1 (ADR-021) compared seven declared fields. It ignored `runs.conditions`, which is a required,
+ * immutable, operator-authored field whose own help text on the capture form describes it as
+ * "logged-in state, tools, account plan, interface language, and anything else that could affect
+ * results". A rule that ignores the field recording the things that change results declares two runs
+ * comparable on evidence that does not cover the difference. v2 compares it.
+ *
+ * Stored comparisons carry the rule they were produced under, so a v1 row keeps meaning what it meant.
+ * Nothing is recomputed under the newer rule.
+ */
+export const COMPARISON_RULE_VERSION = 'comparison-rule-v2';
+export const COMPARISON_RULE_VERSION_V1 = 'comparison-rule-v1';
+export const KNOWN_COMPARISON_RULE_VERSIONS = [
+  COMPARISON_RULE_VERSION_V1,
+  COMPARISON_RULE_VERSION,
+] as const;
+
 export interface ComparableConfiguration {
   readonly querySetId: string;
   readonly providerLabel: string;
@@ -14,6 +33,11 @@ export interface ComparableConfiguration {
   readonly groundingMode: string;
   readonly locale: string;
   readonly region: string | null;
+  /**
+   * The operator's own record of the conditions the capture happened under. v2 only; a v1 caller may
+   * omit it, which is how stored v1 semantics are reproduced rather than silently upgraded.
+   */
+  readonly conditions?: string;
 }
 
 /**
@@ -27,9 +51,15 @@ export interface ComparableConfiguration {
 export interface ConfigurationComparison {
   readonly prior: ComparableConfiguration;
   readonly current: ComparableConfiguration;
+  /** Defaults to the current rule. A caller reading a stored v1 comparison passes v1 explicitly. */
+  readonly ruleVersion?: string;
 }
 
-export function comparabilityReasons({ prior, current }: ConfigurationComparison): string[] {
+export function comparabilityReasons({
+  prior,
+  current,
+  ruleVersion = COMPARISON_RULE_VERSION,
+}: ConfigurationComparison): string[] {
   const reasons: string[] = [];
   if (prior.querySetId !== current.querySetId) {
     reasons.push('The runs used different query-set versions, so they asked different questions.');
@@ -62,8 +92,55 @@ export function comparabilityReasons({ prior, current }: ConfigurationComparison
       `The region differs: ${prior.region ?? 'not recorded'} then, ${current.region ?? 'not recorded'} now.`,
     );
   }
+  if (ruleVersion !== COMPARISON_RULE_VERSION_V1) {
+    const before = prior.conditions ?? '';
+    const now = current.conditions ?? '';
+    if (before !== now) {
+      reasons.push(
+        'The recorded conditions differ, so the capture environment is not the same. ' +
+          `Earlier: "${before}". Now: "${now}".`,
+      );
+    }
+  }
   return reasons;
 }
+
+/**
+ * Conditions deliberately left out of the rule, and why.
+ *
+ * A rule that quietly ignores something is the problem; a rule that says what it excludes and
+ * reasons the exclusion is auditable.
+ */
+export const COMPARABILITY_EXCLUSIONS: readonly {
+  readonly field: string;
+  readonly reason: string;
+}[] = [
+  {
+    field: 'runs.capture_from / capture_to',
+    reason:
+      'The capture window is the point of a longitudinal retest. Requiring it to match would forbid comparing a run with a later one, which is the only thing this feature is for.',
+  },
+  {
+    field: 'runs.notes',
+    reason:
+      'Free-text operator notes describe the capture without constraining it. Anything in a note that changes results belongs in `conditions`, which is compared.',
+  },
+  {
+    field: 'sample size and eligible observation counts',
+    reason:
+      'A retest asks whether the same question set moved on the same configuration. Sample differences are surfaced through coverage and the statement-decomposition note rather than by refusing the comparison.',
+  },
+  {
+    field: 'query text inside the query set',
+    reason:
+      'Runs reference a query-set id, and an approved set is immutable. Equality of the id is therefore equality of the questions; the frozen name and version copies on the run are descriptive.',
+  },
+  {
+    field: 'metrics version behind each value',
+    reason:
+      'Both sides are recomputed by the same code at record time, so they cannot differ. The version is stored on the comparison for transparency, not used as a condition.',
+  },
+];
 
 export function isComparable(pair: ConfigurationComparison): boolean {
   return comparabilityReasons(pair).length === 0;

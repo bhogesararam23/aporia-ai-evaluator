@@ -210,8 +210,8 @@ function seededUpgradedDatabase(): DatabaseSync {
   const all = loadMigrations(MIGRATIONS);
   assert.equal(
     all.length,
-    10,
-    'this fixture upgrades a v0.3 database, so nine migrations must come first',
+    11,
+    'this fixture upgrades a v0.3 database, so the first nine migrations must come first',
   );
   runMigrations(db, all.slice(0, 9));
   populate(db);
