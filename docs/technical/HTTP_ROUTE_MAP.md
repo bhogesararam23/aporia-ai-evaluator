@@ -1,7 +1,7 @@
-# Local HTTP Route Map (v0.2)
+# Local HTTP Route Map (v0.4)
 
 - Status: Implemented
-- Date: 2026-10-30
+- Date: 2026-11-02
 - Server: loopback-only `node:http`; no separate public API
 - Authentication: none; local single-operator only
 - CSRF: every POST requires a synchronizer token in `_csrf`; GETs do not mutate state
@@ -113,6 +113,12 @@ All project routes are scoped by `projectId` and resolve records only within tha
 - HTML responses receive CSP, `nosniff`, frame denial, no-referrer, permissions restrictions, and no-store. JSON/CSV downloads also receive no-store and an attachment filename.
 - Achievement approval failures return 422 with preserved values; an unapproved or non-current export returns 409; downloads are attachments and are audited only after generation succeeds.
 - Internal errors return a generic page with a request ID; no stack trace is shown.
+
+- A `GET /projects/:projectId/findings/:findingId/retest` preview is reached with a plain get form (earlier run, later run, one focus metric); the only write is `POST /projects/:projectId/findings/:findingId/retest/record`, which carries just those three identifiers and recomputes the comparison from the stored runs inside its transaction. The record form's hidden fields are what a browser submits; nothing derived — outcome, comparability, reasons or deltas — travels through a caller-supplied object.
+
+## What a rendered form must post to
+
+A page's `<form action>` is part of this contract, not an implementation detail: an action that names no registered route is a feature an operator cannot use, and it returns 404 rather than failing loudly. `tests/integration/form-actions.test.ts` walks the reachable pages, checks every rendered action against the table above, and then submits the statement workspace's link, mapping, assessment, revise, void and both supersede forms through the actions the page rendered. v0.4 found five of those actions carrying an extra copy of the statement id and the two correction actions carrying one they should not have had — all six returned 404 while the suite stayed green, because the older tests composed their own URLs from repository identifiers instead of reading the page.
 
 ## Absent routes
 

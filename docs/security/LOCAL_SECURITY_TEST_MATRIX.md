@@ -1,7 +1,7 @@
-# Local Security Control and Test Matrix (v0.2)
+# Local Security Control and Test Matrix (v0.4)
 
 - Status: Implemented for the local single-operator scope
-- Date: 2026-10-30
+- Date: 2026-11-02
 - Scope: loopback application with no accounts, remote API, provider credentials, or public publishing
 - Not a penetration test, audit, compliance certification, or production security review
 
@@ -28,6 +28,11 @@
 | Audit trail | Append-only local events for mutations and exports | Audit/schema and workflow tests | Not tamper-evident against filesystem access; deletion removes events |
 | Achievement exports | HTML values escaped; JSON-LD `<` escaped inside the script element; structured data checked against visible content; only HTTP(S) URLs without credentials become links | `achievement-export.test.ts` | A downloaded file is outside Aporia once saved; the export cannot guarantee indexing or citation |
 | Achievement approval boundary | Only the current revision can be approved; hash-bound, unique, CSRF-protected; unapproved/non-current exports return 409; downloads audited | Repository and `achievement-workflows.test.ts` | A local operator can approve; this is not identity, legal, or independent review |
+| Client cannot fabricate a measurement | `POST …/retest/record` accepts only the two run ids and the chosen focus metric and recomputes the comparison from the persisted runs inside its write transaction, so an outcome, comparability, reason or delta cannot travel through a caller-supplied object | `tests/integration/findings-workflows.test.ts`, `scripts/local-workflow.ts` step 19 | An operator with direct database access can still write rows; SQLite is not a trust boundary against its own file |
+| Status bound to the comparison that justifies it | Four triggers on `finding_updates` require the cited comparison to live in this project, on this finding, and to carry the outcome being recorded, and require a citation at all for a measured status | `tests/integration/findings-workflows.test.ts`, `tests/integration/upgrade-v03-to-v04.test.ts` | A comparison is an association between two captures; nothing here proves a change caused the movement |
+| Evaluator integrity enforced in storage | `010_evaluator_integrity.sql` refuses a label or relationship that contradicts the statement's recorded relevance, and a citation mapping pointing at a withdrawn citation | `tests/integration/schema-evaluator-integrity.test.ts`, which also parses the migration and compares each arm with the TypeScript table | A duplicated rule still needs that drift guard; the trigger list mirrors `src/core/claimEligibility.ts` rather than being derived from it |
+| Destructive restore needs two explicit flags | `--replace` alone is refused; `--replace --confirm <backup-name>` is required to overwrite a non-empty data directory, and a pre-restore safety backup is taken | `tests/integration/backup-cli.test.ts`, `tests/integration/backup-restore.test.ts`, `scripts/local-workflow.ts` step 22 | Confirmation protects against accident, not against an operator who means it |
+| Rendered form actions resolve | Every `<form action>` on the reachable pages names a registered route, and the workspace forms are submitted through the action the page rendered | `tests/integration/form-actions.test.ts` | Covers the pages the fixture can reach; an unreachable page is not evidence |
 | Achievement project scope | Claim, source and evidence links must belong to the project; deletion cascades all achievement rows | Schema/repository tests | The local operator can read the whole database directly |
 | Backup/restore | Offline `VACUUM INTO` snapshot; digest, migration, integrity, foreign-key, count and report checks; overwrite confirmation; safety backup and rollback | `backup-restore.test.ts`, `backup-cli.test.ts` | Unencrypted; a writer who can replace both database and manifest defeats the digest; restore requires the server stopped |
 | Migration identity | Applied migration name and checksum are compared; edits and renames are refused | `migrations.test.ts` | A deliberate forward migration is still an owner decision; no down migrations |
