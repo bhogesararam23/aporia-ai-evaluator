@@ -1,8 +1,8 @@
-# Implementation Status — Local Core v0.3
+# Implementation Status — Local Core v0.4
 
-- Status: Implemented and locally validated; owner acceptance and release remain pending
-- Date: 2026-11-01
-- Branch: `feat/aporia-local-core-v0.3-claim-level-evaluation`
+- Status: Implemented and verified against the running application; owner acceptance and release remain pending
+- Date: 2026-11-02
+- Branch: `feat/aporia-local-core-v0.4-evaluator-integrity`
 - Scope: local-first evidence evaluation without provider, cloud, crawler, or publishing integrations
 
 This matrix records what is actually implemented and verified in this repository. “Validated” means the named local check ran successfully; it does not mean an external review, production deployment, or provider validation occurred. The existing documents remain the requirements source of truth.
@@ -42,7 +42,7 @@ This matrix records what is actually implemented and verified in this repository
 | Server-rendered UI | Implemented / Validated | Complete claim/evidence/query/run/audit/report workflows, empty/error states, forms | HTTP, workflow, and accessibility tests |
 | Local security controls | Implemented / Validated | Loopback binding, Host/Origin/CSRF, CSP, body/upload limits, escaping, safe URLs, parameterized SQL | Config, security, body, HTTP, view, audit tests |
 | Documentation and runbook | Implemented / Validated | Architecture, schema, metrics, testing, limitations, operations, README | Link check, docs tests, and manual review |
-| CI quality gate | Implemented / Validated | GitHub Actions runs `npm ci` and `npm run check` on Node 24 | Hosted runs 40773185352 (`38d3006`) and 40775144790 (`4dae6ce`) succeeded |
+| CI quality gate | Implemented / Validated | GitHub Actions runs `npm ci` and `npm run check` on Node 24 | Hosted runs 40773185352 (`38d3006`) and 40775144790 (`4dae6ce`) succeeded; the v0.4 checkpoints recorded in the session report are cited there per push |
 
 ### v0.3 additions
 
@@ -50,17 +50,38 @@ This matrix records what is actually implemented and verified in this repository
 |---|---|---|---|
 | Answer-statement decomposition | Implemented / Validated | `008_answer_claims.sql`, `src/core/answerClaims.ts`, statement workspace at `/…/observations/:observationId/claims`; raw answer never edited; corrections create superseding revisions | `tests/unit/answer-claims.test.ts`, `tests/unit/answer-claim-inputs.test.ts`, `tests/integration/schema-answer-claims.test.ts`, `tests/integration/repositories-answer-claims.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
 | Quote location and verification | Implemented / Validated | Exact/normalised/no-offset bases in Unicode **code points**; NFKC mapping back to code-unit positions; a trigger re-derives the quote from the stored answer | `tests/unit/answer-claim-inputs.test.ts` (astral-character offsets, whitespace-only refusal), `tests/integration/schema-answer-claims.test.ts` |
-| Statement–proposition relations | Implemented / Validated | One-to-many and many-to-one links with `SUPPORTS`/`PARTIALLY_SUPPORTS`/`CONTRADICTS`/`REFINES`/`DOES_NOT_ADDRESS`/`UNCERTAIN`/`OMITS_TARGET`/`INSUFFICIENT_FOR_TARGET`; corrections supersede, never delete | `tests/integration/repositories-answer-claims.test.ts` |
-| Statement–citation mapping | Implemented / Validated | Support label per mapping row (`NO_CITATION`, `NON_SUPPORTING`, `PARTIAL`, `CONDITIONAL`, `METADATA_MISSING`, shared citation); citation presence is never treated as accuracy | `tests/unit/claim-metrics.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
+| Statement–proposition relations | Implemented / Validated | One-to-many and many-to-one links over `SUPPORTS_TARGET`, `PARTIALLY_SUPPORTS_TARGET`, `CONTRADICTS_TARGET`, `QUALIFIES_TARGET`, `DOES_NOT_ADDRESS_TARGET`, `AMBIGUOUS_TARGET`, `REFUSES_TARGET`, `ABSTAINS_TARGET`, `OMITS_TARGET`, `NOT_ASSESSABLE_TARGET`; corrections supersede, never delete. `OMITS_TARGET` is reachable only from a statement that partially addresses the target or records an omission | `tests/integration/repositories-answer-claims.test.ts`, `tests/unit/claim-eligibility.test.ts`, `tests/integration/schema-evaluator-integrity.test.ts` |
+| Statement–citation mapping | Implemented / Validated | Support label per mapping row (`SUPPORTS`, `PARTIALLY_SUPPORTS`, `SUPPORTS_WITH_CONDITIONS`, `DOES_NOT_SUPPORT`, `UNCLEAR`, `METADATA_MISSING`, `NOT_ASSESSABLE`), shared citations recorded as shared; citation presence is never treated as accuracy | `tests/unit/claim-metrics.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
 | Statement-level attribution | Implemented / Validated | Right person/wrong role, partial, ambiguous, incorrect, unattributed, false sole credit, collaborative/organisational labels; authorship is never inferred from a name | `tests/unit/claim-metrics.test.ts`, `tests/integration/repositories-answer-claims.test.ts` |
-| metrics-v3 with historical compatibility | Implemented / Validated | `src/core/claimMetrics.ts` adds a statement-level block keyed `answer_*`; `metrics-v1`/`metrics-v2` are never recomputed and render from stored snapshots; an absent block renders as "not recorded", never zero | `tests/unit/claim-metrics.test.ts`, `tests/unit/metrics.test.ts`, `tests/unit/report-compatibility.test.ts` |
-| Claim-level reporting | Implemented / Validated | Snapshot, report view, and metrics CSV carry the statement block, coverage counts, and limitation lines; template `report-template-v3` | `tests/unit/reporting-claim-level.test.ts`, `tests/integration/reporting-service.test.ts` |
+| metrics-v3 with historical compatibility | Implemented / Superseded by v4 | `src/core/claimMetrics.ts` added a statement-level block keyed `answer_*`; its denominators were driven by the stored label alone, which is what [v4](evaluator/IMPLEMENTED_METRICS_V4.md) corrects. `metrics-v1`/`metrics-v2`/`metrics-v3` are never recomputed and render from stored snapshots; an absent block renders as "not recorded", never zero | `tests/unit/claim-metrics.test.ts`, `tests/unit/metrics.test.ts`, `tests/unit/report-compatibility.test.ts` |
+| Claim-level reporting | Implemented / Validated | Snapshot, report view, and metrics CSV carry the statement block, coverage counts, and limitation lines; the template is `report-template-v4` as of v0.4 and `v1`–`v3` snapshots still render their stored figures | `tests/unit/reporting-claim-level.test.ts`, `tests/integration/reporting-service.test.ts`, `tests/unit/report-compatibility.test.ts` |
 | Offline benchmark harness | Implemented / Validated | `src/benchmark/` validates a versioned case format, scores per-label precision/recall with confusion matrices, separates software regression from methodology failure; `npm run benchmark` | `tests/unit/benchmark-validate.test.ts`, `tests/unit/benchmark-scoring.test.ts`, `tests/integration/benchmark-cli.test.ts` |
 | Tracked remediation findings | Implemented / Validated | `009_remediation.sql`, `src/core/findings.ts`, `src/persistence/repositories/findings.ts`, findings workspace and retest pages | `tests/unit/findings-lifecycle.test.ts`, `tests/unit/finding-inputs.test.ts`, `tests/integration/findings-workflows.test.ts`, `tests/integration/finding-workflows.test.ts` |
 | Longitudinal retest comparison | Implemented / Validated | One shared comparability rule for report and retest, metric polarity per metric, causal-boundary text, append-only comparisons; a measured status requires a stored comparison | `tests/integration/findings-workflows.test.ts`, `tests/integration/finding-workflows.test.ts` |
 | Backup coverage of v0.3 tables | Implemented / Validated | All nine new tables in `BACKUP_TABLES`; the manifest is checked against the live schema in both directions | `tests/integration/backup-restore.test.ts` |
 | Module-boundary enforcement for the benchmark layer | Implemented / Validated | `scripts/check-boundaries.ts` takes the tree it checks as an argument and knows the `benchmark` layer | `tests/unit/boundaries.test.ts` |
 | Documentation-to-code drift guard | Implemented / Validated | The published route map is compared with the registered routes in both directions | `tests/unit/route-map.test.ts` |
+
+### v0.4 additions
+
+| Capability | Status | Implementation | Verification |
+|---|---|---|---|
+| Claim eligibility (`metrics-v4`) | Implemented / Validated | `src/core/claimEligibility.ts` is the single contract: relevance decides whether a statement asserts anything, the label describes what was asserted, and each of the four statement-level gates returns its own exclusion reason. Enforced again in `src/core/answerClaimInputs.ts`, in the repository transaction and by SQLite triggers, so a refusal, abstention, ambiguity, unrelated remark or voided record cannot enter a factual denominator from any caller | `tests/unit/claim-eligibility.test.ts`, `tests/integration/schema-evaluator-integrity.test.ts`, `tests/integration/answer-claim-workflows.test.ts` |
+| Voided statements kept, excluded, and readable | Implemented / Validated | A void keeps the statement, its reason, its assessments and its links visible while removing it from the figures through `CLAIM_VOIDED`; the workspace and the report both state the count | `tests/integration/report-retest-parity.test.ts`, `tests/integration/citation-void-visibility.test.ts` |
+| Withdrawn citation lifecycle | Implemented / Validated | Chosen lifecycle: a withdrawn citation retains its mappings, which stop counting with `CLAIM_CITATION_VOIDED`; forced supersession was rejected because it destroys history. The run page shows the reason after the withdrawal | `tests/integration/citation-void-visibility.test.ts`, `tests/integration/schema-evaluator-integrity.test.ts` |
+| Decomposition separated from assessment effort | Implemented / Validated | `partiallyDecomposedObservations` was renamed and split: `statementsRecorded`, `statementsFidelityAssessed`, `statementsAttributionAssessed`, `citationMappingsRecorded`, `citationMappingsAssessed` and `partiallyAssessedObservations` are reported separately, so reviewer effort cannot read as AI performance | `tests/unit/claim-metrics.test.ts`, `tests/unit/report-compatibility.test.ts` |
+| Retest provenance bound to the status | Implemented / Validated | `011_retest_provenance.sql` stores `focus_metric`, `focus_label`, `rule_version` and both runs' metrics versions; `recordRetestComparison` recomputes the comparison from the persisted runs inside its transaction; four triggers bind a measured transition to a comparison on that finding carrying that outcome | `tests/integration/findings-workflows.test.ts`, `tests/integration/upgrade-v03-to-v04.test.ts`, `scripts/local-workflow.ts` steps 18–19 |
+| Comparability completeness | Implemented / Validated | `comparison-rule-v2` also compares recorded `conditions`, and `COMPARABILITY_EXCLUSIONS` names what a local comparison cannot see (capture window, notes, sample size, query text, metrics version). v1 pairs keep their stored meaning | `tests/unit/findings-lifecycle.test.ts`, `tests/unit/reporting-claim-level.test.ts`, `tests/integration/findings-workflows.test.ts`, `tests/integration/report-retest-parity.test.ts` |
+| Nested benchmark corpus validation | Implemented / Validated | `src/benchmark/validate.ts` rewritten around a reporting object that walks every nested array and object, imports the core vocabularies instead of restating them, checks cross-field references (statements→propositions→evidence→sources, citations, reviewer labels), and refuses an unknown case version rather than guessing | `tests/unit/benchmark-validate.test.ts`, `tests/unit/benchmark-source-identity.test.ts` |
+| Reviewer consensus that cannot be manufactured | Implemented / Validated | Disagreement stays unresolved and is reported per subject; a single reviewer is never treated as consensus; an adjudication applies only to the dimension and subject it names; a genuinely ambiguous case is not scored as ordinary gold; `accuracyClaimable` stays false without reviewed material | `tests/unit/benchmark-scoring.test.ts`, `tests/integration/benchmark-cli.test.ts` |
+| Benchmark source identity | Implemented / Validated | `benchmark-case-v2` separates an evidence record from the underlying source it came from (`sourceId`), scores independence by underlying source, and reports records that cannot be used rather than silently dropping them | `tests/unit/benchmark-source-identity.test.ts` |
+| Batched statement reads with measured query counts | Implemented / Validated | `assembleClaim`'s per-record loading was replaced by one batched assemble over all claim rows bucketed by observation; the dead per-claim loaders were deleted | `tests/integration/query-counts.test.ts` (statement counts must not grow with record count) |
+| Atomic multi-record writes under injected failure | Implemented / Validated | Fifteen write paths tested by failing the second statement or the audit append and confirming nothing persisted | `tests/integration/write-atomicity.test.ts`, `tests/integration/audit-atomicity.test.ts` |
+| v0.3 → v0.4 upgrade and backup lifecycle with populated data | Implemented / Validated | A populated v0.3 database upgraded in place keeps its stored snapshots readable, the manifest counts the v0.4 tables, restore into an empty directory works, and restore over live data is refused without `--replace --confirm` | `tests/integration/upgrade-v03-to-v04.test.ts`, `tests/integration/backup-restore.test.ts`, `tests/integration/backup-cli.test.ts` |
+| Portable record carries remediation | Implemented / Validated | `project-export-v2` adds findings with their status history, references and recorded comparisons | `tests/integration/project-export-findings.test.ts`, `scripts/local-workflow.ts` step 21 |
+| Rendered form actions resolve | Implemented / Validated | Every form on 24 reachable pages is checked against the registered routes, and the workspace's link, mapping, assessment, revise, void and both supersede forms are submitted through the action the page rendered. This is what found the two 404 defects | `tests/integration/form-actions.test.ts` |
+| Whole-workflow verification against the running app | Implemented / Validated | `npm run verify:workflow` drives §6's 24 steps through the served forms against a fresh temporary data directory, then backs up, verifies, restores elsewhere, restarts and reads everything back | 25 entries passed, 0 failed, 0 not-run on 2026-11-02 (Windows x64, Node v24.13.1); not run in CI |
+| Metric and template version registry | Implemented / Validated | `metrics-v1`…`v4`, `report-template-v1`…`v4`, `comparison-rule-v1`/`v2`, `benchmark-case-v1`/`v2` are declared in one place, and stored snapshots render what they were written with | `tests/unit/report-compatibility.test.ts`, `tests/integration/upgrade-v03-to-v04.test.ts` |
 
 ## 2. Product requirement mapping
 
@@ -111,7 +132,7 @@ This matrix records what is actually implemented and verified in this repository
 
 ## 4. Acceptance criteria for the initial usable release
 
-The local milestone's end-to-end path is validated: create a project, record claims and evidence, record genuine manual observations, perform transparent assessments, compute defined metrics, generate a reproducible report, and export it. Provider testing is intentionally absent.
+The local milestone's end-to-end path is validated: create a project, record claims and evidence, record genuine manual observations, decompose answers into statements, perform transparent assessments, compute defined metrics, generate a reproducible report, track a finding, compare a later capture against it, and export everything. As of v0.4 that path is verified by driving the forms the running application serves (`npm run verify:workflow`, 25 entries passed, none left not-run), not only by tests that call routes directly — which is how two workspace forms returning 404, an invisible citation withdrawal reason, and a project export missing the remediation backlog were found and fixed. Provider testing is intentionally absent.
 
 The broader Product Requirements acceptance criterion that includes “run at least one supported search-grounded provider test” is **not met and is out of scope for this milestone**. No provider is advertised as supported. This repository must not be described as satisfying that criterion.
 
@@ -125,6 +146,17 @@ The broader Product Requirements acceptance criterion that includes “run at le
 | ADR-011 local HTML-only analysis | Implemented | Website and audit upload tests |
 | ADR-012 loopback single-operator security | Implemented | Config, host, CSRF, body, CSP, upload tests |
 | ADR-013 immutable report snapshots | Implemented | Reporting, repository, HTTP immutability tests |
+| ADR-014 metrics-v2 intent-group coverage | Implemented | `tests/unit/metrics.test.ts`; stored v1 snapshots re-rendered in `tests/unit/report-compatibility.test.ts` |
+| ADR-015 recorded-relationship wording | Implemented | `tests/unit/vocabulary.test.ts`, `tests/unit/evidence.test.ts` |
+| ADR-016 local achievement records and approval | Implemented | `tests/integration/achievement-workflows.test.ts`, `tests/unit/achievement-export.test.ts` |
+| ADR-017 validated local backup and restore | Implemented | `tests/integration/backup-restore.test.ts`, `tests/integration/backup-cli.test.ts` |
+| ADR-018 answer-statement decomposition | Implemented, and corrected in v0.4 | The label field, not the relevance field, was driving statement denominators; the eligibility contract now makes relevance authoritative for whether a statement asserts anything. **Status remains Proposed** | `tests/unit/claim-eligibility.test.ts`, `tests/integration/schema-evaluator-integrity.test.ts` |
+| ADR-019 metrics-v3 claim-level block | Implemented, superseded by v4 | Stored `metrics-v3` snapshots render their recorded figures and are never recomputed. **Status remains Proposed** | `tests/unit/report-compatibility.test.ts` |
+| ADR-020 offline benchmark harness | Implemented | No dataset ships with it; the harness reports structural readiness only. **Status remains Proposed** | `tests/integration/benchmark-cli.test.ts` |
+| ADR-021 remediation findings and retest | Implemented, with an appended amendment about the template version it claimed | See the amendment: `report-template-v3` already existed under ADR-019, and v0.4 moved the current template to v4. **Status remains Proposed** | `tests/integration/findings-workflows.test.ts` |
+| ADR-022 benchmark module layer | Implemented | Boundary enforcement covers `src/benchmark`. **Status remains Proposed** | `tests/unit/boundaries.test.ts` |
+| ADR-023 claim eligibility and metrics-v4 | Implemented, **Proposed** — awaiting owner review | Four-layer enforcement plus the separate review-progress counts | `tests/unit/claim-eligibility.test.ts`, `tests/integration/report-retest-parity.test.ts` |
+| ADR-024 retest provenance and comparability | Implemented, **Proposed** — awaiting owner review | Durable focus metric and rule version, comparison recomputed in the write transaction, status bound to the cited comparison by trigger | `tests/integration/upgrade-v03-to-v04.test.ts`, `scripts/local-workflow.ts` steps 18–19 |
 
 The ADRs remain **Proposed** in the index pending owner review; implementation does not equal owner acceptance.
 
@@ -140,9 +172,10 @@ The ADRs remain **Proposed** in the index pending owner review; implementation d
 
 ## 7. Next steps
 
-1. Owner review and acceptance or modification of ADRs 008–013.
-2. Add a human-reviewed evaluator gold set and regression cases before any public accuracy claim.
-3. Implement retention/deletion policy and backup guidance beyond the local copy procedure.
-4. Add screen-reader and cross-browser testing.
-5. If provider or remote website work is authorized, add capability declarations, terms review, SSRF/network isolation, and live validation under new ADRs.
-6. Review the local achievement workflow and decide whether a future publication milestone is authorized; publication requires a new ADR, destination control, rollback, and correction/dispute handling.
+1. Owner review and acceptance or modification of ADRs 008–024. ADR-018 through ADR-022 are still **Proposed**, and v0.4 did not change that; implementation is not approval.
+2. Recruit real reviewed benchmark cases with at least two independent annotators, then record observed disagreement and adjudication. Until that exists no accuracy figure can be stated, and the harness will keep saying so.
+3. Decide the `evidence-aggregation-v1` corroboration question with its own ADR and version: material recorded under two identifiers, or as `RELATED`, currently counts twice.
+4. Add screen-reader, mobile and cross-browser testing, and run `verify:workflow` on macOS and Linux. None of it has been executed here.
+5. Implement retention/deletion policy and backup guidance beyond the local copy procedure.
+6. If provider or remote website work is authorized, add capability declarations, terms review, SSRF/network isolation, and live validation under new ADRs.
+7. Review the local achievement workflow and decide whether a future publication milestone is authorized; publication requires a new ADR, destination control, rollback, and correction/dispute handling.
