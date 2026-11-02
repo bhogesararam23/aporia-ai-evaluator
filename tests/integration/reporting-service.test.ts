@@ -375,7 +375,8 @@ test('project export contains persisted sources, runs, audits, and reports', () 
     const built = buildProject(db);
     generateReport(db, built.projectId, undefined, CONTEXT);
     const exported = exportProject(db, built.projectId, CONTEXT.at);
-    assert.equal(exported['schemaVersion'], 'project-export-v1');
+    assert.equal(exported['schemaVersion'], 'project-export-v2');
+    assert.deepEqual(exported['findings'], [], 'an empty project exports no findings');
     assert.equal((exported['sources'] as unknown[]).length, 1);
     assert.equal((exported['runs'] as unknown[]).length, 1);
     assert.equal((exported['websiteAudits'] as unknown[]).length, 1);

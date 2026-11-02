@@ -502,7 +502,7 @@ export function exportProject(
         ];
   });
   return {
-    schemaVersion: 'project-export-v1',
+    schemaVersion: 'project-export-v2',
     exportedAt,
     project: detail.project,
     targetEntity: detail.targetEntity,
@@ -516,6 +516,10 @@ export function exportProject(
       return audit === null ? [] : [audit];
     }),
     reports,
+    // v0.3 added remediation findings and retest comparisons, and the portable record was never
+    // extended to carry them: an operator who exported and then wiped lost the backlog and the
+    // measurements behind it. Additive, so every v1 key keeps its meaning.
+    findings: listFindings(db, projectId),
     achievements: exportAchievements(db, projectId),
     auditEvents: listAuditEvents(db, projectId, { limit: 500 }),
     auditEventCount: countAuditEvents(db, projectId),
