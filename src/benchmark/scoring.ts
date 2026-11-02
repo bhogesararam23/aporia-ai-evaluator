@@ -10,6 +10,8 @@
  */
 import type {
   AgreementRow,
+  AnnotationSummary,
+  BenchmarkAdjudication,
   BenchmarkCase,
   BenchmarkDimension,
   ConfusionCell,
@@ -219,41 +221,110 @@ function componentOf(dimension: BenchmarkDimension): string {
 }
 
 /**
- * Reviewer-to-reviewer agreement. Computed only where a subject carries two or more reviewer labels,
- * and a disagreement with no recorded adjudication is reported as UNRESOLVED rather than smoothed
- * into the gold label.
+ * The adjudication that settles one (dimension, subject) pair.
+ *
+ * A v2 case scopes each adjudication explicitly. A v1 case carries one unscoped record, which is
+ * honoured only when the case disagrees on exactly one subject — otherwise a single decision would
+ * settle disputes it never named.
+ */
+function adjudicationFor(
+  benchmarkCase: BenchmarkCase,
+  dimension: BenchmarkDimension,
+  subjectId: string,
+  disagreementCount: number,
+): BenchmarkAdjudication | undefined {
+  const scoped = benchmarkCase.adjudications?.find(
+    (entry) => entry.dimension === dimension && entry.subjectId === subjectId,
+  );
+  if (scoped !== undefined) {
+    return scoped;
+  }
+  const legacy = benchmarkCase.adjudication;
+  if (legacy === undefined || legacy === null || disagreementCount !== 1) {
+    return undefined;
+  }
+  return {
+    dimension,
+    subjectId,
+    outcome: legacy.outcome,
+    // A v1 record names no settled label, so a resolved v1 adjudication cannot become a gold label;
+    // the pair is reported as resolved-without-a-value and stays out of any accuracy summary.
+    label: null,
+    reason: legacy.reason,
+    adjudicatedBy: legacy.adjudicatedBy,
+  };
+}
+
+/**
+ * Reviewer-to-reviewer agreement, one row per labelled subject.
+ *
+ * Four things used to be wrong here. A subject with one reviewer was skipped, so a corpus of single
+ * opinions looked like a corpus of agreements; the same reviewer writing twice counted as two
+ * reviewers; one case-level adjudication settled every disagreement in that case; and disagreement
+ * with no adjudication was invisible outside a single count. Now every pair is reported with a status
+ * that says which kind it is, `NOT_ENOUGH_REVIEWERS` included.
+ *
+ * Agreement between two operator-asserted names is still not proof of independent review.
  */
 export function agreementRows(cases: readonly BenchmarkCase[]): AgreementRow[] {
   const rows: AgreementRow[] = [];
   for (const benchmarkCase of cases) {
     const grouped = new Map<string, { reviewers: string[]; labels: string[] }>();
-    for (const label of benchmarkCase.reviewerLabels) {
+    for (const label of benchmarkCase.reviewerLabels ?? []) {
       const key = `${label.dimension}:${label.subjectId}`;
       const entry = grouped.get(key) ?? { reviewers: [], labels: [] };
       entry.reviewers.push(label.reviewer);
       entry.labels.push(label.label);
       grouped.set(key, entry);
     }
+    const gold = new Map<string, string>();
+    for (const expected of benchmarkCase.expected ?? []) {
+      gold.set(`${expected.dimension}:${expected.subjectId}`, expected.label);
+    }
+    const disagreementCount = [...grouped.values()].filter(
+      (entry) => new Set(entry.labels).size > 1,
+    ).length;
+
     for (const [key, entry] of grouped) {
       const [dimension, subjectId] = key.split(':');
       if (dimension === undefined || subjectId === undefined) {
         continue;
       }
-      if (entry.reviewers.length < 2) {
-        continue;
-      }
-      const unanimous = new Set(entry.labels).size === 1;
+      const distinctReviewers = [...new Set(entry.reviewers)];
+      const distinctLabels = [...new Set(entry.labels)].sort();
+      const unanimous = distinctLabels.length === 1;
       const adjudication = unanimous
-        ? 'NOT_APPLICABLE'
-        : (benchmarkCase.adjudication?.outcome ?? 'UNRESOLVED');
+        ? undefined
+        : adjudicationFor(
+            benchmarkCase,
+            dimension as BenchmarkDimension,
+            subjectId,
+            disagreementCount,
+          );
+      let status: AgreementRow['status'];
+      if (distinctReviewers.length < 2) {
+        // One reviewer is one opinion. Calling it agreement is how a solo note becomes a consensus.
+        status = 'NOT_ENOUGH_REVIEWERS';
+      } else if (unanimous) {
+        status = 'UNANIMOUS';
+      } else if (adjudication?.outcome === 'GENUINELY_AMBIGUOUS') {
+        status = 'GENUINELY_AMBIGUOUS';
+      } else if (adjudication?.outcome === 'RESOLVED') {
+        status = 'RESOLVED_BY_ADJUDICATION';
+      } else {
+        status = 'UNRESOLVED';
+      }
       rows.push({
         caseId: benchmarkCase.id,
         dimension: dimension as BenchmarkDimension,
         subjectId,
-        reviewers: entry.reviewers,
+        reviewers: distinctReviewers.sort(),
         labels: entry.labels,
         unanimous,
-        adjudication,
+        status,
+        adjudicatedLabel:
+          status === 'RESOLVED_BY_ADJUDICATION' ? (adjudication?.label ?? null) : null,
+        goldLabel: gold.get(key) ?? null,
       });
     }
   }
@@ -266,7 +337,82 @@ export function agreementRows(cases: readonly BenchmarkCase[]): AgreementRow[] {
 }
 
 export function unresolvedDisagreements(rows: readonly AgreementRow[]): number {
-  return rows.filter((row) => row.adjudication === 'UNRESOLVED').length;
+  return rows.filter((row) => row.status === 'UNRESOLVED').length;
+}
+
+/** Disagreements a genuine ambiguity settled, which must never be scored as an ordinary gold label. */
+export function ambiguousSubjects(rows: readonly AgreementRow[]): number {
+  return rows.filter((row) => row.status === 'GENUINELY_AMBIGUOUS').length;
+}
+
+/** Subjects carrying fewer than two distinct reviewers, so no agreement claim can be made about them. */
+export function soloReviewedSubjects(rows: readonly AgreementRow[]): number {
+  return rows.filter((row) => row.status === 'NOT_ENOUGH_REVIEWERS').length;
+}
+
+/**
+ * The pairs that can enter an annotation-agreement summary.
+ *
+ * A subject is eligible only when a defensible value exists: reviewers unanimous, or an adjudication
+ * that named a label. Unresolved and genuinely-ambiguous subjects are excluded from the rate and
+ * counted separately — excluding them is not the same as hiding them, because the row still carries
+ * every reviewer label and the reason.
+ */
+export function annotatableRows(rows: readonly AgreementRow[]): AgreementRow[] {
+  return rows.filter((row) => {
+    if (row.status === 'UNANIMOUS') {
+      return true;
+    }
+    return row.status === 'RESOLVED_BY_ADJUDICATION' && row.adjudicatedLabel !== null;
+  });
+}
+
+/**
+ * Annotation agreement, per dimension.
+ *
+ * A subject counts only when a defensible value exists for it: reviewers unanimous, or an adjudication
+ * that named both the subject and the settled label. Everything else is excluded from the rate **and
+ * counted in the open**, which is the difference between an honest subtotal and a flattering one. The
+ * v0.3 harness took the alphabetically first reviewer label as a "consensus" and folded those pairs
+ * into the same accuracy figure as deterministic software output; there is no such step here.
+ */
+export function annotationSummaries(
+  rows: readonly AgreementRow[],
+  dimensions: readonly BenchmarkDimension[],
+): AnnotationSummary[] {
+  return dimensions.map((dimension) => {
+    const scoped = rows.filter((row) => row.dimension === dimension);
+    const withGold = scoped.filter((row) => row.goldLabel !== null);
+    const singleReviewer = scoped.filter((row) => row.status === 'NOT_ENOUGH_REVIEWERS').length;
+    const unresolved = scoped.filter((row) => row.status === 'UNRESOLVED').length;
+    const ambiguous = scoped.filter((row) => row.status === 'GENUINELY_AMBIGUOUS').length;
+    const adjudicatedNoLabel = scoped.filter(
+      (row) => row.status === 'RESOLVED_BY_ADJUDICATION' && row.adjudicatedLabel === null,
+    ).length;
+    const scorable = withGold.filter(
+      (row) =>
+        row.status === 'UNANIMOUS' ||
+        (row.status === 'RESOLVED_BY_ADJUDICATION' && row.adjudicatedLabel !== null),
+    );
+    const settledValue = (row: AgreementRow): string =>
+      row.status === 'RESOLVED_BY_ADJUDICATION'
+        ? (row.adjudicatedLabel ?? '')
+        : (row.labels[0] ?? '');
+    const agreeing = scorable.filter((row) => settledValue(row) === row.goldLabel).length;
+    return {
+      dimension,
+      subjects: scoped.length,
+      scorable: scorable.length,
+      agreeingWithGold: agreeing,
+      agreementRate: scorable.length === 0 ? null : agreeing / scorable.length,
+      excludedUnresolved: unresolved,
+      excludedAmbiguous: ambiguous,
+      excludedSingleReviewer: singleReviewer,
+      excludedNoGoldLabel: scoped.length - withGold.length,
+      excludedAdjudicatedWithoutLabel: adjudicatedNoLabel,
+      note: 'Human annotation agreement over subjects with a defensible settled value. Not a software measure and not evaluator accuracy: reviewer identity is operator-asserted, and an excluded subject is counted here rather than dropped.',
+    };
+  });
 }
 
 export function dimensionLabel(dimension: BenchmarkDimension): string {

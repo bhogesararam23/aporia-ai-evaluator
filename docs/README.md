@@ -11,6 +11,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [User Journeys](product/USER_JOURNEYS.md) — achievement records, AI disagreement, website readiness, and monitoring.
 - [Implementation Roadmap](product/IMPLEMENTATION_ROADMAP.md) — dependency-ordered delivery phases and exit criteria.
 - [v0.3 Requirements Traceability](product/V03_REQUIREMENTS_TRACEABILITY.md) — audited requirement-to-code-to-test matrix for the claim-level milestone.
+- [v0.4 Requirements Traceability](product/V04_REQUIREMENTS_TRACEABILITY.md) — each v0.4 obligation in evaluator semantics, citation lifecycle, benchmark integrity, retest provenance, persistence and boundaries, mapped to the code that satisfies it and the check that would fail without it.
 - [Product Governance and Boundaries](business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md) — product promises and separation from evaluator verdicts.
 
 ## Technical design
@@ -28,8 +29,9 @@ This set defines the intended product, evaluation methodology, trust model, safe
 ## Evaluator science
 - [Evaluator Methodology](evaluator/EVALUATOR_METHODOLOGY.md) — claim decomposition, evidence assessment, answer evaluation, reproducibility, and adjudication.
 - [Implemented Metrics v1](evaluator/IMPLEMENTED_METRICS_V1.md) — exact numerators, denominators, exclusions, unknowns, and evidence rule precedence. Historical `metrics-v1` snapshots.
-- [Implemented Metrics v2](evaluator/IMPLEMENTED_METRICS_V2.md) — current intent-group coverage, partial assessment, and the v1-to-v2 change record.
-- [Implemented Metrics v3](evaluator/IMPLEMENTED_METRICS_V3.md) — claim-level statement fidelity, citation support, attribution, omission, and decomposition coverage, with the v2 compatibility boundary.
+- [Implemented Metrics v2](evaluator/IMPLEMENTED_METRICS_V2.md) — intent-group coverage and the v1-to-v2 change record. Historical: `metrics-v3` and `v4` added the claim-level block and then corrected its denominators.
+- [Implemented Metrics v3](evaluator/IMPLEMENTED_METRICS_V3.md) — claim-level statement fidelity, citation support, attribution, omission, and decomposition coverage, with the v2 compatibility boundary. Historical: superseded by v4 for new reports.
+- [Implemented Metrics v4](evaluator/IMPLEMENTED_METRICS_V4.md) — the claim eligibility contract: relevance decides whether a statement asserts anything, voided statements and voided citations are excluded with named reasons, review progress is counted apart from every rate, and the v1–v3 compatibility boundary.
 - [Benchmark Annotation Rubric](evaluator/BENCHMARK_ANNOTATION_RUBRIC.md) — how a human reviewer labels a benchmark case, and what each label does not mean.
 - [Metrics and Scoring](evaluator/METRICS_AND_SCORING.md) — formulas, denominators, interpretation, aggregation, and anti-gaming controls.
 - [Benchmarking and Validation](evaluator/BENCHMARKING_AND_VALIDATION.md) — gold sets, human review, validity, reliability, calibration, and release gates.
@@ -54,6 +56,8 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Documentation Foundation Session](agents/sessions/2026-10-28-documentation-foundation.md) — scope, decisions, outputs, validation, and follow-up.
 - [Local Core v0.1 Session](agents/sessions/2026-10-29-local-core-v0.1.md) — implementation, ADRs, tests, browser verification, CI, risks, and handoff.
 - [Local Core v0.2 Session](agents/sessions/2026-10-30-local-core-v0.2.md) — metrics v2, achievement records and exports, backup/restore, validation, limits, and handoff.
+- [Local Core v0.3 Session](agents/sessions/2026-11-01-local-core-v0.3-claim-level-evaluation.md) — answer-statement decomposition, findings and retests, the offline benchmark harness, and the six workflow steps it left unverified.
+- [Local Core v0.4 Audit and Traceability Session](agents/sessions/2026-11-02-local-core-v0.4-audit-and-traceability.md) — the route-by-route traceability map, the defect register with the fix and failing test for each, claim eligibility and metrics-v4, retest provenance, benchmark contract v2, the measured query-count and atomicity results, and the 24-step live workflow run.
 
 ## How to use the documents
 

@@ -10,9 +10,23 @@
  * This distinction is the point of the harness. A human-judgement dimension whose gold label
  * disagrees with the reviewer consensus is a methodology finding, never a code bug.
  */
+import {
+  EVIDENCE_RELATIONS,
+  SOURCE_INDEPENDENCE,
+  SOURCE_TYPES,
+  type EvidenceRelation,
+  type SourceIndependence,
+  type SourceType,
+} from '../core/vocabulary.ts';
 import { deriveEvidenceStatus, type EvidenceRelationshipRecord } from '../core/evidence.ts';
 import { computeRunMetrics, type ObservationInput, type QueryInput } from '../core/metrics.ts';
-import type { BenchmarkCase, BenchmarkDimension, RegressionResultRow } from './types.ts';
+import { permittedPropositionRelations } from '../core/claimEligibility.ts';
+import type {
+  BenchmarkCase,
+  BenchmarkDimension,
+  BenchmarkEvidenceRecord,
+  RegressionResultRow,
+} from './types.ts';
 
 /** Dimensions whose value the software itself produces. */
 export const DETERMINISTIC_DIMENSIONS: readonly BenchmarkDimension[] = ['EVIDENCE_SUPPORT'];
@@ -24,52 +38,62 @@ export const HUMAN_JUDGEMENT_DIMENSIONS: readonly BenchmarkDimension[] = [
   'ATTRIBUTION',
 ];
 
-const RELATION_SET = new Set([
-  'SUPPORTS',
-  'CONTRADICTS',
-  'QUALIFIES',
-  'CONTEXTUALIZES',
-  'DOES_NOT_ADDRESS',
-  'UNAVAILABLE',
-]);
+const RELATION_SET = new Set<string>(EVIDENCE_RELATIONS);
+const SOURCE_TYPE_SET = new Set<string>(SOURCE_TYPES);
+const INDEPENDENCE_SET = new Set<string>(SOURCE_INDEPENDENCE);
 
-const SOURCE_TYPE_SET = new Set([
-  'PRIMARY_ARTIFACT',
-  'REPRODUCIBLE_RESULT',
-  'INDEPENDENT_SOURCE',
-  'SECONDARY_REPORT',
-  'SELF_PUBLISHED',
-  'UNATTRIBUTED',
-  'OTHER',
-]);
+/**
+ * The `evidence-aggregation-v1` input for one proposition, plus anything the case recorded that the
+ * rule cannot read.
+ *
+ * `unusable` is returned rather than swallowed. Under the v1 contract the scorer silently dropped an
+ * evidence record whose vocabulary did not match, the proposition lost all its relationships, the
+ * rule produced `NOT_ASSESSED`, and a case authored with garbage still "passed" against a
+ * `NOT_ASSESSED` gold label. A dropped record is now visible at every layer that reads the result.
+ */
+export interface PropositionRelationships {
+  readonly relationships: EvidenceRelationshipRecord[];
+  readonly unusable: readonly BenchmarkEvidenceRecord[];
+}
 
-const INDEPENDENCE_SET = new Set(['INDEPENDENT', 'SELF_PUBLISHED', 'RELATED', 'UNKNOWN']);
-
-function toRelationships(benchmarkCase: BenchmarkCase, propositionId: string) {
+/**
+ * Map benchmark evidence onto the core relationship record.
+ *
+ * The underlying source identity comes from `sourceId`, which `benchmark-case-v2` requires. A v1 case
+ * has none, and the relationship id stands in — which makes every excerpt its own source and leaves
+ * the duplicate-and-syndication rule unreachable. That fallback is reported as `contract: v1` in the
+ * harness output rather than presented as a test of shared sources.
+ */
+export function toRelationships(
+  benchmarkCase: BenchmarkCase,
+  propositionId: string,
+): PropositionRelationships | null {
   const proposition = benchmarkCase.input.propositions.find((row) => row.id === propositionId);
   if (proposition === undefined) {
     return null;
   }
-  const records: EvidenceRelationshipRecord[] = [];
+  const relationships: EvidenceRelationshipRecord[] = [];
+  const unusable: BenchmarkEvidenceRecord[] = [];
   for (const evidence of proposition.evidence) {
     if (
       !RELATION_SET.has(evidence.relation) ||
       !SOURCE_TYPE_SET.has(evidence.sourceType) ||
       !INDEPENDENCE_SET.has(evidence.independence)
     ) {
-      // An unknown vocabulary value is a case-authoring failure, not a rule failure. The validator
-      // catches it earlier; this guard keeps the scorer from inventing a status.
+      // The validator refuses this pairing before scoring. Reaching here means a caller skipped it,
+      // so the record is collected and reported rather than dropped.
+      unusable.push(evidence);
       continue;
     }
-    records.push({
+    relationships.push({
       id: evidence.id,
-      relation: evidence.relation as EvidenceRelationshipRecord['relation'],
-      sourceId: evidence.id,
-      sourceType: evidence.sourceType as EvidenceRelationshipRecord['sourceType'],
-      independence: evidence.independence as EvidenceRelationshipRecord['independence'],
+      relation: evidence.relation as EvidenceRelation,
+      sourceId: evidence.sourceId ?? evidence.id,
+      sourceType: evidence.sourceType as SourceType,
+      independence: evidence.independence as SourceIndependence,
     });
   }
-  return records;
+  return { relationships, unusable };
 }
 
 /**
@@ -79,13 +103,49 @@ function toRelationships(benchmarkCase: BenchmarkCase, propositionId: string) {
 export function produceDeterministicLabels(benchmarkCase: BenchmarkCase): Map<string, string> {
   const produced = new Map<string, string>();
   for (const proposition of benchmarkCase.input.propositions) {
-    const relationships = toRelationships(benchmarkCase, proposition.id);
-    if (relationships === null) {
+    const mapped = toRelationships(benchmarkCase, proposition.id);
+    if (mapped === null) {
       continue;
     }
-    produced.set(`EVIDENCE_SUPPORT:${proposition.id}`, deriveEvidenceStatus(relationships).status);
+    produced.set(
+      `EVIDENCE_SUPPORT:${proposition.id}`,
+      deriveEvidenceStatus(mapped.relationships).status,
+    );
   }
   return produced;
+}
+
+/**
+ * The relation a statement of this relevance may record, taken from the product's own table.
+ *
+ * `NOT_ASSESSABLE_TARGET` is the fallback for a relevance outside the vocabulary: the harness must not
+ * invent a relationship the contract would refuse.
+ */
+function firstPermittedRelation(relevance: string): string {
+  const permitted = permittedPropositionRelations(relevance as never);
+  return permitted[0] ?? 'NOT_ASSESSABLE_TARGET';
+}
+
+/** Evidence records across a corpus that the deterministic rule could not read. */
+export function unusableEvidenceRecords(cases: readonly BenchmarkCase[]): {
+  readonly caseId: string;
+  readonly propositionId: string;
+  readonly evidence: BenchmarkEvidenceRecord;
+}[] {
+  const rows: {
+    readonly caseId: string;
+    readonly propositionId: string;
+    readonly evidence: BenchmarkEvidenceRecord;
+  }[] = [];
+  for (const benchmarkCase of cases) {
+    for (const proposition of benchmarkCase.input.propositions) {
+      const mapped = toRelationships(benchmarkCase, proposition.id);
+      for (const evidence of mapped?.unusable ?? []) {
+        rows.push({ caseId: benchmarkCase.id, propositionId: proposition.id, evidence });
+      }
+    }
+  }
+  return rows;
 }
 
 /**
@@ -110,11 +170,17 @@ export function produceMetricCounts(benchmarkCase: BenchmarkCase): ExpectedMetri
             queryId: 'qry_1',
             status: 'COMPLETED',
             voided: false,
-            citationCapture: benchmarkCase.input.citationCapture as 'CAPTURED',
+            // Read as recorded. Casting every value to `CAPTURED` made the inaccessible-and-
+            // unavailable stratum measure as if the metadata had been captured, which is the opposite
+            // of what the case declares.
+            citationCapture: benchmarkCase.input
+              .citationCapture as ObservationInput['citationCapture'],
             citations: benchmarkCase.input.citations.map((citation) => ({
               id: citation.id,
               targetOwned: false,
-              voided: !citation.supportsStatement,
+              // `voided` is the reviewer withdrawing the cited record. It is not the same statement as
+              // "the material does not support the answer", which is `supportsStatement: false`.
+              voided: citation.voided === true,
             })),
             assessments: [],
           },
@@ -128,17 +194,25 @@ export function produceMetricCounts(benchmarkCase: BenchmarkCase): ExpectedMetri
       observationId: 'obs_1',
       revisionId: `${statement.id}.1`,
       relevance: statement.relevance,
+      voided: false,
       fidelityLabel: undefined,
       attributionLabel: undefined,
-      citationSupports: statement.citationIds
+      citationMappings: statement.citationIds
         .map((citationId) =>
           benchmarkCase.input.citations.find((citation) => citation.id === citationId),
         )
         .filter((citation) => citation !== undefined)
-        .map((citation) => (citation.supportsStatement ? 'SUPPORTS' : 'DOES_NOT_SUPPORT')),
+        .map((citation) => ({
+          citationId: citation.id,
+          support: citation.supportsStatement ? 'SUPPORTS' : 'DOES_NOT_SUPPORT',
+          citationVoided: citation.voided === true,
+        })),
+      // The relation comes from the case's own relevance, through the same table the product uses.
+      // Hard-coding `SUPPORTS_TARGET` for every statement meant an unrelated statement entered the
+      // omission denominator, and the harness never exercised the pairing at all.
       propositionRelations: statement.propositionIds.map((propositionId) => ({
         propositionId,
-        relation: 'SUPPORTS_TARGET',
+        relation: firstPermittedRelation(statement.relevance),
       })),
     })),
   });

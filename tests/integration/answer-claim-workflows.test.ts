@@ -493,3 +493,78 @@ test('the run overview links to the statement workspace with real progress', asy
     await fixture.close();
   }
 });
+
+test('the workspace separates what was recorded from what was reviewed', async () => {
+  const fixture = await seeded();
+  try {
+    const entry = await getPage(fixture.server, workspacePath(fixture));
+    const cookie = cookieFrom(entry.response);
+    const token = csrfFrom(entry.text);
+    await postForm(fixture.server, workspacePath(fixture), cookie, token, {
+      quoteText: QUOTE,
+      statementKind: 'QUOTED',
+      offsetBasis: 'EXACT_MATCH',
+      relevance: 'ADDRESSES',
+    });
+    let workspace = await getPage(fixture.server, workspacePath(fixture), cookie);
+    const firstId = /\/claims\/(acs_[A-Za-z0-9-]+)\/assessments/.exec(workspace.text)?.[1];
+    assert.ok(firstId, 'the first statement offers no assessment form');
+    await postForm(
+      fixture.server,
+      `${workspacePath(fixture)}/${firstId}/assessments`,
+      cookie,
+      csrfFrom(workspace.text),
+      {
+        dimension: 'FIDELITY',
+        fidelityLabel: 'ACCURATE',
+        attributionLabel: 'NOT_ADDRESSED',
+        rationale: 'The recorded artifact gives the same year.',
+        reviewer: 'Ram',
+      },
+    );
+    await postForm(fixture.server, workspacePath(fixture), cookie, csrfFrom(workspace.text), {
+      quoteText: 'The artifact exists',
+      statementKind: 'QUOTED',
+      offsetBasis: 'EXACT_MATCH',
+      relevance: 'ADDRESSES',
+    });
+    workspace = await getPage(fixture.server, workspacePath(fixture), cookie);
+    // Fidelity recorded on one of two, attribution on neither, and the note says what those numbers are.
+    assert.match(
+      workspace.text,
+      /fidelity recorded on 1 of 2 live statement\(s\), attribution on 0 of 2/,
+      'the workspace does not separate recorded statements from assessed ones',
+    );
+    assert.match(
+      workspace.text,
+      /citation mappings that can support: \d+ of \d+/,
+      'the workspace does not report which citation mappings can still support anything',
+    );
+    assert.match(
+      workspace.text,
+      /not answer results/,
+      'the review-progress note reads as an answer result',
+    );
+    // A voided statement is still readable, and the note says it left the live count.
+    await postForm(
+      fixture.server,
+      `${workspacePath(fixture)}/${firstId}/void`,
+      cookie,
+      csrfFrom(workspace.text),
+      { reason: 'Recorded twice while checking the progress note.' },
+    );
+    workspace = await getPage(fixture.server, workspacePath(fixture), cookie);
+    assert.match(
+      workspace.text,
+      /fidelity recorded on 0 of 1 live statement\(s\)/,
+      'voiding a statement did not remove it from the live review count',
+    );
+    assert.match(
+      workspace.text,
+      /1 statement\(s\) on this answer were voided and stay readable/,
+      'the note stopped telling the operator that a voided statement is still there',
+    );
+  } finally {
+    await fixture.close();
+  }
+});

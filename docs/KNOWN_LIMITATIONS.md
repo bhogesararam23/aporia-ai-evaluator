@@ -1,7 +1,7 @@
 # Known Limitations and Out-of-Scope Behavior
 
-- Status: Current as of local core v0.2
-- Date: 2026-10-30
+- Status: Current as of local core v0.4
+- Date: 2026-11-02
 
 This document prevents the implementation from being mistaken for the complete product or a production-ready system. It should be updated whenever a milestone closes one of these gaps.
 
@@ -28,6 +28,7 @@ This document prevents the implementation from being mistaken for the complete p
 - No confidence intervals are computed. Samples are purposively selected and repeated responses to one query can be correlated.
 - No composite score exists. A future composite would require an ADR, calibration, missing-data policy, and misuse review.
 - Metrics cannot be generalized to all AI systems, regions, languages, or future provider behavior. Provider output is an observation under one recorded configuration.
+- The `metrics-v4` eligibility correction is a correctness fix, not validation evidence. Refusals, abstentions, ambiguities, unrelated remarks, reviewer descriptions of omissions and voided records no longer enter factual denominators, so a rate means what it claims; that still says nothing about whether reviewers classified the underlying statements well. Nothing in this repository has measured agreement between reviewers, and no accuracy figure is established or claimed.
 
 ## 4. Identity, attribution, and trust limits
 
@@ -82,7 +83,7 @@ This document prevents the implementation from being mistaken for the complete p
 
 ## 9. Missing domain entities and workflows
 
-The following data-model concepts are documented in the baseline but are not implemented in local v0.1:
+The following data-model concepts are documented in the baseline but are not implemented in any local core release through v0.4:
 
 - public achievement pages, public URLs and publication statuses (local achievement records and approved exports exist);
 - public report sharing and unguessable links;
@@ -99,6 +100,11 @@ Implemented later, with their own limits:
 - **Answer-statement decomposition** exists from v0.3 (`008_answer_claims.sql`). A statement is what a reviewer says the answer asserted: extraction is manual, the raw answer is never edited, and a statement whose quote cannot be located is stored as a reviewer description rather than as a quote.
 - Observation-level attribution still uses the v0.2 labels (`correct`, `partially correct`, `incorrect`, `not addressed`, `not assessable`). The finer distinctions — right person with the wrong role, false sole credit, collaborative or organisational contribution — exist only at statement level, so an answer-level rate cannot express them.
 - A statement-level metric appears in a report only when the answers were decomposed. Its absence means "not recorded"; it is never reported as zero, and a change in how much of the answer a reviewer decomposed is reported as context rather than as improvement.
+- **Withdrawn records are excluded, not deleted.** A voided statement stays readable with its reason, its assessments stay on the record, and both leave the current figures through a named exclusion reason. The same applies to a citation: withdrawing one keeps its mappings visible, and the report states that those mappings support nothing in the current figures. Earlier metric versions are never recalculated with these rules; a `metrics-v3` snapshot renders the numbers it was written with.
+- **`evidence-aggregation-v1` counts distinct underlying-source identifiers, not distinct sources.** Two records that share an identifier, or one record reused across propositions, collapse to one; two copies of the same material filed under different identifiers, or material recorded as `RELATED` rather than `INDEPENDENT`, still count as two and can inflate apparent corroboration. Fixing that changes a stored rule, so it needs its own version and ADR rather than an edit here.
+- **Remediation provenance is durable but local.** A comparison stores its focus metric, both runs' metric versions and the rule version, is recomputed inside its own write transaction, and a measured status is accepted only against a comparison on that finding which carries that outcome. None of this establishes that a change caused the movement; the comparison is an association between two captures, and conditions outside Aporia's view may have changed.
+- **The portable record is now `project-export-v2`.** It carries the findings, their status history and their recorded comparisons, which `v1` omitted. An export taken before this change does not contain them, so restoring an old export and expecting a backlog is a difference between the formats, not a lost record.
+- **`npm run verify:workflow` runs locally, not in CI.** It binds a loopback port and creates temporary directories. Its 25 steps were verified on Windows x64 with Node v24.13.1; they have not been run on macOS or Linux, and a hosted runner that could not bind a port would have to be recorded as not run rather than as passing.
 
 ## 10. Appropriate use of this milestone
 

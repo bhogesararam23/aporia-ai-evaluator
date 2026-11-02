@@ -1,6 +1,6 @@
 # Security, Privacy, and Data Governance
 
-## 0. Implemented local-core controls (v0.2)
+## 0. Implemented local-core controls (v0.4)
 
 The local core is a single-user, loopback-only application. It is not the target platform described below, and none of the platform controls should be assumed present.
 

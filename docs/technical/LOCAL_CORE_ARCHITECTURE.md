@@ -1,8 +1,8 @@
-# Local Core Architecture (v0.2)
+# Local Core Architecture (v0.4)
 
-- Status: Implemented and locally validated
-- Date: 2026-10-30
-- Related: ADR-008 through ADR-017
+- Status: Implemented and verified against the running application
+- Date: 2026-11-02
+- Related: ADR-008 through ADR-024
 - Scope: the runnable local application in this repository, not a production or multi-user architecture
 
 ## 1. Purpose and constraints
@@ -112,7 +112,9 @@ The key separation is that a provider observation, an evidence relationship, a h
 - claim and run transitions;
 - `deriveEvidenceStatus`, rule version `evidence-aggregation-v1`, which is a transparent precedence rule over human-recorded relationships;
 - `resolvePropositionConclusion`, which keeps a human assessment and the rule result separately visible;
-- `computeRunMetrics`, metric version `metrics-v1`, with explicit numerators, denominators, exclusions, null unknowns, and no composite score.
+- `computeRunMetrics`, observation-level rates under the current metric version, with explicit numerators, denominators, exclusions, null unknowns, and no composite score;
+- `computeClaimLevelMetrics`, metric version `metrics-v4`, which adds the statement-level block keyed `answer_*`. Its denominators come from `claimEligibility`, not from whatever label happens to be stored: relevance decides whether a statement asserts anything, so a refusal, abstention, ambiguity, unrelated remark, reviewer description of an omission, or voided record is excluded with a named reason instead of being scored. Decomposition counts and assessment counts are reported separately, so reviewer effort cannot be read as AI performance. `metrics-v1` to `v3` remain recognised versions whose stored snapshots render exactly as recorded and are never recomputed;
+- `comparabilityReasons`, rule version `comparison-rule-v2`, the only place that decides whether two runs may be compared, read by both the report and the retest workspace so the two cannot disagree about what counts as a trend.
 
 No keyword matching, language model, provider call, or heuristic is presented as AI evaluation. Human reviewers classify evidence relationships; the rule only summarizes those recorded classifications.
 
@@ -198,4 +200,4 @@ These exclusions are product and safety decisions, not hidden missing pieces. Re
 
 ## 14. Verification
 
-The implementation is exercised by unit, schema, repository, HTTP, workflow, accessibility, and report-immutability tests. See [Testing](../TESTING.md) and [Implementation Status](../IMPLEMENTATION_STATUS.md). Browser verification was performed locally against a loopback server using real form submissions; the visual check covered the empty state, project creation, claim creation, and empty report generation.
+The implementation is exercised by unit, schema, repository, HTTP, workflow, accessibility, form-action, and report-immutability tests. See [Testing](../TESTING.md) and [Implementation Status](../IMPLEMENTATION_STATUS.md). Since v0.4 the browser path is verified by `npm run verify:workflow`, which boots the server against a fresh temporary data directory and drives the whole sequence — project and entity, claim, propositions, source and evidence, reviewed conclusion, query set, run, captured answer, statement decomposition with quote verification, citation mappings, assessments, corrections and voids, finalization, reports, the offline benchmark, findings, a retest comparison, exports, then backup, verification, restore, restart and read-back — by submitting the forms the application served rather than by calling routes directly. That run found and closed four defects the suite could not see.

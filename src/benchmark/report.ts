@@ -6,7 +6,11 @@
  * report a checkable artifact rather than a screenshot of a run.
  */
 import { EVIDENCE_RULE_VERSION, METHODOLOGY_VERSION, METRICS_VERSION } from '../core/versions.ts';
-import { BENCHMARK_CASE_VERSION, BENCHMARK_STRATUM_LABELS } from './types.ts';
+import {
+  BENCHMARK_CASE_VERSION,
+  BENCHMARK_CASE_VERSION_V1,
+  BENCHMARK_STRATUM_LABELS,
+} from './types.ts';
 import type {
   AgreementRow,
   BenchmarkCase,
@@ -24,10 +28,22 @@ import { BENCHMARK_LIMITS } from './validate.ts';
 
 export const BENCHMARK_REPORT_VERSION = 'benchmark-report-v1';
 
+/**
+ * What went into the corpus, distinguished by what the digest actually covers.
+ *
+ * The v0.3 harness put pre-parse file digests and post-validation case digests into one undifferentiated
+ * array, so `digests.length` and `caseCount` disagreed for any corpus containing an invalid file, and a
+ * reader could not tell a rejected file from a scored case. `kind` says which it is, and `source` names
+ * it.
+ */
 export interface CorpusDigest {
+  readonly kind: 'file' | 'case';
+  readonly source: string;
   readonly caseCount: number;
   readonly digest: string;
   readonly bytes: number;
+  /** A file that produced no scored case, or a case the validator refused. */
+  readonly accepted: boolean;
 }
 
 export interface MetricRegressionRow {
@@ -40,9 +56,31 @@ export interface MetricRegressionRow {
   readonly matched: boolean;
 }
 
+/**
+ * Annotation agreement, per dimension.
+ *
+ * This is a human-versus-human and human-versus-gold measure, never a software-regression measure, and
+ * it is computed only over subjects with a defensible value. A subject whose reviewers disagree without
+ * a settling adjudication is excluded from the rate and counted in `excludedUnresolved`, so a clean
+ * agreement figure cannot be produced by quietly dropping the hard cases.
+ */
+export interface AnnotationSummary {
+  readonly dimension: string;
+  readonly subjects: number;
+  readonly scorable: number;
+  readonly agreeingWithGold: number;
+  readonly agreementRate: number | null;
+  readonly excludedUnresolved: number;
+  readonly excludedAmbiguous: number;
+  readonly excludedSingleReviewer: number;
+  readonly note: string;
+}
+
 export interface BenchmarkReport {
   readonly version: string;
   readonly caseFormat: string;
+  /** Contract versions actually present in the corpus, so a mixed corpus is visible. */
+  readonly caseFormatsPresent: readonly string[];
   readonly methodologyVersion: string;
   readonly metricsVersion: string;
   readonly evidenceRuleVersion: string;
@@ -59,22 +97,45 @@ export interface BenchmarkReport {
     readonly mismatches: readonly RegressionResultRow[];
     readonly metricChecks: readonly MetricRegressionRow[];
     readonly humanJudgementDimensions: readonly string[];
+    readonly unusableEvidence: readonly {
+      readonly caseId: string;
+      readonly propositionId: string;
+      readonly evidenceId: string;
+    }[];
     readonly limitations: readonly string[];
   };
   readonly methodology: {
     readonly dimensions: readonly DimensionScore[];
     readonly agreement: readonly AgreementRow[];
+    readonly annotation: readonly AnnotationSummary[];
     readonly unresolvedDisagreements: number;
+    readonly genuinelyAmbiguousSubjects: number;
+    readonly adjudicatedSubjects: number;
+    readonly subjectsWithoutTwoReviewers: number;
     readonly reviewerIdentityNote: string;
+    readonly consensusNote: string;
   };
   readonly statement: {
     readonly accuracyClaimable: boolean;
     readonly reason: string;
     readonly generalisation: string;
     readonly statistics: string;
+    /** Conditions a human owner would weigh. Reported, never used to flip `accuracyClaimable`. */
+    readonly structuralReadiness: {
+      readonly validCaseCount: number;
+      readonly subjectsWithTwoDistinctReviewers: number;
+      readonly subjectsWithout: number;
+      readonly unanimousSubjects: number;
+      readonly adjudicatedSubjects: number;
+      readonly unresolvedSubjects: number;
+      readonly genuinelyAmbiguousSubjects: number;
+      readonly unusableEvidenceRecords: number;
+      readonly legacyContractCases: number;
+    };
   };
   readonly cases: readonly {
     readonly id: string;
+    readonly version: string;
     readonly stratum: string;
     readonly dimensions: readonly string[];
     readonly reviewerCount: number;
@@ -150,15 +211,42 @@ export function buildBenchmarkReport(
   regression: readonly RegressionResultRow[],
   dimensions: readonly DimensionScore[],
   agreement: readonly AgreementRow[],
+  annotation: readonly AnnotationSummary[],
+  unusableEvidence: readonly { caseId: string; propositionId: string; evidenceId: string }[],
   digests: readonly CorpusDigest[],
 ): BenchmarkReport {
   const mismatches = regression.filter((row) => !row.matched);
   const scored = validation.caseCount;
-  const unresolved = agreement.filter((row) => row.adjudication === 'UNRESOLVED').length;
-  const accuracyClaimable = false;
+  const byStatus = (status: AgreementRow['status']): number =>
+    agreement.filter((row) => row.status === status).length;
+  const unresolved = byStatus('UNRESOLVED');
+  const genuinelyAmbiguous = byStatus('GENUINELY_AMBIGUOUS');
+  const soloReviewed = byStatus('NOT_ENOUGH_REVIEWERS');
+  const adjudicated = byStatus('RESOLVED_BY_ADJUDICATION');
+  const unanimous = byStatus('UNANIMOUS');
+  const caseVersions = [...new Set(validation.cases.map((item) => item.version))].sort();
+  const v1Cases = validation.cases.filter(
+    (item) => item.version === BENCHMARK_CASE_VERSION_V1,
+  ).length;
+  // Structural readiness, not a verdict. The harness cannot verify that two names belong to two
+  // people who reviewed independently, because the application has no authentication and the corpus
+  // file asserts whatever it asserts. So the flag stays false and the conditions a human owner would
+  // weigh are printed next to it.
+  const structuralReadiness = {
+    validCaseCount: scored,
+    subjectsWithTwoDistinctReviewers: agreement.length - soloReviewed,
+    subjectsWithout: soloReviewed,
+    unanimousSubjects: unanimous,
+    adjudicatedSubjects: adjudicated,
+    unresolvedSubjects: unresolved,
+    genuinelyAmbiguousSubjects: genuinelyAmbiguous,
+    unusableEvidenceRecords: unusableEvidence.length,
+    legacyContractCases: v1Cases,
+  };
   return {
     version: BENCHMARK_REPORT_VERSION,
     caseFormat: BENCHMARK_CASE_VERSION,
+    caseFormatsPresent: caseVersions,
     methodologyVersion: METHODOLOGY_VERSION,
     metricsVersion: METRICS_VERSION,
     evidenceRuleVersion: EVIDENCE_RULE_VERSION,
@@ -178,31 +266,44 @@ export function buildBenchmarkReport(
       mismatches,
       metricChecks: metricChecks(validation.cases),
       humanJudgementDimensions: [...HUMAN_JUDGEMENT_DIMENSIONS],
+      // Evidence the deterministic rule could not read. Reported, never dropped: a silently discarded
+      // relationship leaves the proposition looking unassessed, which can then "match" a garbage gold
+      // label and pass as a regression.
+      unusableEvidence: unusableEvidence,
       limitations: regressionLimitations(),
     },
     methodology: {
       dimensions,
       agreement,
+      annotation,
       unresolvedDisagreements: unresolved,
+      genuinelyAmbiguousSubjects: genuinelyAmbiguous,
+      adjudicatedSubjects: adjudicated,
+      subjectsWithoutTwoReviewers: soloReviewed,
       reviewerIdentityNote:
         'Reviewer identifiers in a case file are operator-asserted labels. Local core has no authentication, so agreement between two labels is not proof of independent review.',
+      consensusNote:
+        'No consensus is inferred. A unanimous set of reviewer labels is reported as agreement; a disagreement stays unresolved until an adjudication names the subject it settles and the label it chose. The harness never selects a label to manufacture a consensus.',
     },
     statement: {
-      accuracyClaimable,
+      accuracyClaimable: false,
       reason:
         scored === 0
           ? 'The corpus holds no valid case, so no accuracy claim of any kind is supportable.'
-          : 'A framework producing numbers over a small purposive corpus is not a validated accuracy result. Accuracy requires a corpus whose provenance, authorisation, and human review are demonstrable, and a stated sampling method.',
+          : 'These are framework results over the cases supplied. Accuracy would require a corpus whose provenance, authorisation and human review are demonstrable from outside the file, plus a stated sampling method; the application cannot establish any of that, because reviewer identity in a case file is operator-asserted.',
       generalisation:
         'Results describe the cases supplied. They do not extend to other providers, models, languages, regions, or future provider behaviour.',
       statistics:
         'No confidence interval, calibration, or significance test is computed. Sample sizes here are too small and too selective to justify one.',
+      structuralReadiness,
     },
     cases: validation.cases.map((benchmarkCase) => ({
       id: benchmarkCase.id,
+      version: benchmarkCase.version,
       stratum: benchmarkCase.stratum,
       dimensions: [...new Set(benchmarkCase.expected.map((expected) => expected.dimension))].sort(),
-      reviewerCount: new Set(benchmarkCase.reviewerLabels.map((label) => label.reviewer)).size,
+      reviewerCount: new Set((benchmarkCase.reviewerLabels ?? []).map((label) => label.reviewer))
+        .size,
       limitations: benchmarkCase.limitations,
     })),
   };

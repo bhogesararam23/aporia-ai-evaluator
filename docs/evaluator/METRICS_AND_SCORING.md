@@ -3,6 +3,27 @@
 - Status: Definitions proposed; calibrate through validation before public scoring.
 - Principle: Report individual metrics before considering any composite indicator.
 
+## 0.5 What is computed today, and what is not
+
+Local core v0.4 computes the observation-level rates (mention, target-source and any-source citation,
+citation support, claim fidelity, attribution correctness, observed answer coverage by query-intent group)
+under `metrics-v4`, and the statement-level block keyed `answer_*` — statement fidelity, contradiction,
+unsupported, citation support, attribution correctness, relevant omission, and decomposition coverage —
+each with its numerator, denominator, exclusions and null state rendered beside it. There is still no
+composite indicator of any kind, and none is planned without an ADR, calibration, a missing-data policy
+and a misuse review.
+
+The part that matters most for honesty is the denominator rule. A statement enters a factual rate only if
+its recorded relevance says it asserts something about the target; otherwise it is excluded with the
+reason named (`CLAIM_VOIDED`, `CLAIM_UNRELATED`, `CLAIM_AMBIGUOUS`, `CLAIM_ABSTENTION`,
+`CLAIM_LABEL_CONFLICTS_WITH_RELEVANCE`, `CLAIM_CITATION_VOIDED`, `CLAIM_CITATION_NON_ASSERTING`,
+`CLAIM_OMISSION_NON_ENGAGING`). A refusal is never an inaccurate factual statement, an omission is never
+a false assertion, and a change in how thoroughly a reviewer decomposed the answers is reported as review
+progress, never as a change in AI performance. `metrics-v1` to `v3` snapshots keep the figures they were
+written with and are never recalculated under these rules. No accuracy, calibration or agreement figure is
+established or claimed anywhere in this repository, because no reviewed corpus exists. See
+[Implemented metrics v4](IMPLEMENTED_METRICS_V4.md).
+
 ## 1. Evaluation eligibility
 
 Each metric needs a defined eligible test set. A test is eligible only if the query was executed successfully under the intended configuration and the output is available for scoring. Provider errors, blocked requests, rate-limit responses, and unavailable models are not negative mention results. Report planned count, completed count, excluded count, and exclusion reasons.

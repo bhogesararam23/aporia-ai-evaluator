@@ -1,6 +1,6 @@
 # Implemented Metrics v3 — Claim-Level Answer Evaluation
 
-- Status: Implemented in local core v0.3; validated by `tests/unit/claim-metrics.test.ts`
+- Status: Historical. Implemented in local core v0.3 and validated by `tests/unit/claim-metrics.test.ts`; superseded for new reports by [Implemented Metrics v4](IMPLEMENTED_METRICS_V4.md), which closes the eligibility defects recorded in ADR-023
 - Date: 2026-11-01
 - Version string: `metrics-v3`
 - Related: [Implemented Metrics v2](IMPLEMENTED_METRICS_V2.md), [Evaluator Methodology](EVALUATOR_METHODOLOGY.md), [ADR-018](../agents/adrs/ADR-018-answer-claim-decomposition.md), [ADR-019](../agents/adrs/ADR-019-metrics-v3-claim-level.md)
@@ -15,7 +15,7 @@ This document records the exact numerators, denominators, exclusions, and unknow
 | --- | --- | --- |
 | `metrics-v1` | Observation-level rates with coverage counted per query row | Historical. Stored snapshots render their own numbers. |
 | `metrics-v2` | Same, with coverage counted per query-intent group (ADR-014) | Historical for new reports; stored snapshots unchanged. |
-| `metrics-v3` | `metrics-v2` output, plus an optional `claimLevel` block | Current. |
+| `metrics-v3` | `metrics-v2` output, plus an optional `claimLevel` block | Historical for new reports. Its claim-level denominators were driven by the stored label alone, so a refusal carrying an `ACCURATE` assessment was counted as an accurate statement; [v4](IMPLEMENTED_METRICS_V4.md) closes this. Stored snapshots are unchanged. |
 
 No `metrics-v2` field was renamed, removed, or redefined to produce `metrics-v3`. A stored snapshot
 is rendered from the JSON written with it and is never recomputed, so a report generated under

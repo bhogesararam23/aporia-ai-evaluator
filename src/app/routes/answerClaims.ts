@@ -29,11 +29,14 @@ import {
 import type { ValidationIssue } from '../../core/validation.ts';
 import { requiredText } from '../../core/validation.ts';
 import {
+  citationMappingRelevance,
   createAnswerClaim,
   currentClaimLabels,
+  currentClaimRelevance,
   getAnswerClaimWorkspace,
   linkAnswerClaimCitation,
   linkAnswerClaimProposition,
+  propositionLinkRelevance,
   recordAnswerClaimAssessment,
   reviseAnswerClaim,
   supersedeAnswerClaimCitation,
@@ -149,7 +152,44 @@ function answerPanel(workspace: AnswerClaimWorkspace, target: Target): Html {
         'Target propositions available',
         html`<span>${plural(workspace.propositions.length, 'proposition')}</span>`,
       )}
+      ${reviewProgressNote(workspace)}
     </section>
+  `;
+}
+
+function reviewProgressNote(workspace: AnswerClaimWorkspace): Html {
+  // §2.5: how much of an answer has been reviewed is a fact about the reviewer, not about the AI. The
+  // report carries the same split; this is where the operator is while doing the reviewing, so the two
+  // must not tell different stories. Nothing here is presented as a rate, and a statement that has not
+  // been assessed yet is described as unrecorded rather than as a failure.
+  const live = workspace.claims.filter((claim) => claim.voidedAt === null);
+  const labels = live.map((claim) => currentClaimLabels(claim));
+  const fidelity = labels.filter((entry) => entry.FIDELITY !== undefined).length;
+  const attribution = labels.filter((entry) => entry.ATTRIBUTION !== undefined).length;
+  const withdrawn = new Set(
+    workspace.citations.filter((citation) => citation.voided).map((citation) => citation.id),
+  );
+  const mappings = live.flatMap((claim) =>
+    claim.citationLinks.filter((link) => link.supersededBy === null),
+  );
+  const countable = mappings.filter((link) => !withdrawn.has(link.citationId)).length;
+  const voided = workspace.claims.length - live.length;
+  return html`
+    ${definitionRow(
+      'Review progress',
+      html`<span
+        >${`fidelity recorded on ${String(fidelity)} of ${String(live.length)} live statement(s), attribution on ${String(attribution)} of ${String(live.length)}, citation mappings that can support: ${String(countable)} of ${String(mappings.length)}.`}
+      </span>`,
+    )}
+    <p class="field-help">
+      These count how much of the answer has been reviewed. They are not answer results, and a
+      statement nobody has assessed yet leaves the figures rather than counting against the
+      answer.${
+        voided > 0
+          ? html` ${String(voided)} statement(s) on this answer were voided and stay readable above.`
+          : ''
+      }
+    </p>
   `;
 }
 
@@ -255,7 +295,7 @@ function addStatementForm(target: Target, state: FormState): Html {
 function reviseStatementForm(claim: AnswerClaimRecord, target: Target, state: FormState): Html {
   const { issues, values } = state;
   const revision = claim.currentRevision;
-  const action = `${claimPath(claim, target)}/${claim.id}/revise`;
+  const action = `${claimPath(claim, target)}/revise`;
   return html`
     <form method="post" action="${action}">
       ${csrfField(target.csrf)}
@@ -328,7 +368,7 @@ function propositionLinkForm(
     </p>`;
   }
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/propositions">
+    <form method="post" action="${claimPath(claim, target)}/propositions">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'propositionId',
@@ -405,7 +445,7 @@ function citationLinkForm(
     return html`<p class="muted">No unmapped citation remains for this answer.</p>`;
   }
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/citations">
+    <form method="post" action="${claimPath(claim, target)}/citations">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'citationId',
@@ -455,7 +495,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
   const { issues, values } = state;
   const key = `${claim.id}-assess`;
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/assessments">
+    <form method="post" action="${claimPath(claim, target)}/assessments">
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'dimension',
@@ -527,7 +567,7 @@ function voidStatementForm(claim: AnswerClaimRecord, target: Target, state: Form
   const { issues, values } = state;
   const key = `${claim.id}-void`;
   return html`
-    <form method="post" action="${claimPath(claim, target)}/${claim.id}/void">
+    <form method="post" action="${claimPath(claim, target)}/void">
       ${csrfField(target.csrf)}
       ${textareaField({
         name: 'reason',
@@ -547,7 +587,6 @@ function voidStatementForm(claim: AnswerClaimRecord, target: Target, state: Form
 function linkRow(
   link: ClaimPropositionLinkRecord,
   workspace: AnswerClaimWorkspace,
-  claim: AnswerClaimRecord,
   target: Target,
   state: FormState,
 ): Html {
@@ -568,7 +607,7 @@ function linkRow(
         target.writable
           ? html`<form
               method="post"
-              action="${claimPath(claim, target)}/propositions/${link.id}/supersede"
+              action="${claimsPath(target)}/propositions/${link.id}/supersede"
             >
               ${csrfField(target.csrf)}
               <input type="hidden" name="propositionId" value="${link.propositionId}" />
@@ -608,7 +647,6 @@ function linkRow(
 function citationRow(
   link: ClaimCitationLinkRecord,
   workspace: AnswerClaimWorkspace,
-  claim: AnswerClaimRecord,
   target: Target,
   state: FormState,
 ): Html {
@@ -633,10 +671,7 @@ function citationRow(
       <p class="muted">${link.rationale} — ${link.reviewer}, ${formatDateTime(link.createdAt)}</p>
       ${
         target.writable
-          ? html`<form
-              method="post"
-              action="${claimPath(claim, target)}/citations/${link.id}/supersede"
-            >
+          ? html`<form method="post" action="${claimsPath(target)}/citations/${link.id}/supersede">
               ${csrfField(target.csrf)}
               <input type="hidden" name="citationId" value="${link.citationId}" />
               ${selectField({
@@ -806,7 +841,7 @@ function claimPanel(
               qualifies, or omits a specific target.
             </p>`
           : html`<ul class="claim-links">
-              ${activePropositions.map((link) => linkRow(link, workspace, claim, target, state))}
+              ${activePropositions.map((link) => linkRow(link, workspace, target, state))}
             </ul>`
       }
       ${
@@ -825,7 +860,7 @@ function claimPanel(
               None mapped. A statement without a citation is an absence, not a citation failure.
             </p>`
           : html`<ul class="claim-links">
-              ${activeCitations.map((link) => citationRow(link, workspace, claim, target, state))}
+              ${activeCitations.map((link) => citationRow(link, workspace, target, state))}
             </ul>`
       }
       ${
@@ -895,7 +930,7 @@ function reportContributionPanel(workspace: AnswerClaimWorkspace): Html {
         </li>
         <li>
           Statement figures only appear in a report generated as
-          <code>metrics-v3</code>. An older report keeps the numbers it was generated with.
+          <code>metrics-v4</code>. An older report keeps the numbers it was generated with.
         </li>
         <li>
           Decomposition coverage is published next to every statement-level rate, because those
@@ -1112,7 +1147,10 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
-      const result = validateClaimPropositionLinkInput(rawFields(context));
+      // The relevance is read from the stored statement rather than the form, so a tampered or stale
+      // field cannot present a pairing the record does not support.
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateClaimPropositionLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1137,7 +1175,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const linkId = context.params['linkId'] ?? '';
-      const result = validateClaimPropositionLinkInput(rawFields(context));
+      const relevance = propositionLinkRelevance(context.deps.db, projectId, linkId);
+      const result = validateClaimPropositionLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1164,7 +1203,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const linkId = context.params['linkId'] ?? '';
-      const result = validateClaimCitationLinkInput(rawFields(context));
+      const relevance = citationMappingRelevance(context.deps.db, projectId, linkId);
+      const result = validateClaimCitationLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1189,7 +1229,8 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const runId = context.params['runId'] ?? '';
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
-      const result = validateClaimCitationLinkInput(rawFields(context));
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateClaimCitationLinkInput(rawFields(context), relevance);
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }
@@ -1215,13 +1256,17 @@ export const answerClaimRoutes: RouteDefinition[] = [
       const observationId = context.params['observationId'] ?? '';
       const claimId = context.params['claimId'] ?? '';
       const dimension = context.fields.get('dimension') ?? 'FIDELITY';
-      const result = validateAnswerClaimAssessmentInput({
-        ...rawFields(context),
-        label:
-          dimension === 'FIDELITY'
-            ? context.fields.get('fidelityLabel')
-            : context.fields.get('attributionLabel'),
-      });
+      const relevance = currentClaimRelevance(context.deps.db, projectId, claimId);
+      const result = validateAnswerClaimAssessmentInput(
+        {
+          ...rawFields(context),
+          label:
+            dimension === 'FIDELITY'
+              ? context.fields.get('fidelityLabel')
+              : context.fields.get('attributionLabel'),
+        },
+        relevance,
+      );
       if (!result.ok) {
         return fail(context, projectId, runId, observationId, formState(context, result.issues));
       }

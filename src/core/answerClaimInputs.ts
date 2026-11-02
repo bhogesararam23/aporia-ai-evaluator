@@ -8,7 +8,9 @@ import {
   isClaimFidelityLabel,
   type AnswerOffsetBasis,
   type AnswerStatementKind,
+  type ClaimAttributionLabel,
   type ClaimCitationSupportLabel,
+  type ClaimFidelityLabel,
   type ClaimPropositionRelation,
   type ClaimRelevance,
 } from './answerClaims.ts';
@@ -21,6 +23,37 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from './validation.ts';
+import {
+  isAttributionConsistentWithRelevance,
+  isFidelityConsistentWithRelevance,
+  isKnownRelevance,
+  isRelationConsistentWithRelevance,
+  isSupportConsistentWithRelevance,
+  permittedAttributionLabels,
+  permittedCitationSupportLabels,
+  permittedFidelityLabels,
+  permittedPropositionRelations,
+} from './claimEligibility.ts';
+
+/**
+ * Guard on the relevance recorded on the statement being assessed or linked.
+ *
+ * Every cross-axis check needs it, and a missing value is refused rather than guessed at: an
+ * unchecked pairing is exactly how a refusal came to be scored as an accurate statement in
+ * `metrics-v3`.
+ */
+function relevanceGuard(relevance: string | null | undefined): ValidationIssue[] {
+  if (typeof relevance !== 'string' || relevance.length === 0 || !isKnownRelevance(relevance)) {
+    return [
+      {
+        field: 'relevance',
+        message:
+          'The statement has no recognised relevance recorded, so nothing can be checked against it. Save the statement with a relevance first.',
+      },
+    ];
+  }
+  return [];
+}
 
 export interface AnswerClaimDraftInput {
   readonly quoteText: string;
@@ -295,7 +328,6 @@ export function validateAnswerClaimRevisionInput(
 ): ValidationResult<AnswerClaimDraftInput> {
   return validateAnswerClaimDraftInput(raw, answerText);
 }
-
 export interface ClaimPropositionLinkInput {
   readonly propositionId: string;
   readonly relation: ClaimPropositionRelation;
@@ -303,8 +335,16 @@ export interface ClaimPropositionLinkInput {
   readonly reviewer: string;
 }
 
+/**
+ * Validate a statement-to-proposition link against the relevance already recorded on that statement.
+ *
+ * The pair is the unit of review: relevance says how the answer engages the target and relation says
+ * how it engages *this* proposition. An inconsistent pair is a recording error rather than a
+ * judgement, so it is refused here, checked again in the repository, and enforced by a trigger.
+ */
 export function validateClaimPropositionLinkInput(
   raw: Record<string, unknown>,
+  relevance: string | null | undefined,
 ): ValidationResult<ClaimPropositionLinkInput> {
   const issues: ValidationIssue[] = [];
   const read = <T>(result: ValidationResult<T>): T => {
@@ -314,12 +354,24 @@ export function validateClaimPropositionLinkInput(
     issues.push(...result.issues);
     return undefined as T;
   };
+  issues.push(...relevanceGuard(relevance));
   const propositionId = read(requiredText(raw['propositionId'], 'propositionId', { max: 120 }));
   const relation = read(enumValue(raw['relation'], 'relation', CLAIM_PROPOSITION_RELATIONS));
   const rationale = read(
     requiredText(raw['rationale'], 'rationale', { max: 4000, multiline: true }),
   );
   const reviewer = read(requiredText(raw['reviewer'], 'reviewer', { max: 80 }));
+  if (
+    relation !== undefined &&
+    relevance !== undefined &&
+    isKnownRelevance(relevance) &&
+    !isRelationConsistentWithRelevance(relevance, relation)
+  ) {
+    issues.push({
+      field: 'relation',
+      message: `A statement recorded as “${relevance}” cannot also be linked as “${relation}”. ${permittedPropositionRelations(relevance).join(', ')} are the relationships this relevance supports. If the statement does assert the target, correct its relevance instead.`,
+    });
+  }
   if (issues.length > 0) {
     return { ok: false, issues };
   }
@@ -333,8 +385,16 @@ export interface ClaimCitationLinkInput {
   readonly reviewer: string;
 }
 
+/**
+ * Validate a statement-to-citation mapping against the statement's relevance.
+ *
+ * Cited material can only support an assertion. A mapping that records definitive support against a
+ * refusal, an omission or an unrelated statement is refused rather than allowed to enter a
+ * denominator, because that is the same class of error the citation-void rule closes.
+ */
 export function validateClaimCitationLinkInput(
   raw: Record<string, unknown>,
+  relevance: string | null | undefined,
 ): ValidationResult<ClaimCitationLinkInput> {
   const issues: ValidationIssue[] = [];
   const read = <T>(result: ValidationResult<T>): T => {
@@ -344,12 +404,24 @@ export function validateClaimCitationLinkInput(
     issues.push(...result.issues);
     return undefined as T;
   };
+  issues.push(...relevanceGuard(relevance));
   const citationId = read(requiredText(raw['citationId'], 'citationId', { max: 120 }));
   const support = read(enumValue(raw['support'], 'support', CLAIM_CITATION_SUPPORT_LABELS));
   const rationale = read(
     requiredText(raw['rationale'], 'rationale', { max: 4000, multiline: true }),
   );
   const reviewer = read(requiredText(raw['reviewer'], 'reviewer', { max: 80 }));
+  if (
+    support !== undefined &&
+    relevance !== undefined &&
+    isKnownRelevance(relevance) &&
+    !isSupportConsistentWithRelevance(relevance, support)
+  ) {
+    issues.push({
+      field: 'support',
+      message: `A statement recorded as “${relevance}” asserts nothing, so no cited material can support it. ${permittedCitationSupportLabels(relevance).join(', ')} are the assessments this relevance supports. If the statement does assert something, correct its relevance instead.`,
+    });
+  }
   if (issues.length > 0) {
     return { ok: false, issues };
   }
@@ -366,11 +438,19 @@ export interface AnswerClaimAssessmentInput {
 }
 
 /**
+ * Validate a fidelity or attribution assessment against the relevance recorded on the statement.
+ *
  * Citation support is deliberately absent here. It is assessed on the claim-to-citation mapping,
  * because one statement can be supported by one citation and contradicted by another.
+ *
+ * Relevance is authoritative on whether an assertion was made, so a definitive label cannot be
+ * recorded against a refusal, an abstention, an omission, an unrelated or an ambiguous statement.
+ * Refusing the pairing at the form is what keeps the metric block from having to report a conflict
+ * it could have prevented.
  */
 export function validateAnswerClaimAssessmentInput(
   raw: Record<string, unknown>,
+  relevance: string | null | undefined,
 ): ValidationResult<AnswerClaimAssessmentInput> {
   const issues: ValidationIssue[] = [];
   const read = <T>(result: ValidationResult<T>): T => {
@@ -380,6 +460,7 @@ export function validateAnswerClaimAssessmentInput(
     issues.push(...result.issues);
     return undefined as T;
   };
+  issues.push(...relevanceGuard(relevance));
   const dimension = read(
     enumValue(raw['dimension'], 'dimension', ['FIDELITY', 'ATTRIBUTION'] as const),
   );
@@ -395,9 +476,18 @@ export function validateAnswerClaimAssessmentInput(
   );
 
   const label = read(requiredText(raw['label'], 'label', { max: 80 }));
+  const relevanceKnown = typeof relevance === 'string' && isKnownRelevance(relevance);
   if (dimension === 'FIDELITY') {
     if (!isClaimFidelityLabel(label)) {
       issues.push({ field: 'label', message: 'The label is not a claim fidelity label.' });
+    } else if (relevanceKnown) {
+      const asRelevance = relevance as ClaimRelevance;
+      if (!isFidelityConsistentWithRelevance(asRelevance, label as ClaimFidelityLabel)) {
+        issues.push({
+          field: 'label',
+          message: `A statement recorded as “${asRelevance}” makes no assertion the ${label} verdict could describe. ${permittedFidelityLabels(asRelevance).join(', ')} are the assessments this relevance supports. If the statement does assert something, correct its relevance instead.`,
+        });
+      }
     }
     if (attributionSubject !== undefined || attributionRole !== undefined) {
       issues.push({
@@ -408,6 +498,14 @@ export function validateAnswerClaimAssessmentInput(
   } else if (dimension === 'ATTRIBUTION') {
     if (!isClaimAttributionLabel(label)) {
       issues.push({ field: 'label', message: 'The label is not a claim attribution label.' });
+    } else if (relevanceKnown) {
+      const asRelevance = relevance as ClaimRelevance;
+      if (!isAttributionConsistentWithRelevance(asRelevance, label as ClaimAttributionLabel)) {
+        issues.push({
+          field: 'label',
+          message: `A statement recorded as “${asRelevance}” credits no contribution. ${permittedAttributionLabels(asRelevance).join(', ')} are the assessments this relevance supports. If the statement does credit someone, correct its relevance instead.`,
+        });
+      }
     }
     if (label !== 'NOT_ADDRESSED' && attributionSubject === undefined) {
       issues.push({

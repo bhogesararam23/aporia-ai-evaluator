@@ -121,7 +121,7 @@ test('exports project JSON and confirms destructive deletion', async () => {
     assert.match(exported.headers.get('content-type') ?? '', /application\/json/);
     assert.match(exported.headers.get('content-disposition') ?? '', /attachment/);
     const data = (await exported.json()) as Record<string, unknown>;
-    assert.equal(data['schemaVersion'], 'project-export-v1');
+    assert.equal(data['schemaVersion'], 'project-export-v2');
     assert.equal((data['project'] as Record<string, unknown>)['name'], 'Exportable project');
     const activity = await getPage(server, `${projectLocation}/activity`, newProject.cookie);
     assert.match(activity.text, /project.exported/);

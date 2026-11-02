@@ -8,9 +8,11 @@ Aporia does **not** promise that any provider will crawl, index, retain, recomme
 
 ## Project status
 
-**Local core v0.2 is implemented and locally validated.** It is a single-operator, loopback-only application with durable SQLite storage, a complete claim-to-report workflow, local HTML analysis, manual AI-answer capture, transparent metrics v2, immutable reports, evidence-linked achievement records with explicit approval and safe local HTML/JSON-LD export, and validated offline backup/restore.
+**Local core v0.4 is implemented and verified against the running application.** It is a single-operator, loopback-only application with durable SQLite storage, a complete claim-to-report workflow, local HTML analysis, manual AI-answer capture, transparent metrics v4, immutable reports that keep earlier metric versions readable exactly as stored, evidence-linked achievement records with explicit approval and safe local HTML/JSON-LD export, tracked remediation findings whose measured statuses are bound to the specific retest comparison that justified them, an offline benchmark harness, and validated offline backup/restore.
 
-**Not implemented and intentionally out of scope for this milestone:** provider/LLM/search integrations, API keys, remote URL fetching, crawling, remote publishing or public achievement pages, accounts, multi-tenancy, OAuth, billing, analytics, background jobs, and seeded demo data. Achievement records and approved exports are local files; they are not published. The application is not production-ready, independently audited, or validated against a provider. See [Known Limitations](docs/KNOWN_LIMITATIONS.md) and [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
+`npm run verify:workflow` starts the real server against a fresh temporary data directory and works through the whole sequence by submitting the forms the application serves — project and target entity, claim and revisions, propositions, sources and evidence, reviewed conclusions, query sets, runs, captured answers, statement decomposition with quote verification, citation mappings, fidelity and attribution assessments, corrections and voids, finalization, reports and their claim-level figures, the offline benchmark, findings, a retest comparison, exports, then backup, verification, restore and a read-back of everything. It exits zero only when every step passed; a step that could not run is reported as unverified rather than skipped. That run is what exposed four defects the test suite could not see, because the suite composed URLs itself instead of reading the pages: two sets of workspace forms posted to paths that returned 404, a withdrawn citation's reason was stored but never displayed, and the project export omitted the entire remediation backlog.
+
+**Not implemented and intentionally out of scope for this milestone:** provider/LLM/search integrations, API keys, remote URL fetching, crawling, remote publishing or public achievement pages, accounts, multi-tenancy, OAuth, billing, analytics, background jobs, and seeded demo data. Achievement records and approved exports are local files; they are not published. The evaluator has no reviewed benchmark corpus, so no accuracy figure is established or claimed; the harness reports structural readiness only. The application is not production-ready, independently audited, or validated against a provider. See [Known Limitations](docs/KNOWN_LIMITATIONS.md) and [Implementation Status](docs/IMPLEMENTATION_STATUS.md).
 
 The documentation baseline remains the requirements source of truth. Implementation status is tracked in the repository, not inferred from the presence of a specification.
 
@@ -53,12 +55,13 @@ npm run dev
 - **Query sets:** versioned, reviewable, approved/frozen sets and clone-for-retest versions.
 - **Manual runs:** declared provider/model/interface/grounding/locale/region conditions; exact prompt snapshots; raw answers entered or imported by JSON; citation metadata with unavailable states; open/finalized/cancelled lifecycle.
 - **Assessments:** separate presence, fidelity, citation-support, and attribution assessments with append-only versions and reviewer rationale.
-- **Metrics v2:** mention rate, target-source and any-source citation rates, citation support, claim fidelity, attribution correctness, and observed answer-level coverage by query-intent group, with repeated intents counted once, untested and partially assessed groups visible, explicit numerators/denominators/exclusions, and `null` unknowns. No composite score; stored v1 reports remain readable.
+- **Metrics v4:** observation-level mention rate, target-source and any-source citation rates, citation support, claim fidelity, attribution correctness, and observed answer-level coverage by query-intent group, with repeated intents counted once, untested and partially assessed groups visible, explicit numerators/denominators/exclusions, and `null` unknowns. Statement-level rates are counted only for statements the recorded relevance says are making an assertion: a refusal, an abstention, an ambiguity, an unrelated remark, or a voided record never enters a factual denominator, and an omission is never scored as a false assertion. Each excluded statement is named with its reason, and review progress is reported beside the rates so reviewer effort cannot be read as AI performance. No composite score; stored v1, v2 and v3 reports keep rendering their own recorded figures and are never recomputed under newer semantics.
 - **Local HTML audits:** paste or upload HTML; inspect title, robots meta, canonical, JSON-LD alignment, headings, author/date signals, links, alt text, and parser issues. No network request, script execution, or crawler is used. Network-dependent checks are reported as unavailable.
-- **Reports:** immutable snapshots built from persisted records, with scope, method, coverage, claims/evidence, audits, runs, metric definitions/exclusions, comparisons, remediation suggestions, limitations, and unavailable checks. JSON, metrics CSV, findings CSV, observations CSV, and local audit JSON exports; export actions are audited.
+- **Reports:** immutable snapshots built from persisted records, with scope, method, coverage, claims/evidence, audits, runs, metric definitions/exclusions, comparisons, remediation suggestions, limitations, and unavailable checks. JSON, metrics CSV, findings CSV, observations CSV, and local audit JSON exports; export actions are audited. An older snapshot is marked superseded and stays readable with the numbers it was written under.
+- **Remediation and retesting:** findings with severity, cause, references and an append-only history; retest comparisons recomputed from the two stored finalized runs inside the write transaction, with the chosen focus metric, both metric versions and the comparison rule version persisted beside them; comparability decided by one shared rule; and a measured status accepted only when the cited comparison belongs to that finding and carries that outcome.
 - **Achievement records:** project-scoped immutable revisions built from real claims, current claim evidence states, contributor roles and support states, dates, project details, selected sources/excerpts, and unresolved contradictions. Draft previews; explicit current-revision approval bound to the content hash; revision history; approved HTML and schema.org JSON-LD downloads checked against visible content. No publication route.
 - **Backup and restore:** `npm run backup` creates a validated, consistent SQLite snapshot and manifest; `npm run restore` validates before replacement, requires explicit overwrite confirmation, creates a safety backup, and rolls back on failure. Backups are local and unencrypted.
-- **Data control:** project JSON export, typed-name deletion, local audit trail, and no telemetry or provider calls.
+- **Data control:** project JSON export (`project-export-v2`, which carries the remediation backlog with its recorded comparisons alongside claims, sources, runs, audits, reports and achievements), typed-name deletion, local audit trail, and no telemetry or provider calls.
 
 ## Commands
 
@@ -71,6 +74,8 @@ npm run lint           # ESLint
 npm run format:check   # Prettier check
 npm run check:boundaries
 npm run check          # all gates in sequence
+npm run verify:workflow # drive the whole local workflow against a running server and a fresh temp data dir
+npm run benchmark -- --corpus <dir>  # offline benchmark over your own reviewed cases
 npm run backup -- --data-dir ./data    # validated local backup
 npm run restore -- <backup-dir> --data-dir ./data   # stop the server first
 ```
@@ -84,7 +89,7 @@ Browser
   -> node:http loopback server (Host/Origin/CSRF/body limits)
   -> app routes and core input validation
   -> SQLite repositories and append-only audit events
-  -> evaluator core (pure evidence rule + metrics v2)
+  -> evaluator core (pure evidence rule, claim eligibility, metrics v4)
   -> immutable report snapshot and achievement revisions
   -> HTML / JSON / CSV / achievement HTML + JSON-LD exports
   -> offline validated backup/restore

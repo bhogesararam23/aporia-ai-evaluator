@@ -30,12 +30,20 @@ import type {
 export const REPORT_SCHEMA_VERSION = 'report-snapshot-v1';
 /**
  * v3 adds the statement-level section (`metrics-v3`) and tracked remediation findings (ADR-021).
- * v1 and v2 snapshots are still rendered from their stored JSON and are never recomputed.
+ * v4 adds the claim eligibility contract (ADR-023): every statement is now passed to the metrics
+ * with its own void state and its citations' void state, and the block carries review-progress
+ * counts under names that describe the work they measure.
+ *
+ * v1, v2 and v3 snapshots are still rendered from their stored JSON and are never recomputed. A v3
+ * snapshot has no `voided` or `citationMappings` on its statements and no
+ * `partiallyAssessedObservations`, which is why those fields are optional here rather than absent by
+ * oversight: the shape describes what was stored, not only what this build writes.
  */
-export const REPORT_TEMPLATE_VERSION = 'report-template-v3';
+export const REPORT_TEMPLATE_VERSION = 'report-template-v4';
 export const KNOWN_REPORT_TEMPLATE_VERSIONS = [
   'report-template-v1',
   'report-template-v2',
+  'report-template-v3',
   REPORT_TEMPLATE_VERSION,
 ] as const;
 
@@ -197,6 +205,13 @@ export interface ReportAnswerClaimPropositionInput {
   readonly relation: ClaimPropositionRelation | string;
 }
 
+export interface ReportAnswerClaimCitationInput {
+  readonly citationId: string;
+  readonly support: ClaimCitationSupportLabel;
+  /** Whether the cited record itself has been voided, which decides whether the mapping scores. */
+  readonly citationVoided: boolean;
+}
+
 /**
  * One recorded answer statement as the report sees it: the current revision only, with the active
  * links and the latest label per assessment dimension. Superseded revisions stay in the database
@@ -216,7 +231,16 @@ export interface ReportAnswerClaimInput {
   readonly relevance: ClaimRelevance | string;
   readonly paraphrase: string | null;
   readonly propositionLinks: readonly ReportAnswerClaimPropositionInput[];
-  readonly citationSupports: readonly ClaimCitationSupportLabel[];
+  /**
+   * Added with `metrics-v4`: each mapping carries the state of the cited record, so a mapping to a
+   * citation voided after the fact stops counting as support without being deleted.
+   */
+  readonly citationMappings?: readonly ReportAnswerClaimCitationInput[];
+  /**
+   * A `metrics-v1` to `metrics-v3` snapshot stores the support labels on their own, without the
+   * cited record's state. Kept optional so an old report renders exactly what it recorded.
+   */
+  readonly citationSupports?: readonly ClaimCitationSupportLabel[];
   readonly labels: Readonly<Partial<Record<ClaimDimension, string>>>;
   readonly voidedAt: string | null;
 }

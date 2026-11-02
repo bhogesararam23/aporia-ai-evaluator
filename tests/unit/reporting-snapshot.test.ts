@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildReportSnapshot } from '../../src/reporting/snapshot.ts';
+import { REPORT_TEMPLATE_VERSION } from '../../src/reporting/types.ts';
+import { METRICS_VERSION } from '../../src/core/versions.ts';
 import { baseInput, observation, runInput } from '../helpers/reporting.ts';
 
 test('builds a reproducible snapshot with separate evidence conclusions', () => {
   const snapshot = buildReportSnapshot(baseInput());
   assert.equal(snapshot.schemaVersion, 'report-snapshot-v1');
-  assert.equal(snapshot.templateVersion, 'report-template-v3');
+  assert.equal(snapshot.templateVersion, REPORT_TEMPLATE_VERSION);
   assert.equal(snapshot.report.number, 1);
-  assert.equal(snapshot.report.metricsVersion, 'metrics-v3');
+  assert.equal(snapshot.report.metricsVersion, METRICS_VERSION);
   assert.equal(snapshot.claims.length, 1);
   const first = snapshot.claims[0]?.propositions[0];
   assert.equal(first?.derivedStatus.status, 'CONFLICTING_EVIDENCE');

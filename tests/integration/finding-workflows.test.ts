@@ -317,12 +317,31 @@ test('a retest needs two finalized runs, then shows what it would record before 
   assert.match(flat(after.text), /<option value="UNCHANGED"/);
   assert.doesNotMatch(flat(after.text), /<option value="IMPROVED"/);
   assert.doesNotMatch(flat(after.text), /<option value="REGRESSED"/);
-  const unchanged = await postForm(server, `${path}/transition`, cookie, afterToken, {
+  const comparisonId = getFinding(server.db, 'prj_1', id)?.comparisons[0]?.id ?? '';
+  assert.ok(comparisonId.length > 0, 'the recorded comparison must be readable back');
+
+  // A measured status now has to name the comparison that measured it. The form offers a hidden
+  // citation, so this is the shape a real submission takes.
+  const uncited = await postForm(server, `${path}/transition`, cookie, afterToken, {
     status: 'UNCHANGED',
     note: 'The later capture says the same thing.',
   });
+  assert.equal(uncited.status, 409);
+  assert.equal(getFinding(server.db, 'prj_1', id)?.status, 'RETEST_REQUIRED');
+
+  const unchanged = await postForm(server, `${path}/transition`, cookie, afterToken, {
+    status: 'UNCHANGED',
+    note: 'The later capture says the same thing.',
+    comparisonId,
+  });
   assert.equal(unchanged.status, 303);
   assert.equal(getFinding(server.db, 'prj_1', id)?.status, 'UNCHANGED');
+  const history = getFinding(server.db, 'prj_1', id)?.updates ?? [];
+  assert.equal(
+    history.at(-1)?.comparisonId,
+    comparisonId,
+    'the history row carries the comparison that justified the status',
+  );
 });
 
 test('a non-comparable retest records the reason and offers only unable to verify', async (t) => {
@@ -373,6 +392,7 @@ test('a non-comparable retest records the reason and offers only unable to verif
   const verified = await postForm(server, `${path}/transition`, cookie, csrfFrom(after.text), {
     status: 'UNABLE_TO_VERIFY',
     note: 'The later run used a different provider, so nothing can be claimed.',
+    comparisonId: getFinding(server.db, 'prj_1', id)?.comparisons[0]?.id ?? '',
   });
   assert.equal(verified.status, 303);
   assert.equal(getFinding(server.db, 'prj_1', id)?.status, 'UNABLE_TO_VERIFY');

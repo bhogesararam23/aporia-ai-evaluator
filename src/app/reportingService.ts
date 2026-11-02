@@ -17,7 +17,7 @@ import {
 import { getRunOrThrow, listRuns } from '../persistence/repositories/runs.ts';
 import {
   currentClaimLabels,
-  listAnswerClaimsForObservation,
+  listAnswerClaimsForObservations,
 } from '../persistence/repositories/answerClaims.ts';
 import { getWebsiteAudit, listWebsiteAudits } from '../persistence/repositories/websiteAudits.ts';
 import { listFindings } from '../persistence/repositories/findings.ts';
@@ -199,6 +199,12 @@ function mapQuerySets(db: DatabaseSync, projectId: string): ReportQuerySetInput[
 function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
   return listRuns(db, projectId).map((summary) => {
     const detail = getRunOrThrow(db, projectId, summary.id);
+    // One batch read for the whole run instead of one per observation. The five queries are fixed in
+    // the repository; the previous shape was five times the number of statements in the run.
+    const claimsByObservation = listAnswerClaimsForObservations(
+      db,
+      detail.observations.map((observation) => observation.id),
+    );
     return {
       run: {
         id: detail.run.id,
@@ -255,8 +261,16 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
           attributionRole: assessment.attributionRole,
           createdAt: assessment.createdAt,
         })),
-        answerClaims: listAnswerClaimsForObservation(db, observation.id).map((claim) => {
+        answerClaims: (claimsByObservation.get(observation.id) ?? []).map((claim) => {
           const revision = claim.currentRevision;
+          // The cited record's state is read here rather than inferred from the mapping row, because
+          // a citation can be voided after a statement was linked to it and the mapping must stop
+          // counting as support while remaining in the history.
+          const voidedCitationIds = new Set(
+            observation.citations
+              .filter((citation) => citation.voidedAt !== null)
+              .map((citation) => citation.id),
+          );
           return {
             id: claim.id,
             ordinal: claim.ordinal,
@@ -275,9 +289,13 @@ function mapRuns(db: DatabaseSync, projectId: string): ReportRunInput[] {
                 propositionId: link.propositionId,
                 relation: link.relation,
               })),
-            citationSupports: claim.citationLinks
+            citationMappings: claim.citationLinks
               .filter((link) => link.supersededBy === null)
-              .map((link) => link.support),
+              .map((link) => ({
+                citationId: link.citationId,
+                support: link.support,
+                citationVoided: voidedCitationIds.has(link.citationId),
+              })),
             labels: currentClaimLabels(claim),
             voidedAt: claim.voidedAt,
           };
@@ -484,7 +502,7 @@ export function exportProject(
         ];
   });
   return {
-    schemaVersion: 'project-export-v1',
+    schemaVersion: 'project-export-v2',
     exportedAt,
     project: detail.project,
     targetEntity: detail.targetEntity,
@@ -498,6 +516,10 @@ export function exportProject(
       return audit === null ? [] : [audit];
     }),
     reports,
+    // v0.3 added remediation findings and retest comparisons, and the portable record was never
+    // extended to carry them: an operator who exported and then wiped lost the backlog and the
+    // measurements behind it. Additive, so every v1 key keeps its meaning.
+    findings: listFindings(db, projectId),
     achievements: exportAchievements(db, projectId),
     auditEvents: listAuditEvents(db, projectId, { limit: 500 }),
     auditEventCount: countAuditEvents(db, projectId),

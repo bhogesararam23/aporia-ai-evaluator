@@ -1,24 +1,32 @@
 /**
- * `npm run benchmark` — run the offline evaluator-validation harness (ADR-020).
+ * `npm run benchmark` — run the offline evaluator-validation harness (ADR-020, as amended by ADR-023).
  *
- * Reads a directory of `benchmark-case-v1` JSON files, validates them under explicit bounds, scores
- * the deterministic regression section and the human-label agreement section separately, and writes
- * one reproducible report.
+ * Reads a directory of benchmark case JSON files, validates them under explicit bounds, scores the
+ * deterministic regression section and the human annotation section separately, and writes one
+ * reproducible report.
  *
  * It never generates cases, never reaches the network, and never opens the application database. An
- * empty or incomplete corpus exits non-zero and says that no accuracy claim is supportable, because
- * a green run over nothing would be the most misleading result this tool could produce.
+ * empty or incomplete corpus exits non-zero and says that no accuracy claim is supportable, because a
+ * green run over nothing would be the most misleading result this tool could produce.
+ *
+ * Two questions are kept apart and never merged into one number:
+ *   - **deterministic regression** — did the current code produce the label the reviewer recorded; and
+ *   - **annotation agreement** — do the recorded human labels agree, over the subjects that have a
+ *     defensible settled value.
+ * A software regression is a code finding. Reviewer disagreement is a methodology finding. Neither is
+ * evidence that the evaluator is accurate, and nothing here turns a disagreement into a consensus.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { agreementRows, scoreByDimension, type ScoredPair } from '../src/benchmark/scoring.ts';
 import {
-  BENCHMARK_DIMENSIONS,
-  type BenchmarkCase,
-  type BenchmarkDimension,
-} from '../src/benchmark/types.ts';
-import { regressionResults } from '../src/benchmark/regression.ts';
+  agreementRows,
+  annotationSummaries,
+  scoreByDimension,
+  type ScoredPair,
+} from '../src/benchmark/scoring.ts';
+import { BENCHMARK_DIMENSIONS } from '../src/benchmark/types.ts';
+import { regressionResults, unusableEvidenceRecords } from '../src/benchmark/regression.ts';
 import {
   buildBenchmarkReport,
   caseDigest,
@@ -64,7 +72,7 @@ function parseArguments(argv: readonly string[]): Options {
 function printUsage(): void {
   console.log(`Usage: npm run benchmark -- --corpus <directory> [--out <file>] [--allow-partial-strata]
 
-  --corpus        Directory of benchmark-case-v1 JSON files. Required.
+  --corpus        Directory of benchmark case JSON files. Required.
   --out           Where to write the report. Defaults to stdout.
   --allow-partial-strata
                   Report on a corpus that does not cover every required stratum. Absence is still
@@ -76,10 +84,27 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-/** Read the corpus under explicit bounds. A hostile or bloated file must fail, not consume memory. */
-function readCorpus(directory: string): {
-  readonly entries: readonly { index: number; value: unknown; digest: CorpusDigest }[];
-} {
+/** One parsed case, tagged with the file it came from. */
+interface CaseSource {
+  readonly index: number;
+  readonly name: string;
+  readonly value: unknown;
+}
+
+interface CorpusReading {
+  readonly sources: readonly CaseSource[];
+  readonly files: readonly { readonly name: string; readonly values: readonly unknown[] }[];
+  readonly fileDigests: readonly CorpusDigest[];
+}
+
+/**
+ * Read the corpus under explicit bounds. A hostile or bloated file must fail, not consume memory.
+ *
+ * A file may hold one case or an array of them; `validateBenchmarkCorpus` expands and counts them, so
+ * the ceiling applies to cases rather than filenames. This layer keeps the file identity, because the
+ * report must be able to say which file a rejected case came from.
+ */
+function readCorpus(directory: string): CorpusReading {
   let names: string[];
   try {
     names = readdirSync(directory)
@@ -90,10 +115,12 @@ function readCorpus(directory: string): {
   }
   if (names.length > BENCHMARK_LIMITS.maxCases) {
     return fail(
-      `The corpus holds ${names.length} files; the limit is ${BENCHMARK_LIMITS.maxCases}.`,
+      `The corpus holds ${String(names.length)} files; the limit is ${String(BENCHMARK_LIMITS.maxCases)}.`,
     );
   }
-  const entries: { index: number; value: unknown; digest: CorpusDigest }[] = [];
+  const sources: CaseSource[] = [];
+  const files: { name: string; values: unknown[] }[] = [];
+  const fileDigests: CorpusDigest[] = [];
   let totalBytes = 0;
   for (const name of names) {
     const path = join(directory, name);
@@ -103,12 +130,12 @@ function readCorpus(directory: string): {
     }
     if (stat.size > BENCHMARK_LIMITS.maxCaseBytes) {
       return fail(
-        `${name} is ${stat.size} bytes; the per-file limit is ${BENCHMARK_LIMITS.maxCaseBytes}.`,
+        `${name} is ${String(stat.size)} bytes; the per-file limit is ${String(BENCHMARK_LIMITS.maxCaseBytes)}.`,
       );
     }
     totalBytes += stat.size;
     if (totalBytes > BENCHMARK_LIMITS.maxCorpusBytes) {
-      return fail(`The corpus exceeds ${BENCHMARK_LIMITS.maxCorpusBytes} bytes in total.`);
+      return fail(`The corpus exceeds ${String(BENCHMARK_LIMITS.maxCorpusBytes)} bytes in total.`);
     }
     const text = readFileSync(path, 'utf8');
     let value: unknown;
@@ -117,54 +144,41 @@ function readCorpus(directory: string): {
     } catch {
       return fail(`${name} is not valid JSON.`);
     }
-    entries.push({
-      index: entries.length,
-      value,
-      digest: {
-        caseCount: Array.isArray(value) ? value.length : 1,
-        digest: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
-        bytes: Buffer.byteLength(text, 'utf8'),
-      },
+    const values = Array.isArray(value) ? value : [value];
+    if (values.length === 0) {
+      return fail(`${name} holds an empty array; a file must carry at least one case.`);
+    }
+    sources.push({ index: sources.length, name, value });
+    files.push({ name, values });
+    fileDigests.push({
+      kind: 'file',
+      source: name,
+      caseCount: values.length,
+      digest: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
+      bytes: Buffer.byteLength(text, 'utf8'),
+      // Settled once validation has run, so a file whose cases were all refused is visible.
+      accepted: true,
     });
   }
-  return { entries };
+  return { sources, files, fileDigests };
 }
 
-/**
- * Gold-versus-produced pairs for the methodology section. For the human-judgement dimensions the
- * "prediction" is the reviewer consensus recorded in the case, because the software makes no such
- * judgement; those pairs measure agreement, and the report says which is which.
- */
-function methodologyPairs(cases: readonly BenchmarkCase[]): ScoredPair[] {
-  const pairs: ScoredPair[] = [];
-  for (const benchmarkCase of cases) {
-    for (const expected of benchmarkCase.expected) {
-      const reviewers = benchmarkCase.reviewerLabels.filter(
-        (label) => label.dimension === expected.dimension && label.subjectId === expected.subjectId,
-      );
-      if (reviewers.length === 0) {
-        continue;
-      }
-      const consensus = reviewers.map((label) => label.label).sort()[0] as string;
-      pairs.push({
-        caseId: benchmarkCase.id,
-        dimension: expected.dimension as BenchmarkDimension,
-        subjectId: expected.subjectId,
-        expected: expected.label,
-        predicted: consensus,
-        component: 'reviewer consensus',
-      });
-    }
-  }
-  return pairs;
+/** The disclaimer a reader must see on every route, including a run that is about to fail. */
+function honestyLine(caseCount: number): string {
+  return (
+    `benchmark: ${String(caseCount)} valid case(s) scored. ` +
+    'This is a framework result over the corpus supplied — not a validated accuracy claim, not proof ' +
+    'of independent review, and not a statement about any provider today. ' +
+    'Reviewer identity in a case file is operator-asserted.'
+  );
 }
 
 function main(): void {
   const options = parseArguments(process.argv.slice(2));
   const directory = resolve(options.corpus);
-  const { entries } = readCorpus(directory);
+  const reading = readCorpus(directory);
 
-  if (entries.length === 0) {
+  if (reading.sources.length === 0) {
     console.error(
       `benchmark: the corpus at ${directory} holds no JSON case files.\n` +
         'No accuracy claim is supportable from an empty corpus, and no percentage will be printed.\n' +
@@ -175,27 +189,41 @@ function main(): void {
     return;
   }
 
-  const validation = validateBenchmarkCorpus(entries);
-  const digests = entries.map((entry) => entry.digest);
+  const validation = validateBenchmarkCorpus(
+    reading.sources.map((source) => ({ index: source.index, value: source.value })),
+  );
+
+  const acceptedValues = new Set<unknown>(validation.cases as readonly unknown[]);
+  const digests: CorpusDigest[] = reading.fileDigests.map((digest, index) => ({
+    ...digest,
+    accepted: (reading.files[index]?.values ?? []).every((value) => acceptedValues.has(value)),
+  }));
   for (const benchmarkCase of validation.cases) {
     digests.push({
+      kind: 'case',
+      source: benchmarkCase.id,
       caseCount: 1,
       digest: caseDigest(benchmarkCase),
-      bytes: JSON.stringify(benchmarkCase).length,
+      bytes: Buffer.byteLength(JSON.stringify(benchmarkCase), 'utf8'),
+      accepted: true,
     });
   }
 
   if (validation.issues.length > 0) {
-    console.error(`benchmark: ${validation.issues.length} case problem(s) found.`);
+    console.error(`benchmark: ${String(validation.issues.length)} case problem(s) found.`);
     for (const issue of validation.issues.slice(0, 40)) {
       console.error(`  ${issue.caseId} ${issue.field}: ${issue.message}`);
     }
     if (validation.issues.length > 40) {
-      console.error(`  ...and ${validation.issues.length - 40} more.`);
+      console.error(`  ...and ${String(validation.issues.length - 40)} more.`);
     }
   }
 
   const regression = regressionResults(validation.cases);
+  // Only what the software itself produces is scored as produced-versus-gold. Human-judgement
+  // dimensions are reported as annotation agreement in their own block, from their own rule: unanimous
+  // reviewers, or an adjudication naming the subject and the settled label. Nothing selects a reviewer
+  // label to manufacture a consensus, and no annotation figure is merged into a regression count.
   const deterministicPairs: ScoredPair[] = regression.map((row) => ({
     caseId: row.caseId,
     dimension: row.dimension,
@@ -204,18 +232,24 @@ function main(): void {
     predicted: row.produced,
     component: row.component,
   }));
-  const allPairs = [...deterministicPairs, ...methodologyPairs(validation.cases)];
-  const dimensions = scoreByDimension(allPairs, BENCHMARK_DIMENSIONS);
+  const dimensions = scoreByDimension(deterministicPairs, BENCHMARK_DIMENSIONS);
   const agreement = agreementRows(validation.cases);
+  const annotation = annotationSummaries(agreement, BENCHMARK_DIMENSIONS);
+  const unusable = unusableEvidenceRecords(validation.cases).map((row) => ({
+    caseId: row.caseId,
+    propositionId: row.propositionId,
+    evidenceId: row.evidence.id,
+  }));
 
-  const report = buildBenchmarkReport(validation, regression, dimensions, agreement, digests);
-
-  if (validation.strataMissing.length > 0) {
-    console.error(
-      `benchmark: ${validation.strataMissing.length} required stratum(s) have no case: ` +
-        validation.strataMissing.join(', '),
-    );
-  }
+  const report = buildBenchmarkReport(
+    validation,
+    regression,
+    dimensions,
+    agreement,
+    annotation,
+    unusable,
+    digests,
+  );
 
   const text = serialiseBenchmarkReport(report);
   if (options.output === null) {
@@ -224,7 +258,29 @@ function main(): void {
     const target = resolve(options.output);
     mkdirSync(resolve(target, '..'), { recursive: true });
     writeFileSync(target, text, 'utf8');
-    console.error(`benchmark: report written to ${target}`);
+  }
+
+  if (validation.strataMissing.length > 0) {
+    console.error(
+      `benchmark: ${String(validation.strataMissing.length)} required stratum(s) have no case: ` +
+        validation.strataMissing.join(', '),
+    );
+  }
+  if (unusable.length > 0) {
+    console.error(
+      `benchmark: ${String(unusable.length)} evidence record(s) carried a value the deterministic rule cannot read and were excluded from scoring.`,
+    );
+  }
+  if (options.output !== null) {
+    console.error(`benchmark: report written to ${resolve(options.output)}`);
+  }
+
+  if (validation.cases.length === 0) {
+    console.error(
+      'benchmark: no valid case exists, so nothing was measured. No accuracy claim is supportable.',
+    );
+    process.exitCode = 1;
+    return;
   }
 
   const failed =
@@ -232,22 +288,11 @@ function main(): void {
     report.regression.mismatches.length > 0 ||
     report.regression.metricChecks.some((row) => !row.matched);
 
-  if (validation.cases.length === 0) {
-    console.error('benchmark: no valid case exists, so nothing was measured.');
-    process.exitCode = 1;
-    return;
-  }
-  if (options.requireCompleteStrata && validation.strataMissing.length > 0) {
+  console.error(honestyLine(validation.cases.length));
+
+  if (failed || (options.requireCompleteStrata && validation.strataMissing.length > 0)) {
     process.exitCode = 1;
   }
-  if (failed) {
-    process.exitCode = 1;
-    return;
-  }
-  console.error(
-    `benchmark: ${validation.cases.length} case(s) scored. ` +
-      'This is a framework result over a stated corpus, not a validated accuracy claim.',
-  );
 }
 
 main();

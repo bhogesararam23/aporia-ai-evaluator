@@ -208,7 +208,13 @@ function seedFinding(db: DatabaseSync): string {
     context,
   );
   const preview = previewRetestComparison(db, 'prj_1', 'run_1', 'run_2', 'mention_rate');
-  recordRetestComparison(db, 'prj_1', id.id, preview, 'mention_rate', context);
+  recordRetestComparison(
+    db,
+    'prj_1',
+    id.id,
+    { baseRunId: preview.baseRunId, laterRunId: preview.laterRunId, focusMetric: 'mention_rate' },
+    context,
+  );
   return id.id;
 }
 

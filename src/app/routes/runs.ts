@@ -427,7 +427,7 @@ function citationList(
             ${citation.title === null ? '' : html`<span class="small muted"> · ${citation.title}</span>`}
             ${citation.snippet === null ? '' : html`<div class="small muted">${citation.snippet}</div>`}
             ${
-              citation.voidedAt === null && citation.voidReason !== null
+              citation.voidedAt !== null && citation.voidReason !== null
                 ? html`<div class="small muted">Void reason: ${citation.voidReason}</div>`
                 : ''
             }

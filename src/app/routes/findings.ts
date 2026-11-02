@@ -27,8 +27,7 @@ import {
 } from '../../core/findingInputs.ts';
 import { COMPARISON_METRICS, FOCUS_METRICS, isFocusMetric } from '../../core/runComparison.ts';
 import { isOneOf } from '../../core/vocabulary.ts';
-import type { FocusMetric, MetricComparisonRow } from '../../core/runComparison.ts';
-import { AppError } from '../../errors.ts';
+import type { MetricComparisonRow } from '../../core/runComparison.ts';
 import {
   addFindingReference,
   availableFocusMetrics,
@@ -376,6 +375,51 @@ function transitionIssues(
   ];
 }
 
+/** A readable label for one stored comparison, used wherever the record must be cited. */
+function comparisonOptionLabel(comparison: FindingRecord['comparisons'][number]): string {
+  const focus = comparison.focusMetric ?? 'focus metric not recorded';
+  const moved = comparison.deltas.find((row) => row.metricId === comparison.focusMetric);
+  const movement =
+    moved === undefined || moved.prior === null || moved.current === null
+      ? ''
+      : ` — ${formatPercent(moved.prior)} → ${formatPercent(moved.current)}`;
+  return `${humanize(comparison.outcome)} · ${focus}${movement} · runs ${comparison.baseRunId} → ${comparison.laterRunId} · ${formatDateTime(comparison.createdAt)}`;
+}
+
+/**
+ * Which stored comparison justifies the status being chosen.
+ *
+ * A measured status is a claim about a specific measurement, so the citation is offered as a choice
+ * from this finding's own comparisons rather than a free-text id. A status that needs no measurement
+ * can leave it blank.
+ */
+function comparisonCitationField(
+  finding: FindingRecord,
+  values: Values,
+  issues: readonly ValidationIssue[],
+): Html {
+  if (finding.comparisons.length === 0) {
+    return html`
+      <p class="small muted">
+        No comparison is stored on this finding yet, so no measured status can be recorded. Use the
+        retest form to compare two finalized runs first.
+      </p>
+    `;
+  }
+  return selectField({
+    name: 'comparisonId',
+    label: 'Comparison that justifies this status (required for a measured status)',
+    value: valueOf(values, 'comparisonId'),
+    issues,
+    includeBlank: 'None — this status is not a measurement',
+    options: finding.comparisons.map((comparison) => ({
+      value: comparison.id,
+      label: comparisonOptionLabel(comparison),
+    })),
+    help: 'The cited comparison must belong to this finding and must carry the outcome being recorded. The choice is stored in the history row, so a later reader can check the status against the measurement behind it.',
+  });
+}
+
 function transitionPanel(finding: FindingRecord, projectId: string, state: FormState): Html {
   const allowed = FINDING_TRANSITIONS[finding.status];
   const offered = offeredStatuses(finding);
@@ -397,6 +441,7 @@ function transitionPanel(finding: FindingRecord, projectId: string, state: FormS
                 novalidate
               >
                 ${csrfField(state.csrf)} ${statusSelect(state.values, state.issues, offered)}
+                ${comparisonCitationField(finding, state.values, state.issues)}
                 ${textareaField({
                   name: 'note',
                   label: 'What changed and why',
@@ -483,11 +528,57 @@ function historyPanel(finding: FindingRecord): Html {
               </strong>
               <span class="muted"> · ${formatDateTime(update.createdAt)} · ${update.actor}</span>
               <p>${update.note}</p>
+              ${
+                update.comparisonId === null
+                  ? ''
+                  : html`<p class="small muted">
+                      Cited comparison:
+                      <strong
+                        >${
+                          finding.comparisons.find(
+                            (comparison) => comparison.id === update.comparisonId,
+                          )
+                            ? comparisonOptionLabel(
+                                finding.comparisons.find(
+                                  (comparison) => comparison.id === update.comparisonId,
+                                )!,
+                              )
+                            : 'a comparison no longer on this finding'
+                        }</strong
+                      >
+                    </p>`
+              }
             </li>
           `,
         )}
       </ol>
     </section>
+  `;
+}
+
+/** One metric row of a stored comparison, rendered as a value movement rather than a bare delta. */
+function comparisonDeltaRow(row: MetricComparisonRow, focusMetric: string | null): Html {
+  const isFocus = row.metricId === focusMetric;
+  return html`
+    <tr>
+      <th scope="row">
+        ${isFocus ? html`<strong>${row.label} — decided this outcome</strong>` : row.label}
+      </th>
+      <td class="small muted">${row.unit}</td>
+      <td class="numeric">
+        ${row.prior === null ? 'not available' : formatPercent(row.prior)}
+        <span class="muted small"
+          >(${row.priorNumerator ?? '—'}/${String(row.priorDenominator)})</span
+        >
+      </td>
+      <td class="numeric">
+        ${row.current === null ? 'not available' : formatPercent(row.current)}
+        <span class="muted small"
+          >(${row.currentNumerator ?? '—'}/${String(row.currentDenominator)})</span
+        >
+      </td>
+      <td>${humanize(row.direction)}</td>
+    </tr>
   `;
 }
 
@@ -521,6 +612,26 @@ function comparisonsPanel(finding: FindingRecord, projectId: string): Html {
               Comparable: ${comparison.comparable ? 'yes' : 'no'}.
             </p>
             ${
+              comparison.focusMetric === null
+                ? html`<p class="small muted">
+                    This comparison was recorded before the focus metric was stored, so the single
+                    measurement that decided its outcome is not recoverable from the record. It is
+                    shown exactly as stored and is never recalculated.
+                  </p>`
+                : html` <p class="small">
+                      <strong>Focus metric:</strong>
+                      ${comparison.focusLabel ?? comparison.focusMetric}
+                      (<code>${comparison.focusMetric}</code>) — the one value ADR-021 says decides
+                      whether this finding improved, stayed unchanged, or regressed. Every other
+                      metric below is context.
+                    </p>
+                    <p class="small muted">
+                      Comparability rule: ${comparison.ruleVersion ?? 'comparison-rule-v1'}. Metrics
+                      version: ${comparison.baseMetricsVersion ?? 'not recorded'} then,
+                      ${comparison.laterMetricsVersion ?? 'not recorded'} now.
+                    </p>`
+            }
+            ${
               comparison.reasons.length === 0
                 ? ''
                 : html`<ul class="small">
@@ -533,6 +644,31 @@ function comparisonsPanel(finding: FindingRecord, projectId: string): Html {
                 : html`<p class="small">
                     <strong>Statements:</strong> ${comparison.statementNote}
                   </p>`
+            }
+            ${
+              comparison.deltas.length === 0
+                ? ''
+                : html` <div class="table-wrap">
+                    <table>
+                      <caption>
+                        What moved, and by how much, between the two captures
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Metric</th>
+                          <th scope="col">Unit</th>
+                          <th scope="col">Earlier run</th>
+                          <th scope="col">Later run</th>
+                          <th scope="col">Direction</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${comparison.deltas.map((row) =>
+                          comparisonDeltaRow(row, comparison.focusMetric),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>`
             }
           </article>
         `,
@@ -1241,14 +1377,6 @@ function reRenderFinding(context: RequestContext, issues: readonly ValidationIss
   );
 }
 
-/** A focus metric is a declared one, or the comparison could never resolve to a verdict. */
-function previewFocus(metric: string): FocusMetric {
-  if (!isFocusMetric(metric)) {
-    throw new AppError('INVALID_INPUT', 'Choose a metric the retest is about.');
-  }
-  return metric;
-}
-
 /**
  * Values for a fresh create form.
  *
@@ -1606,19 +1734,18 @@ export const findingRoutes: RouteDefinition[] = [
         );
       }
       const finding = getFindingOrThrow(context.deps.db, projectId, findingId);
-      const preview = previewRetestComparison(
-        context.deps.db,
-        projectId,
-        check.value.baseRunId,
-        check.value.laterRunId,
-        check.value.focusMetric,
-      );
+      // Only the two run ids and the chosen metric leave this handler. The comparison itself is
+      // recomputed by the repository inside its own transaction, so no derived value — outcome,
+      // comparability, reasons or deltas — travels through a caller-supplied object.
       recordRetestComparison(
         context.deps.db,
         projectId,
         finding.id,
-        preview,
-        previewFocus(check.value.focusMetric),
+        {
+          baseRunId: check.value.baseRunId,
+          laterRunId: check.value.laterRunId,
+          focusMetric: check.value.focusMetric,
+        },
         writeContext(context),
       );
       return redirectWithNotice(findingPath(projectId, findingId), 'finding-comparison-recorded');

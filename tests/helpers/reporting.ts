@@ -192,7 +192,7 @@ export function answerClaim(
     relevance: 'ADDRESSES',
     paraphrase: null,
     propositionLinks: [{ propositionId: 'prp_1', relation: 'SUPPORTS_TARGET' }],
-    citationSupports: ['SUPPORTS'],
+    citationMappings: [{ citationId: 'cit_1', support: 'SUPPORTS', citationVoided: false }],
     labels: { FIDELITY: 'ACCURATE', ATTRIBUTION: 'CORRECT' },
     voidedAt: null,
     ...overrides,

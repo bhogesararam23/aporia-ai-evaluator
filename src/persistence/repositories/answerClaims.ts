@@ -5,6 +5,11 @@ import type {
   ClaimCitationLinkInput,
   ClaimPropositionLinkInput,
 } from '../../core/answerClaimInputs.ts';
+import {
+  validateAnswerClaimAssessmentInput,
+  validateClaimCitationLinkInput,
+  validateClaimPropositionLinkInput,
+} from '../../core/answerClaimInputs.ts';
 import type {
   AnswerOffsetBasis,
   AnswerStatementKind,
@@ -20,6 +25,7 @@ import {
   isClaimAttributionLabel,
   isClaimFidelityLabel,
 } from '../../core/answerClaims.ts';
+import type { ValidationResult } from '../../core/validation.ts';
 import { AppError } from '../../errors.ts';
 import { appendAuditEvent } from '../audit.ts';
 import { withTransaction } from '../db.ts';
@@ -206,86 +212,166 @@ function claimRow(db: DatabaseSync, projectId: string, claimId: string): Row | u
     .get(projectId, claimId);
 }
 
-function revisionsFor(db: DatabaseSync, claimId: string): AnswerClaimRevisionRecord[] {
-  return db
-    .prepare('SELECT * FROM answer_claim_revisions WHERE claim_id = ? ORDER BY revision ASC')
-    .all(claimId)
-    .map(mapRevision);
+/**
+ * Group rows by one of their own columns, preserving the order the query produced inside each group.
+ *
+ * Grouping happens in JavaScript rather than through a second query per parent row, which is the
+ * whole point of the batch loader below.
+ */
+function groupRows(rows: readonly Row[], column: string): Map<string, Row[]> {
+  const grouped = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = stringValue(row, column);
+    const bucket = grouped.get(key);
+    if (bucket === undefined) {
+      grouped.set(key, [row]);
+    } else {
+      bucket.push(row);
+    }
+  }
+  return grouped;
 }
 
-function propositionLinksFor(db: DatabaseSync, claimId: string): ClaimPropositionLinkRecord[] {
-  return db
-    .prepare(
-      `SELECT link.* FROM answer_claim_propositions link
-       JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
-       WHERE revision.claim_id = ?
-       ORDER BY link.created_at ASC, link.rowid ASC`,
-    )
-    .all(claimId)
-    .map(mapPropositionLink);
-}
-
-function citationLinksFor(db: DatabaseSync, claimId: string): ClaimCitationLinkRecord[] {
-  return db
-    .prepare(
-      `SELECT link.* FROM answer_claim_citations link
-       JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
-       WHERE revision.claim_id = ?
-       ORDER BY link.created_at ASC, link.rowid ASC`,
-    )
-    .all(claimId)
-    .map(mapCitationLink);
-}
-
-function assessmentsFor(db: DatabaseSync, claimId: string): AnswerClaimAssessmentRecord[] {
-  return db
-    .prepare(
-      `SELECT * FROM answer_claim_assessments
-       WHERE claim_id = ?
-       ORDER BY dimension ASC, version ASC`,
-    )
-    .all(claimId)
-    .map(mapAssessment);
-}
-
-function assembleClaim(db: DatabaseSync, row: Row): AnswerClaimRecord {
-  const claimId = stringValue(row, 'id');
-  const revisions = revisionsFor(db, claimId);
-  const currentRevisionId = nullableStringValue(row, 'current_revision_id');
-  return {
-    id: claimId,
-    projectId: stringValue(row, 'project_id'),
-    observationId: stringValue(row, 'observation_id'),
-    ordinal: numberValue(row, 'ordinal'),
-    currentRevisionId,
-    createdAt: stringValue(row, 'created_at'),
-    updatedAt: stringValue(row, 'updated_at'),
-    voidedAt: nullableStringValue(row, 'voided_at'),
-    voidReason: nullableStringValue(row, 'void_reason'),
-    currentRevision:
-      revisions.find((revision) => revision.id === currentRevisionId) ?? revisions.at(-1) ?? null,
-    revisions,
-    propositionLinks: propositionLinksFor(db, claimId),
-    citationLinks: citationLinksFor(db, claimId),
-    assessments: assessmentsFor(db, claimId),
-  };
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
 }
 
 /**
- * Read the claim rows for one observation in a single pass per table rather than one pass per claim,
- * because a long answer can hold a dozen statements and the workspace page would otherwise issue
- * dozens of identical queries.
+ * Assemble claim records from a set of already-loaded claim rows, using one query per child table.
  *
- * Exported for report generation, which needs the same records the workspace shows.
+ * Five queries for the whole set, whatever its size. The per-claim version of this — which is what
+ * `metrics-v3` shipped, under a comment claiming the opposite — issued four queries per statement, so
+ * a twelve-statement answer cost 49 queries and a report over a 40-observation run cost thousands.
+ *
+ * Ordering is fixed in every query and preserved by the grouping, so two calls over the same data
+ * return byte-identical records. The report digest depends on that.
+ */
+function assembleClaims(db: DatabaseSync, rows: readonly Row[]): AnswerClaimRecord[] {
+  const claimIds = rows.map((row) => stringValue(row, 'id'));
+  if (claimIds.length === 0) {
+    return [];
+  }
+  const marks = placeholders(claimIds.length);
+  const revisions = groupRows(
+    db
+      .prepare(
+        `SELECT * FROM answer_claim_revisions
+         WHERE claim_id IN (${marks})
+         ORDER BY claim_id ASC, revision ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const propositionLinks = groupRows(
+    db
+      .prepare(
+        `SELECT link.*, revision.claim_id AS claim_id
+         FROM answer_claim_propositions link
+         JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
+         WHERE revision.claim_id IN (${marks})
+         ORDER BY revision.claim_id ASC, link.created_at ASC, link.rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const citationLinks = groupRows(
+    db
+      .prepare(
+        `SELECT link.*, revision.claim_id AS claim_id
+         FROM answer_claim_citations link
+         JOIN answer_claim_revisions revision ON revision.id = link.claim_revision_id
+         WHERE revision.claim_id IN (${marks})
+         ORDER BY revision.claim_id ASC, link.created_at ASC, link.rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+  const assessments = groupRows(
+    db
+      .prepare(
+        `SELECT * FROM answer_claim_assessments
+         WHERE claim_id IN (${marks})
+         ORDER BY claim_id ASC, dimension ASC, version ASC, rowid ASC`,
+      )
+      .all(...claimIds) as Row[],
+    'claim_id',
+  );
+
+  return rows.map((row) => {
+    const claimId = stringValue(row, 'id');
+    const claimRevisions = (revisions.get(claimId) ?? []).map(mapRevision);
+    const currentRevisionId = nullableStringValue(row, 'current_revision_id');
+    return {
+      id: claimId,
+      projectId: stringValue(row, 'project_id'),
+      observationId: stringValue(row, 'observation_id'),
+      ordinal: numberValue(row, 'ordinal'),
+      currentRevisionId,
+      createdAt: stringValue(row, 'created_at'),
+      updatedAt: stringValue(row, 'updated_at'),
+      voidedAt: nullableStringValue(row, 'voided_at'),
+      voidReason: nullableStringValue(row, 'void_reason'),
+      currentRevision:
+        claimRevisions.find((revision) => revision.id === currentRevisionId) ??
+        claimRevisions.at(-1) ??
+        null,
+      revisions: claimRevisions,
+      propositionLinks: (propositionLinks.get(claimId) ?? []).map(mapPropositionLink),
+      citationLinks: (citationLinks.get(claimId) ?? []).map(mapCitationLink),
+      assessments: (assessments.get(claimId) ?? []).map(mapAssessment),
+    };
+  });
+}
+
+/**
+ * Read the claim rows for one observation.
+ *
+ * Exported for report generation and for the retest comparison, both of which need exactly the
+ * records the workspace shows — one definition of "what a statement contributes to a metric", shared
+ * by every reader, so a report and a retest cannot drift apart.
  */
 export function listAnswerClaimsForObservation(
   db: DatabaseSync,
   observationId: string,
 ): AnswerClaimRecord[] {
+  return listAnswerClaimsForObservations(db, [observationId]).get(observationId) ?? [];
+}
+
+/**
+ * Read every statement for several observations at once.
+ *
+ * A run report and a retest comparison both walk all the observations of a run. Doing it through the
+ * single-observation entry point costs five queries per observation; this costs five for the whole
+ * run, keyed by observation id so each caller still gets its own rows in ordinal order.
+ */
+export function listAnswerClaimsForObservations(
+  db: DatabaseSync,
+  observationIds: readonly string[],
+): Map<string, AnswerClaimRecord[]> {
+  const byObservation = new Map<string, AnswerClaimRecord[]>();
+  if (observationIds.length === 0) {
+    return byObservation;
+  }
+  for (const id of observationIds) {
+    byObservation.set(id, []);
+  }
   const rows = db
-    .prepare('SELECT * FROM answer_claims WHERE observation_id = ? ORDER BY ordinal ASC')
-    .all(observationId);
-  return rows.map((row) => assembleClaim(db, row));
+    .prepare(
+      `SELECT * FROM answer_claims
+       WHERE observation_id IN (${placeholders(observationIds.length)})
+       ORDER BY observation_id ASC, ordinal ASC`,
+    )
+    .all(...observationIds) as Row[];
+  // Assembled once for every claim in the set. Assembling per observation would put the four child
+  // queries back inside a loop and leave the run cost growing with the observations, which is the
+  // shape this replaced.
+  for (const record of assembleClaims(db, rows)) {
+    const bucket = byObservation.get(record.observationId);
+    if (bucket !== undefined) {
+      bucket.push(record);
+    }
+  }
+  return byObservation;
 }
 
 /**
@@ -332,7 +418,12 @@ export function getAnswerClaim(
   claimId: string,
 ): AnswerClaimRecord | null {
   const row = claimRow(db, projectId, claimId);
-  return row === undefined ? null : assembleClaim(db, row);
+  if (row === undefined) {
+    return null;
+  }
+  // Same assembly path as the list readers, so a single record cannot be shaped differently from the
+  // set it belongs to.
+  return assembleClaims(db, [row])[0] ?? null;
 }
 
 export function getAnswerClaimOrThrow(
@@ -631,6 +722,84 @@ export function voidAnswerClaim(
   });
 }
 
+/**
+ * The relevance recorded on a statement's current revision.
+ *
+ * Cross-axis validation needs this before anything is written, so the form can refuse an assessment
+ * that the relevance cannot support instead of storing a row the metrics later have to exclude. One
+ * query, no assembly: the caller wants one column, not the whole record.
+ */
+export function currentClaimRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  claimId: string,
+): string | null {
+  const row = db
+    .prepare(
+      `SELECT revision.relevance
+       FROM answer_claims claim
+       JOIN answer_claim_revisions revision ON revision.id = claim.current_revision_id
+       WHERE claim.id = ? AND claim.project_id = ?`,
+    )
+    .get(claimId, projectId) as Row | undefined;
+  return row === undefined ? null : stringValue(row, 'relevance');
+}
+
+/** The relevance on the revision a stored proposition link belongs to, or `null` when it is absent. */
+export function propositionLinkRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  linkId: string,
+): string | null {
+  const row = db
+    .prepare(
+      'SELECT claim_revision_id FROM answer_claim_propositions WHERE id = ? AND project_id = ?',
+    )
+    .get(linkId, projectId) as Row | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  const revision = db
+    .prepare('SELECT relevance FROM answer_claim_revisions WHERE id = ?')
+    .get(stringValue(row, 'claim_revision_id')) as Row | undefined;
+  return revision === undefined ? null : stringValue(revision, 'relevance');
+}
+
+/** The relevance on the revision a stored citation mapping belongs to, or `null` when it is absent. */
+export function citationMappingRelevance(
+  db: DatabaseSync,
+  projectId: string,
+  linkId: string,
+): string | null {
+  const row = db
+    .prepare('SELECT claim_revision_id FROM answer_claim_citations WHERE id = ? AND project_id = ?')
+    .get(linkId, projectId) as Row | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  const revision = db
+    .prepare('SELECT relevance FROM answer_claim_revisions WHERE id = ?')
+    .get(stringValue(row, 'claim_revision_id')) as Row | undefined;
+  return revision === undefined ? null : stringValue(revision, 'relevance');
+}
+
+/**
+ * Re-check the claim eligibility contract on the way into storage.
+ *
+ * The form already refuses an inconsistent pairing. This is the second gate, for a write that did not
+ * arrive through a form: a restored database, a script, or a caller that assembled the input itself.
+ * A row the metric block would have to exclude is refused here instead, so what is stored and what is
+ * reported cannot drift apart.
+ */
+function requireConsistent(check: ValidationResult<unknown>, what: string): void {
+  if (!check.ok) {
+    throw new AppError(
+      'CONFLICT',
+      `${what}: ${check.issues.map((issue) => issue.message).join(' ')}`,
+    );
+  }
+}
+
 function currentRevisionId(db: DatabaseSync, projectId: string, claimId: string): string {
   const claim = getAnswerClaimOrThrow(db, projectId, claimId);
   if (claim.currentRevisionId === null) {
@@ -653,6 +822,18 @@ export function linkAnswerClaimProposition(
     const claim = getAnswerClaimOrThrow(db, projectId, claimId);
     requireWritableRun(db, claim.observationId);
     const revisionId = currentRevisionId(db, projectId, claimId);
+    requireConsistent(
+      validateClaimPropositionLinkInput(
+        {
+          propositionId: input.propositionId,
+          relation: input.relation,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That proposition link contradicts the recorded relevance',
+    );
     const existing = claim.propositionLinks.find(
       (link) => link.propositionId === input.propositionId && link.supersededBy === null,
     );
@@ -732,6 +913,18 @@ export function supersedeAnswerClaimProposition(
         'Only the current revision of a statement can be corrected. The statement was revised; start a new link.',
       );
     }
+    requireConsistent(
+      validateClaimPropositionLinkInput(
+        {
+          propositionId: prior.propositionId,
+          relation: input.relation,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That corrected relationship contradicts the recorded relevance',
+    );
     const replacementId = newId('acp');
     db.prepare(
       'UPDATE answer_claim_propositions SET superseded_by = ?, superseded_at = ? WHERE id = ?',
@@ -798,6 +991,18 @@ export function linkAnswerClaimCitation(
         'The citation was voided; record the support as metadata missing instead.',
       );
     }
+    requireConsistent(
+      validateClaimCitationLinkInput(
+        {
+          citationId: input.citationId,
+          support: input.support,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That support assessment contradicts the recorded relevance',
+    );
     if (
       claim.citationLinks.some(
         (link) => link.citationId === input.citationId && link.supersededBy === null,
@@ -869,6 +1074,18 @@ export function supersedeAnswerClaimCitation(
         'Only the current revision of a statement can be corrected. The statement was revised; start a new mapping.',
       );
     }
+    requireConsistent(
+      validateClaimCitationLinkInput(
+        {
+          citationId: prior.citationId,
+          support: input.support,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That corrected support assessment contradicts the recorded relevance',
+    );
     const replacementId = newId('acc');
     db.prepare(
       'UPDATE answer_claim_citations SET superseded_by = ?, superseded_at = ? WHERE id = ?',
@@ -925,6 +1142,20 @@ export function recordAnswerClaimAssessment(
     const highest = claim.assessments
       .filter((assessment) => assessment.dimension === input.dimension)
       .reduce((max, assessment) => Math.max(max, assessment.version), 0);
+    requireConsistent(
+      validateAnswerClaimAssessmentInput(
+        {
+          dimension: input.dimension,
+          label: input.label,
+          rationale: input.rationale,
+          reviewer: input.reviewer,
+          attributionSubject: input.attributionSubject,
+          attributionRole: input.attributionRole,
+        },
+        claim.currentRevision?.relevance,
+      ),
+      'That assessment contradicts the recorded relevance',
+    );
     // Numbering continues per (revision, dimension), so a second opinion on the same revision is a
     // new version rather than a replacement of the earlier judgement.
     db.prepare(

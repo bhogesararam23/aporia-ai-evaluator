@@ -194,7 +194,7 @@ test('the lifecycle is walked, not jumped, and no status is reachable by hand', 
     assert.throws(
       () =>
         transitionFinding(db, 'prj_1', id, { status: 'IMPROVED', note: 'Surely better.' }, context),
-      /requires a stored retest comparison/,
+      /must cite the retest comparison that measured it/,
     );
     const finding = getFinding(db, 'prj_1', id);
     assert.equal(finding?.status, 'RETEST_REQUIRED');
@@ -274,14 +274,54 @@ test('a retest comparison decides the status, and only within its own outcome', 
     assert.match(preview.causalBoundary, /association, not a cause/);
     // Identical captures produce the same value, so the honest outcome is unchanged.
     assert.equal(preview.outcome, 'UNCHANGED');
-    recordRetestComparison(db, 'prj_1', id, preview, focus, context);
+    recordRetestComparison(
+      db,
+      'prj_1',
+      id,
+      { baseRunId: preview.baseRunId, laterRunId: preview.laterRunId, focusMetric: focus },
+      context,
+    );
     // IMPROVED is still refused, because no stored comparison said it improved.
     assert.throws(
       () => transitionFinding(db, 'prj_1', id, { status: 'IMPROVED', note: 'wishful' }, context),
-      /requires a stored retest comparison/,
+      /must cite the retest comparison that measured it/,
     );
-    transitionFinding(db, 'prj_1', id, { status: 'UNCHANGED', note: 'Same as before.' }, context);
+    const recorded = getFinding(db, 'prj_1', id)?.comparisons[0];
+    assert.notEqual(recorded, undefined, 'the comparison is readable back on the finding');
+    assert.equal(recorded?.focusMetric, 'mention_rate', 'the deciding metric survives on the row');
+    assert.equal(recorded?.ruleVersion, 'comparison-rule-v2');
+    assert.equal(recorded?.outcome, 'UNCHANGED');
+    // An acceptable outcome exists on the finding, yet citing nothing is refused: the v0.3 rule was
+    // satisfied by *some* comparison, which is the gap this closes.
+    assert.throws(
+      () => transitionFinding(db, 'prj_1', id, { status: 'UNCHANGED', note: 'Same.' }, context),
+      /must cite the retest comparison that measured it/,
+    );
+    assert.throws(
+      () =>
+        transitionFinding(
+          db,
+          'prj_1',
+          id,
+          { status: 'UNCHANGED', note: 'Same.', comparisonId: 'rtc_missing' },
+          context,
+        ),
+      /is not a comparison on this finding in this project/,
+    );
+    transitionFinding(
+      db,
+      'prj_1',
+      id,
+      { status: 'UNCHANGED', note: 'Same as before.', comparisonId: recorded?.id ?? '' },
+      context,
+    );
     assert.equal(getFinding(db, 'prj_1', id)?.status, 'UNCHANGED');
+    const history = getFinding(db, 'prj_1', id)?.updates ?? [];
+    assert.equal(
+      history.at(-1)?.comparisonId,
+      recorded?.id,
+      'the history row names the comparison that justified the status',
+    );
   } finally {
     closeDatabase(db);
   }
@@ -307,7 +347,13 @@ test('a non-comparable retest can only ever record unable to verify', () => {
     assert.equal(preview.comparable, false);
     assert.ok(preview.reasons.some((reason) => /provider label differs/.test(reason)));
     assert.equal(preview.outcome, 'NOT_COMPARABLE');
-    recordRetestComparison(db, 'prj_1', id, preview, 'mention_rate', context);
+    recordRetestComparison(
+      db,
+      'prj_1',
+      id,
+      { baseRunId: preview.baseRunId, laterRunId: preview.laterRunId, focusMetric: 'mention_rate' },
+      context,
+    );
     assert.throws(
       () =>
         transitionFinding(
@@ -317,13 +363,33 @@ test('a non-comparable retest can only ever record unable to verify', () => {
           { status: 'IMPROVED', note: 'counts as fixed' },
           context,
         ),
-      /requires a stored retest comparison/,
+      /must cite the retest comparison that measured it/,
+    );
+    const cited = getFinding(db, 'prj_1', id)?.comparisons[0]?.id ?? '';
+    assert.ok(cited.length > 0, 'the non-comparable record was still stored');
+    // Citing the right comparison with the wrong outcome is refused. A valid comparison elsewhere
+    // cannot justify an update that references it, and neither can a valid reference to a
+    // comparison that said the opposite.
+    assert.throws(
+      () =>
+        transitionFinding(
+          db,
+          'prj_1',
+          id,
+          { status: 'IMPROVED', note: 'counts as fixed', comparisonId: cited },
+          context,
+        ),
+      /cannot justify IMPROVED/,
     );
     transitionFinding(
       db,
       'prj_1',
       id,
-      { status: 'UNABLE_TO_VERIFY', note: 'The later run used a different provider.' },
+      {
+        status: 'UNABLE_TO_VERIFY',
+        note: 'The later run used a different provider.',
+        comparisonId: cited,
+      },
       context,
     );
     assert.equal(getFinding(db, 'prj_1', id)?.status, 'UNABLE_TO_VERIFY');
@@ -538,7 +604,13 @@ test('comparisons are append-only and scoped to one project', () => {
     transitionFinding(db, 'prj_1', id, { status: 'ACCEPTED', note: 'Accepted.' }, context);
     transitionFinding(db, 'prj_1', id, { status: 'RETEST_REQUIRED', note: 'Retest.' }, context);
     const preview = previewRetestComparison(db, 'prj_1', 'run_base', 'run_later', 'mention_rate');
-    recordRetestComparison(db, 'prj_1', id, preview, 'mention_rate', context);
+    recordRetestComparison(
+      db,
+      'prj_1',
+      id,
+      { baseRunId: preview.baseRunId, laterRunId: preview.laterRunId, focusMetric: 'mention_rate' },
+      context,
+    );
     const comparisonId = (getFinding(db, 'prj_1', id)?.comparisons[0] as { id: string }).id;
     assert.throws(
       () =>
@@ -561,8 +633,9 @@ test('comparisons are append-only and scoped to one project', () => {
           .prepare(
             `INSERT INTO retest_comparisons
               (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
-               reasons_json, deltas_json, created_by, created_at)
-             VALUES ('c2', 'prj_2', NULL, 'run_base', 'run_later', 1, 'UNCHANGED', '[]', '[]', 'Ram', ?)`,
+               reasons_json, deltas_json, focus_metric, rule_version, created_by, created_at)
+             VALUES ('c2', 'prj_2', NULL, 'run_base', 'run_later', 1, 'UNCHANGED', '[]',
+              '[{"metricId":"mention_rate"}]', 'mention_rate', 'comparison-rule-v2', 'Ram', ?)`,
           )
           .run(TEST_TIME),
       /both runs in a comparison must belong to the project/,
@@ -581,8 +654,9 @@ test('comparisons are append-only and scoped to one project', () => {
           .prepare(
             `INSERT INTO retest_comparisons
               (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
-               reasons_json, deltas_json, created_by, created_at)
-             VALUES ('c4', 'prj_1', ?, 'run_base', 'run_later', 1, 'UNCHANGED', '[]', '[]', 'Ram', ?)`,
+               reasons_json, deltas_json, focus_metric, rule_version, created_by, created_at)
+             VALUES ('c4', 'prj_1', ?, 'run_base', 'run_later', 1, 'UNCHANGED', '[]',
+              '[{"metricId":"mention_rate"}]', 'mention_rate', 'comparison-rule-v2', 'Ram', ?)`,
           )
           .run(foreign, TEST_TIME),
       /a comparison must reference a finding in the same project/,
@@ -593,8 +667,9 @@ test('comparisons are append-only and scoped to one project', () => {
           .prepare(
             `INSERT INTO retest_comparisons
               (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
-               reasons_json, deltas_json, created_by, created_at)
-             VALUES ('c3', 'prj_1', NULL, 'run_base', 'run_base', 1, 'IMPROVED', '[]', '[]', 'Ram', ?)`,
+               reasons_json, deltas_json, focus_metric, rule_version, created_by, created_at)
+             VALUES ('c3', 'prj_1', NULL, 'run_base', 'run_base', 1, 'IMPROVED', '[]',
+              '[{"metricId":"mention_rate"}]', 'mention_rate', 'comparison-rule-v2', 'Ram', ?)`,
           )
           .run(TEST_TIME),
       /CHECK constraint failed/,
@@ -675,8 +750,7 @@ test('project deletion removes findings, references, updates and comparisons', (
       db,
       'prj_1',
       id,
-      previewRetestComparison(db, 'prj_1', 'run_base', 'run_later', 'mention_rate'),
-      'mention_rate',
+      { baseRunId: 'run_base', laterRunId: 'run_later', focusMetric: 'mention_rate' },
       context,
     );
     db.prepare('DELETE FROM projects WHERE id = ?').run('prj_1');
@@ -774,6 +848,193 @@ test('a stored reference reads back what it points at today, and a deleted targe
     const afterDeletion = getFinding(db, 'prj_1', id);
     assert.notEqual(afterDeletion, null, 'the finding body survives its referenced record');
     assert.deepEqual(afterDeletion?.references, [], 'the pointer is removed with its target');
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+function rowsIn(db: ReturnType<typeof createTestDatabase>, table: string): number {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as Record<string, unknown>;
+  return Number(row['n']);
+}
+
+/** A finalized pair of runs under one configuration, ready to be compared. */
+function comparableRuns(db: ReturnType<typeof createTestDatabase>): void {
+  insertRun(db, { projectId: 'prj_1', id: 'run_later' });
+  insertObservation(db, { runId: 'run_later', id: 'obs_later', queryId: 'qry_1' });
+  finalize(db, 'run_base');
+  finalize(db, 'run_later');
+}
+
+test('a comparison written without its focus metric or rule version is refused by the schema', () => {
+  const db = seeded();
+  try {
+    comparableRuns(db);
+    // A direct write, so the repository's own guard is out of the path. This is the layer a restored
+    // database or a hand-edited file has to pass.
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            `INSERT INTO retest_comparisons
+              (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
+               reasons_json, deltas_json, created_by, created_at)
+             VALUES ('c_nofocus', 'prj_1', NULL, 'run_base', 'run_later', 1, 'UNCHANGED', '[]',
+              '[{"metricId":"mention_rate"}]', 'Ram', ?)`,
+          )
+          .run(TEST_TIME),
+      /must record the focus metric and the comparability rule/,
+    );
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            `INSERT INTO retest_comparisons
+              (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
+               reasons_json, deltas_json, focus_metric, rule_version, created_by, created_at)
+             VALUES ('c_badrule', 'prj_1', NULL, 'run_base', 'run_later', 1, 'UNCHANGED', '[]',
+              '[{"metricId":"mention_rate"}]', 'mention_rate', 'comparison-rule-v9', 'Ram', ?)`,
+          )
+          .run(TEST_TIME),
+      /must record the focus metric and the comparability rule/,
+    );
+    // The outcome has to be reachable from the numbers stored beside it, or the row is a caption
+    // attached to an arbitrary figure.
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            `INSERT INTO retest_comparisons
+              (id, project_id, finding_id, base_run_id, later_run_id, comparable, outcome,
+               reasons_json, deltas_json, focus_metric, rule_version, created_by, created_at)
+             VALUES ('c_unmeasured', 'prj_1', NULL, 'run_base', 'run_later', 1, 'IMPROVED', '[]',
+              '[{"metricId":"mention_rate"}]', 'never_measured_rate', 'comparison-rule-v2', 'Ram', ?)`,
+          )
+          .run(TEST_TIME),
+      /focus metric must be one the comparison actually measured/,
+    );
+    assert.equal(rowsIn(db, 'retest_comparisons'), 0, 'no refused row survived');
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('a transition citation may not point at another finding or another project', () => {
+  const db = seeded();
+  try {
+    comparableRuns(db);
+    const mine = findingId(db);
+    transitionFinding(db, 'prj_1', mine, { status: 'ACCEPTED', note: 'Accepted.' }, context);
+    transitionFinding(db, 'prj_1', mine, { status: 'RETEST_REQUIRED', note: 'Retest.' }, context);
+    recordRetestComparison(
+      db,
+      'prj_1',
+      mine,
+      { baseRunId: 'run_base', laterRunId: 'run_later', focusMetric: 'mention_rate' },
+      context,
+    );
+    const comparison = getFinding(db, 'prj_1', mine)?.comparisons[0];
+    assert.notEqual(comparison, undefined);
+
+    // Another finding in another project, with a history row of its own, so the sequence the raw
+    // insert uses is valid and only the citation can be what fails.
+    const theirs = createFinding(
+      db,
+      'prj_2',
+      findingInput({ title: 'A finding in the other project' }),
+      context,
+    ).id;
+    transitionFinding(db, 'prj_2', theirs, { status: 'ACCEPTED', note: 'Accepted.' }, context);
+    transitionFinding(db, 'prj_2', theirs, { status: 'RETEST_REQUIRED', note: 'Retest.' }, context);
+    const citedOutcome = comparison?.outcome ?? 'NOT_COMPARABLE';
+    const citedId = comparison?.id ?? '';
+    const nextSequence =
+      (
+        db
+          .prepare(
+            'SELECT COALESCE(MAX(sequence), 0) AS m FROM finding_updates WHERE finding_id = ?',
+          )
+          .get(theirs) as Record<string, unknown>
+      )['m'] ?? 0;
+
+    // A cross-project citation differs in both scopes at once, and SQLite fires same-table triggers in
+    // name order, so the assertion matches the rule rather than a chosen message.
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            `INSERT INTO finding_updates
+              (id, project_id, finding_id, sequence, previous_status, new_status, note,
+               comparison_id, actor, created_at)
+             VALUES ('fu_cross_project', 'prj_2', ?, ?, 'RETEST_REQUIRED', ?, 'Borrowed evidence',
+              ?, 'Ram', ?)`,
+          )
+          .run(theirs, Number(nextSequence) + 1, citedOutcome, citedId, TEST_TIME),
+      /a transition may only cite a comparison (raised against the same finding|from its own project)/,
+    );
+
+    // Same project, different finding: the only thing wrong is the finding scope.
+    const sibling = createFinding(
+      db,
+      'prj_1',
+      findingInput({ title: 'A second finding in the same project' }),
+      context,
+    ).id;
+    const siblingSequence =
+      (
+        db
+          .prepare(
+            'SELECT COALESCE(MAX(sequence), 0) AS m FROM finding_updates WHERE finding_id = ?',
+          )
+          .get(sibling) as Record<string, unknown>
+      )['m'] ?? 0;
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            `INSERT INTO finding_updates
+              (id, project_id, finding_id, sequence, previous_status, new_status, note,
+               comparison_id, actor, created_at)
+             VALUES ('fu_sibling_finding', 'prj_1', ?, ?, 'OPEN', ?, 'Borrowed from a sibling',
+              ?, 'Ram', ?)`,
+          )
+          .run(sibling, Number(siblingSequence) + 1, citedOutcome, citedId, TEST_TIME),
+      /raised against the same finding/,
+    );
+    // Neither refused row was written, and the finding that was cited is untouched.
+    assert.equal(
+      getFinding(db, 'prj_1', sibling)?.updates.length,
+      1,
+      'the sibling keeps only its creation record',
+    );
+    assert.equal(
+      getFinding(db, 'prj_1', sibling)?.status,
+      'OPEN',
+      'no refused transition moved it',
+    );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('recorded conditions that differ make two runs incomparable', () => {
+  const db = seeded();
+  try {
+    insertRun(db, {
+      projectId: 'prj_1',
+      id: 'run_later',
+      conditions: 'Signed out, no tools, other account plan',
+    });
+    insertObservation(db, { runId: 'run_later', id: 'obs_later', queryId: 'qry_1' });
+    finalize(db, 'run_base');
+    finalize(db, 'run_later');
+    const preview = previewRetestComparison(db, 'prj_1', 'run_base', 'run_later', 'mention_rate');
+    assert.equal(preview.comparable, false);
+    assert.ok(
+      preview.reasons.some((reason) => /recorded conditions differ/i.test(reason)),
+      preview.reasons.join(' | '),
+    );
+    assert.equal(preview.outcome, 'NOT_COMPARABLE');
   } finally {
     closeDatabase(db);
   }

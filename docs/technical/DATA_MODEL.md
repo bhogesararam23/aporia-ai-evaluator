@@ -1,5 +1,35 @@
 # Data Model and Lifecycle
 
+## 0. Status of this model as of local core v0.4
+
+This is the conceptual model the product is built against, not a list of tables. The implemented schema
+lives in [Local schema](LOCAL_SCHEMA.md) and the implemented routes in [HTTP route map](HTTP_ROUTE_MAP.md);
+where the three disagree, those two documents describe what exists.
+
+Implemented as described here: project, entity, claim with immutable revisions, proposition, source,
+evidence item, evidence relationship, query set, run, observation, citation, assessment and report
+snapshot, plus achievement records with revisions and approvals.
+
+Implemented later, in shapes this document did not anticipate:
+
+- **Answer statement** (`answer_claims` with immutable revisions, proposition links, citation mappings and
+  assessments) — what a reviewer records that a captured answer asserted. Its quote is re-verified against
+  the stored raw answer, a description that cannot be located is stored as a reviewer description rather
+  than a quote, and the relevance field decides whether the statement asserts anything at all. v0.4 added
+  the label-to-relevance integrity triggers and separated "recorded" from "assessed" so decomposition
+  effort is never read as answer quality.
+- **Remediation finding** (`remediation_findings`, `finding_references`, `finding_updates`) and **retest
+  comparison** (`retest_comparisons`). A comparison created after v0.4 also carries the focus metric that
+  decided it, both runs' metric versions and the comparability rule version, and a measured status names
+  the specific comparison it relies on.
+- **Void lifecycle** on statements, citations and observations: a voided record keeps its body, its reason
+  and its relationships, and leaves the current figures through a named exclusion. Nothing is deleted to
+  make a metric look clean.
+
+Still specified but not implemented: **provider capability** records, a separate **review/appeal event**
+entity (local audit events and append-only assessment history serve instead), and any retention table.
+Nothing in this model introduces accounts, tenants, plans or billing; see section 7.
+
 ## 1. Design rules
 
 A claim, its evidence, a provider answer, a citation, and an attribution judgment are separate entities. Do not compress a full evaluation into an untraceable score. All derived records need provenance, timestamps, version identifiers, and links to input records.

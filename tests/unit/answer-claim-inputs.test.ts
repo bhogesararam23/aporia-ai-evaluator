@@ -278,121 +278,160 @@ test('a recorded omission cannot claim a position inside the answer', () => {
 });
 
 test('proposition links require a rationale and a known relation', () => {
-  const good = validateClaimPropositionLinkInput({
-    propositionId: 'prop_1',
-    relation: 'CONTRADICTS_TARGET',
-    rationale: 'The answer states 2021; the recorded primary artifact says 2022.',
-    reviewer: 'operator-local',
-  });
+  const good = validateClaimPropositionLinkInput(
+    {
+      propositionId: 'prop_1',
+      relation: 'CONTRADICTS_TARGET',
+      rationale: 'The answer states 2021; the recorded primary artifact says 2022.',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(good.ok, true);
 
-  const noRationale = validateClaimPropositionLinkInput({
-    propositionId: 'prop_1',
-    relation: 'CONTRADICTS_TARGET',
-    reviewer: 'operator-local',
-  });
+  const noRationale = validateClaimPropositionLinkInput(
+    {
+      propositionId: 'prop_1',
+      relation: 'CONTRADICTS_TARGET',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(noRationale.ok, false);
 
-  const unknownRelation = validateClaimPropositionLinkInput({
-    propositionId: 'prop_1',
-    relation: 'DEFINITELY_RIGHT',
-    rationale: 'because',
-    reviewer: 'operator-local',
-  });
+  const unknownRelation = validateClaimPropositionLinkInput(
+    {
+      propositionId: 'prop_1',
+      relation: 'DEFINITELY_RIGHT',
+      rationale: 'because',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(unknownRelation.ok, false);
 });
 
 test('citation links require a support label from the citation axis only', () => {
-  const good = validateClaimCitationLinkInput({
-    citationId: 'cit_1',
-    support: 'SUPPORTS_WITH_CONDITIONS',
-    rationale: 'The cited page covers the 2022 release only.',
-    reviewer: 'operator-local',
-  });
+  const good = validateClaimCitationLinkInput(
+    {
+      citationId: 'cit_1',
+      support: 'SUPPORTS_WITH_CONDITIONS',
+      rationale: 'The cited page covers the 2022 release only.',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(good.ok, true);
 
-  const borrowed = validateClaimCitationLinkInput({
-    citationId: 'cit_1',
-    support: 'ACCURATE',
-    rationale: 'wrong axis',
-    reviewer: 'operator-local',
-  });
+  const borrowed = validateClaimCitationLinkInput(
+    {
+      citationId: 'cit_1',
+      support: 'ACCURATE',
+      rationale: 'wrong axis',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(borrowed.ok, false);
 });
 
 test('claim assessments keep fidelity and attribution on separate axes', () => {
-  const fidelity = validateAnswerClaimAssessmentInput({
-    dimension: 'FIDELITY',
-    label: 'CONTRADICTED',
-    rationale: 'Conflicts with the recorded primary artifact.',
-    reviewer: 'operator-local',
-  });
+  const fidelity = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'FIDELITY',
+      label: 'CONTRADICTED',
+      rationale: 'Conflicts with the recorded primary artifact.',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(fidelity.ok, true);
 
-  const wrongAxis = validateAnswerClaimAssessmentInput({
-    dimension: 'FIDELITY',
-    label: 'INCORRECT',
-    rationale: 'attribution label on the fidelity axis',
-    reviewer: 'operator-local',
-  });
+  const wrongAxis = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'FIDELITY',
+      label: 'INCORRECT',
+      rationale: 'attribution label on the fidelity axis',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(wrongAxis.ok, false);
 
-  const citationAxis = validateAnswerClaimAssessmentInput({
-    dimension: 'CITATION_SUPPORT',
-    label: 'SUPPORTS',
-    rationale: 'citation support belongs on the mapping',
-    reviewer: 'operator-local',
-  });
+  const citationAxis = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'CITATION_SUPPORT',
+      label: 'SUPPORTS',
+      rationale: 'citation support belongs on the mapping',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(citationAxis.ok, false);
 });
 
 test('attribution assessments name the subject unless attribution is unaddressed', () => {
-  const missingSubject = validateAnswerClaimAssessmentInput({
-    dimension: 'ATTRIBUTION',
-    label: 'FALSE_SOLE_CREDIT',
-    rationale: 'The answer credits one person for work the record shows was shared.',
-    reviewer: 'operator-local',
-  });
+  const missingSubject = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'ATTRIBUTION',
+      label: 'FALSE_SOLE_CREDIT',
+      rationale: 'The answer credits one person for work the record shows was shared.',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(missingSubject.ok, false);
 
-  const silenceIsFine = validateAnswerClaimAssessmentInput({
-    dimension: 'ATTRIBUTION',
-    label: 'NOT_ADDRESSED',
-    rationale: 'The statement makes no credit claim.',
-    reviewer: 'operator-local',
-  });
+  const silenceIsFine = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'ATTRIBUTION',
+      label: 'NOT_ADDRESSED',
+      rationale: 'The statement makes no credit claim.',
+      reviewer: 'operator-local',
+    },
+    'ADDRESSES',
+  );
   assert.equal(silenceIsFine.ok, true);
 
-  const withSubject = validateAnswerClaimAssessmentInput({
-    dimension: 'ATTRIBUTION',
-    label: 'WRONG_ROLE',
-    rationale: 'Named as author; the record shows maintainer.',
-    reviewer: 'operator-local',
-    attributionSubject: 'Aram',
-    attributionRole: 'MAINTAINER',
-  });
+  const withSubject = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'ATTRIBUTION',
+      label: 'WRONG_ROLE',
+      rationale: 'Named as author; the record shows maintainer.',
+      reviewer: 'operator-local',
+      attributionSubject: 'Aram',
+      attributionRole: 'MAINTAINER',
+    },
+    'ADDRESSES',
+  );
   assert.equal(withSubject.ok, true);
 });
 
 test('a fidelity assessment rejects attribution detail', () => {
-  const result = validateAnswerClaimAssessmentInput({
-    dimension: 'FIDELITY',
-    label: 'ACCURATE',
-    rationale: 'Matches the recorded release note.',
-    reviewer: 'operator-local',
-    attributionSubject: 'Aram',
-  });
+  const result = validateAnswerClaimAssessmentInput(
+    {
+      dimension: 'FIDELITY',
+      label: 'ACCURATE',
+      rationale: 'Matches the recorded release note.',
+      reviewer: 'operator-local',
+      attributionSubject: 'Aram',
+    },
+    'ADDRESSES',
+  );
   assert.equal(result.ok, false);
 });
 
 test('assessment rationale is required and bounded', () => {
   for (const rationale of [undefined, '', '   ', 'x'.repeat(4001)]) {
-    const result = validateAnswerClaimAssessmentInput({
-      dimension: 'FIDELITY',
-      label: 'ACCURATE',
-      rationale,
-      reviewer: 'operator-local',
-    });
+    const result = validateAnswerClaimAssessmentInput(
+      {
+        dimension: 'FIDELITY',
+        label: 'ACCURATE',
+        rationale,
+        reviewer: 'operator-local',
+      },
+      'ADDRESSES',
+    );
     assert.equal(result.ok, false, `rationale ${JSON.stringify(rationale)}`);
   }
 });

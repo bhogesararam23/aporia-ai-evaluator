@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 import { BENCHMARK_CASE_VERSION } from '../../src/benchmark/types.ts';
+import { METRICS_VERSION } from '../../src/core/versions.ts';
 import type { BenchmarkReport } from '../../src/benchmark/report.ts';
 
 function parseReport(stdout: string): BenchmarkReport {
@@ -42,7 +43,7 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
     provenance: {
       origin: 'Synthetic CLI fixture. Not a gold case.',
       authorizedForStorage: true,
-      reviewedBy: ['reviewer-a'],
+      reviewedBy: ['reviewer-a', 'reviewer-b'],
       reviewedAt: '2026-11-01',
       unverified: [],
       limitation: 'Fixture only.',
@@ -57,6 +58,9 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
             {
               id: 'ev-1',
               relation: 'SUPPORTS',
+              // A v2 case separates the relationship from the source it came from, so the
+              // duplicate-and-syndication stratum is expressible at all.
+              sourceId: 'src-1',
               sourceType: 'PRIMARY_ARTIFACT',
               independence: 'INDEPENDENT',
               locator: 'section 1',
@@ -66,14 +70,21 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
       ],
       answerText: 'A fixture answer.',
       citationCapture: 'CAPTURED',
-      citations: [],
+      citations: [
+        {
+          id: 'cit-1',
+          url: 'https://example.invalid/source',
+          supportsStatement: true,
+          note: null,
+        },
+      ],
       statements: [
         {
           id: 'stmt-1',
           text: 'A fixture statement.',
           relevance: 'ADDRESSES',
           propositionIds: ['prop-1'],
-          citationIds: [],
+          citationIds: ['cit-1'],
         },
       ],
       providerLabel: 'Fixture',
@@ -88,7 +99,7 @@ function caseJson(overrides: Record<string, unknown> = {}): string {
       },
     ],
     reviewerLabels: [],
-    adjudication: null,
+    adjudications: [],
     limitations: ['Synthetic fixture used only to exercise the runner.'],
     ...overrides,
   });
@@ -174,7 +185,7 @@ test('a valid corpus reports, names the missing strata, and exits non-zero', asy
       'a framework result is not an accuracy claim',
     );
     assert.equal(report.caseFormat, BENCHMARK_CASE_VERSION);
-    assert.equal(report.metricsVersion, 'metrics-v3');
+    assert.equal(report.metricsVersion, METRICS_VERSION);
   } finally {
     temp.remove();
   }

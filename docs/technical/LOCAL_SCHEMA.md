@@ -1,8 +1,8 @@
-# Local SQLite Schema and Integrity Rules (v0.1)
+# Local SQLite Schema and Integrity Rules (v0.4)
 
 - Status: Implemented
-- Date: 2026-10-29
-- Related: ADR-002, ADR-009, ADR-010, ADR-011, ADR-013
+- Date: 2026-11-02
+- Related: ADR-002, ADR-009, ADR-010, ADR-011, ADR-013, ADR-018, ADR-021, ADR-023, ADR-024
 - Migration directory: `src/persistence/migrations/`
 
 ## 1. Migration policy
@@ -147,6 +147,29 @@ Tracked evaluation problems and the guards that make the honest reading unavoida
 
 Two schema behaviours are worth knowing before adding a guard here. SQLite fires multiple triggers for the same event **ordered by trigger name**, not by creation order, so two overlapping `BEFORE INSERT` guards will report whichever name sorts first — write each test case so only one rule can reject it, or the assertion is about naming. And a `BEFORE INSERT` trigger runs **before** table CHECK constraints, so a scope guard placed first will bury a malformed row under a boundary message; the guard here is written to speak only once the row has exactly one target.
 
+## 3.1 v0.4 additions
+
+### Evaluator integrity (`010_evaluator_integrity.sql`)
+
+`metrics-v4` decides that a statement's recorded relevance governs whether it asserts anything, and that a label can only describe what was asserted about it. v0.3 stated that rule in comments and enforced none of it, so a refusal carrying an `ACCURATE` assessment was scored as an accurate factual statement. Five `BEFORE INSERT` triggers are the outermost gate, because application code can be bypassed by a restored database, a hand-edited file, or a future caller, and a stored row that contradicts its own relevance would then reappear as a number a reader cannot argue with:
+
+- `answer_claim_assessments_fidelity_matches_relevance` and `answer_claim_assessments_attribution_matches_relevance` — each fidelity or attribution label is permitted only against a relevance that makes it meaningful, and `OMISSION` never accepts a factual verdict at all.
+- `answer_claim_propositions_relation_matches_relevance` — `OMITS_TARGET` is reachable only from a statement that partially addresses the target or records an omission, so an unrelated remark cannot manufacture a relevant-omission result.
+- `answer_claim_citations_support_matches_relevance` — a citation-support judgement on a statement that asserts nothing is refused.
+- `answer_claim_citations_require_active_citation` — a mapping may not point at a withdrawn citation. Support for a citation that no longer stands would otherwise keep counting.
+
+Each trigger speaks only when the value it is given already belongs to that axis's own vocabulary. Vocabulary membership belongs to the v0.3 column checks and triggers, which produce the clearer message for a label filed on the wrong dimension; a `BEFORE INSERT` trigger that fired first would pre-empt it and hide which rule was broken — see the trigger-ordering note above, which is why these arms are scoped rather than blanket. Every list in the SQL mirrors `src/core/claimEligibility.ts`, and `tests/integration/schema-evaluator-integrity.test.ts` reads this file and compares each arm against the TypeScript table, because a duplicated rule that nobody checks is worse than no rule at all: it looks enforced.
+
+### Retest provenance (`011_retest_provenance.sql`)
+
+A measured finding status is a claim that a specific retest showed a specific movement. Under v0.3 the lifecycle checked that *some* acceptable comparison existed for the finding while writing whatever `comparisonId` the caller supplied into the history row, so a valid comparison elsewhere could justify an update citing an unrelated one, and the chosen focus metric survived only inside an audit-event detail that nothing read back. Everything here is additive — applied migrations are never edited — and every constraint lands on new writes only:
+
+- Five columns on `retest_comparisons`: `focus_metric`, `focus_label`, `rule_version`, `base_metrics_version`, `later_metrics_version`. `retest_comparisons_v04_requires_provenance` refuses a new comparison that omits them, and `retest_comparisons_focus_metric_in_deltas` requires the metric that decided the outcome to be one of the metrics actually compared (it stays silent when `focus_metric` is `NULL`, so the provenance trigger's clearer message wins the alphabetical race).
+- Four triggers on `finding_updates`: `finding_updates_comparison_same_project`, `..._same_finding`, and `..._outcome_matches` bind the cited comparison to this project, this finding, and the outcome it recorded; `finding_updates_measured_requires_cited_comparison` and `finding_updates_unable_requires_cited_comparison` require a citation for any measured status at all.
+- The comparison itself is recomputed from the two persisted runs inside the repository's transaction, so a client cannot submit a fabricated `IMPROVED`; the stored row is the output of the comparison code, not an echo of the request.
+
+`rule_version` records which comparability rule produced the verdict (`comparison-rule-v1` for rows written before v0.4, `comparison-rule-v2` for those after), because v0.4 added recorded `conditions` to the comparison and a historical row must keep meaning what it meant when it was written.
+
 ## 4. Cross-cutting invariants
 
 - Every persisted record has a stable identifier and timestamps.
@@ -166,6 +189,6 @@ Two schema behaviours are worth knowing before adding a guard here. SQLite fires
 - The database is a single local file plus WAL/SHM files while running. Stop the server before copying it for a consistent backup.
 - No achievement, public publication, review-event, benchmark, or provider-capability tables exist in v0.1.
 - Achievement records, revisions, contributor roles, evidence links, and approval rows were added in v0.2 (`007_achievements.sql`); publication is still not implemented.
-- Answer-statement decomposition (`008_answer_claims.sql`) and tracked remediation findings (`009_remediation.sql`) were added in v0.3. A benchmark case set is a versioned file format validated by `src/benchmark/`, not a table: there is no stored benchmark dataset, and none is fabricated.
+- Answer-statement decomposition (`008_answer_claims.sql`) and tracked remediation findings (`009_remediation.sql`) were added in v0.3. Local core v0.4 adds only guards and columns to those same tables (`010`, `011`); no v0.3 table was redefined and no stored row was rewritten. A benchmark case set is a versioned file format validated by `src/benchmark/`, not a table: there is no stored benchmark dataset, and none is fabricated.
 
 See [Local operations](../operations/LOCAL_RUNBOOK.md) for backup and troubleshooting guidance.
