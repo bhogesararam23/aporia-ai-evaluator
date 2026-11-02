@@ -59,7 +59,7 @@ test('recorded statements produce the claim-level block and coverage counts', ()
           quoteText: 'nobody knows',
           relevance: 'ABSTENTION',
           propositionLinks: [{ propositionId: 'prp_1', relation: 'ABSTAINS_TARGET' }],
-          citationSupports: [],
+          citationMappings: [],
           labels: { FIDELITY: 'REFUSED' },
         }),
       ],

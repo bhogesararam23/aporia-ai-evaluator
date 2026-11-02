@@ -10,6 +10,7 @@ import {
   type ClaimRelevance,
 } from '../../core/answerClaims.ts';
 import { QUERY_INTENT_LABELS } from '../../core/vocabulary.ts';
+import { CLAIM_LEVEL_METRICS_VERSIONS } from '../../core/versions.ts';
 import { FINDING_SEVERITY_LABELS, type FindingSeverity } from '../../website/types.ts';
 import {
   assessmentBadge,
@@ -213,7 +214,9 @@ function statementSection(run: ReportRunView): Html {
         That is not a zero and not a failure: it means the captured answers were assessed only as
         whole answers.
         ${
-          run.metrics.version === 'metrics-v3'
+          CLAIM_LEVEL_METRICS_VERSIONS.includes(
+            run.metrics.version as (typeof CLAIM_LEVEL_METRICS_VERSIONS)[number],
+          )
             ? ''
             : `This snapshot was produced under ${run.metrics.version}, which predates statement-level metrics.`
         }

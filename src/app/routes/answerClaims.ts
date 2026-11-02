@@ -898,7 +898,7 @@ function reportContributionPanel(workspace: AnswerClaimWorkspace): Html {
         </li>
         <li>
           Statement figures only appear in a report generated as
-          <code>metrics-v3</code>. An older report keeps the numbers it was generated with.
+          <code>metrics-v4</code>. An older report keeps the numbers it was generated with.
         </li>
         <li>
           Decomposition coverage is published next to every statement-level rate, because those

@@ -6,6 +6,7 @@ import {
   type RunMetricsInput,
 } from '../../src/core/metrics.ts';
 import type { AnswerClaimCitationInput, AnswerClaimInput } from '../../src/core/claimMetrics.ts';
+import { METRICS_VERSION } from '../../src/core/versions.ts';
 
 const OBSERVATION: ObservationInput = {
   id: 'obs_1',
@@ -91,7 +92,7 @@ test('claim-level output never changes the observation-level rates', () => {
       `${key} must keep its metrics-v2 meaning`,
     );
   }
-  assert.equal(withClaims.version, 'metrics-v3');
+  assert.equal(withClaims.version, METRICS_VERSION);
 });
 
 test('the fidelity denominator holds only definitive assessments', () => {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { METRICS_VERSION } from '../../src/core/versions.ts';
 import {
   computeRunMetrics,
   EXCLUSION_REASONS,
@@ -105,7 +106,7 @@ function exclusionCount(
 test('computes separate rates with explicit denominators and exclusions', () => {
   const metrics = computeRunMetrics(baseInput());
 
-  assert.equal(metrics.version, 'metrics-v3');
+  assert.equal(metrics.version, METRICS_VERSION);
   // A run with no recorded answer statements has no claim-level answer, not a claim-level zero.
   assert.equal(metrics.claimLevel, undefined);
   assert.deepEqual(

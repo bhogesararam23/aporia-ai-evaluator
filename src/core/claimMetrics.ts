@@ -1,5 +1,9 @@
 /**
- * Claim-level answer metrics (`metrics-v3`, ADR-019).
+ * Claim-level answer metrics (`metrics-v4`, ADR-019 as amended by ADR-023).
+ *
+ * ADR-019 introduced this block; ADR-023 fixed which statements may enter a denominator. Every
+ * rate here is gated by src/core/claimEligibility.ts, so a recorded label can never promote a
+ * non-assertion into a scored assertion.
  *
  * These measures describe individual statements the reviewer extracted from a captured answer. They
  * sit beside, and never inside, the observation-level rates: an answer can read as broadly accurate

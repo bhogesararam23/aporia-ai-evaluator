@@ -1,5 +1,5 @@
 /**
- * Shared metric vocabulary (`metrics-v3`, ADR-019).
+ * Shared metric vocabulary (`metrics-v4`, ADR-019 as amended by ADR-023).
  *
  * These types are used by both the observation-level metrics and the claim-level metrics, so the
  * two can be assembled without one importing the other. Exclusion reasons are a controlled list
