@@ -375,7 +375,7 @@ terminology problem belongs to D-5. The row now reads D-1, D-2, D-4, D-5.
 | `npm run lint` | pass |
 | `npm run format:check` | pass |
 | `npm run check:boundaries` | pass |
-| `npm test` | **690 passing, 0 failing** (374 unit, 316 integration) |
+| `npm test` | **691 passing, 0 failing** (372 unit, 319 integration) |
 | `npm run check` | exit 0 |
 | `npm run verify:workflow` | exit 0, 25 entries passed, 0 failed, 0 not run |
 | Benchmark failure modes | `tests/unit/benchmark-validate.test.ts`, `tests/unit/benchmark-scoring.test.ts`, `tests/integration/benchmark-cli.test.ts` — unknown case version, missing rationale, unauthorised provenance, unnamed reviewer, dangling references, empty decomposition, duplicate identifiers, partial invalid case excluded from scoring, disagreement never resolved silently |
@@ -392,6 +392,14 @@ piped through `grep | head`, whose exit code replaced npm's. It was corrected fo
 message says so, and every gate since has been run as `npm run check > file 2>&1; echo $?` so the real
 exit status is what gets read. Nothing was force-pushed, no published commit was amended, and no test was
 weakened to make a gate pass.
+
+The gate table above first read "690 passing (374 unit, 316 integration)". Those numbers were stale the
+moment they were written: three more tests landed after the last full run, and the unit/integration split
+was quoted from an earlier measurement rather than re-taken. Re-running each glob separately gives 372 and
+319, and `npm test` gives 691, 691 passing, 0 failing, which is what the final `npm run check` confirms.
+`docs/TESTING.md` carried the same kind of error — a 688 figure copied from the previous run — and is
+corrected in the same commit. A verification document that quotes a count it did not just measure is not
+evidence, so the numbers here are the ones from the last run, and this paragraph says they were wrong once.
 
 ### Push checkpoints and hosted CI
 

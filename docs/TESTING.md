@@ -93,9 +93,9 @@ v24.13.1, npm 11.8.0:
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **688 tests, 688 passing, 0 failing** — 372 under `tests/unit`, 316 under
+- `npm test`: **691 tests, 691 passing, 0 failing** — 372 under `tests/unit`, 319 under
   `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 688/688 result.
+- `npm run check`: exit 0 with the same 691/691 result.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
   `0.4.0`. The run entered every record by hand through the served forms; nothing was seeded, and no
@@ -170,7 +170,7 @@ The suite explicitly covers:
 
 `.github/workflows/ci.yml` runs `npm ci` and `npm run check` on Node 24 for every push to the
 milestone branch, which is the same gate as locally: typecheck, lint, formatting, boundaries, and all
-688 tests. The first hosted run was
+691 tests. The first hosted run was
 [40773185352](https://github.com/bhogesararam23/aporia-ai-evaluator/actions/runs/40773185352) at commit
 `38d3006`; since then each checkpoint has been confirmed before the next push, and no checkpoint was
 pushed while an earlier one was failing. Runs cited in the v0.4 session report are per checkpoint. The
