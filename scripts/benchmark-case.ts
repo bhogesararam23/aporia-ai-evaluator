@@ -25,15 +25,8 @@
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
  * never reach the network or the application database, and never edit a case's gold `expected` array.
  */
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-  existsSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { CorpusReadError, readCorpusValues, readJsonEntries } from './corpus-io.ts';
 import { join, resolve } from 'node:path';
 import {
   caseProvenanceSummary,
@@ -127,29 +120,14 @@ function parseArguments(argv: readonly string[]): Options {
 }
 
 function readCorpus(directory: string): { index: number; value: unknown }[] {
-  let names: string[];
   try {
-    names = readdirSync(directory)
-      .filter((name) => name.endsWith('.json'))
-      .sort();
-  } catch {
-    return fail(`The corpus directory could not be read: ${directory}`);
-  }
-  const sources: { index: number; value: unknown }[] = [];
-  for (const name of names) {
-    const text = readFileSync(join(directory, name), 'utf8');
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      return fail(`${name} is not valid JSON.`);
+    return readCorpusValues(directory);
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(error.message);
     }
-    const entries = Array.isArray(value) ? value : [value];
-    for (const entry of entries) {
-      sources.push({ index: sources.length, value: entry });
-    }
+    throw error;
   }
-  return sources;
 }
 
 function requireCorpus(options: Options): string {
@@ -241,33 +219,24 @@ function provenance(options: Options): void {
   );
 }
 
-/** Read every JSON file in a directory, flattening top-level arrays, for the review subcommands. */
+/**
+ * Read every JSON file in a directory, flattening top-level arrays, for the review subcommands. The loading
+ * rules live in `corpus-io.ts` so `benchmark:case` and `benchmark:release` cannot drift apart on what an
+ * unreadable or malformed file means.
+ */
 function readJsonDir(directory: string, label: string): { name: string; value: unknown }[] {
-  let names: string[];
   try {
-    names = readdirSync(directory)
-      .filter((name) => name.endsWith('.json'))
-      .sort();
-  } catch {
-    return fail(`The ${label} directory could not be read: ${directory}`);
-  }
-  const entries: { name: string; value: unknown }[] = [];
-  for (const name of names) {
-    let value: unknown;
-    try {
-      value = JSON.parse(readFileSync(join(directory, name), 'utf8'));
-    } catch {
-      return fail(`${name} is not valid JSON.`);
+    return readJsonEntries(directory);
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(
+        error.kind === 'directory'
+          ? `The ${label} directory could not be read: ${directory}`
+          : error.message,
+      );
     }
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        entries.push({ name, value: item });
-      }
-    } else {
-      entries.push({ name, value });
-    }
+    throw error;
   }
-  return entries;
 }
 
 /**
