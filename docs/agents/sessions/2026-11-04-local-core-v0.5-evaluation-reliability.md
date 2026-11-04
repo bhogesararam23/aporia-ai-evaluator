@@ -1,0 +1,87 @@
+# Agent Session Report — 2026-11-04 — Local core v0.5 evidence integrity and evaluation reliability
+
+This is the running record for the v0.5 milestone. It states what was actually observed in the
+checkout, what was verified by running, and what stays unverified. A row is moved to `Done` only when
+a test exists that would fail without the change. No claim here is backed by documentation alone.
+
+## 1. Session metadata
+
+- Date/time and timezone: 2026-11-04, local machine time
+- Task: finish evidence identity (ADR-025), add cross-platform CI, benchmark curation workflows,
+  reliability and accessibility hardening, and documentation — local core v0.5
+- Repository: `bhogesararam23/aporia-ai-evaluator`
+- Branch: `feat/aporia-local-core-v0.5-evaluation-reliability`
+- Starting commit: `6fcfff3ca1a24e02ad3e7494a7ab995c8fbf4b36` (`origin/main`)
+- Operating model: local-first, single operator, loopback only, no provider/network/auth/fabrication
+
+## 2. Actual starting state (verified, not assumed)
+
+| Check | Observed |
+|---|---|
+| `git fetch origin --prune` | `origin/main` moved `638f0a3 → 6fcfff3` — PR #7 (evidence-aggregation-v2) is **merged** (merge commit; the two PR #7 commits are ancestors, so not squashed) |
+| Starting tree | clean; `HEAD` on `fix/aporia-evidence-corroboration-by-source` @ `4322010`, 1 behind `origin/main`, 0 ahead |
+| `evidence-aggregation-v2` present on `main` | yes (`EVIDENCE_RULE_VERSION_V2` in `src/core/versions.ts`); default `EVIDENCE_RULE_VERSION` is still `v1` |
+| `npm test` at baseline | **701 tests, 701 pass, 0 fail** (re-measured on this checkout, not carried forward) |
+| Node | v24.13.1; `.nvmrc`/`engines` ask 24 |
+
+The brief's premise (finish ADR-025) is accurate: PR #7 delivered the RELATED/source-id collapse but
+**not** ADR-025 §1 rule 1 (two records of one underlying document recognised by a shared canonical URI),
+and the canonical URI was never carried to the rule. That is the objective-1 gap.
+
+## 3. Objective 1 — finish evidence identity (Done)
+
+- `underlyingSourceIdentity` (`src/core/evidence.ts`): a conservative, dependency-free identity for the
+  source behind a record. A full `canonicalUri` is normalised (scheme/host lower-cased, default port and
+  leading `www.` dropped, fragment removed, known tracking query parameters dropped, remaining
+  parameters sorted, trailing path slash stripped, path case preserved); a missing or unparseable URI
+  falls back to the record's own `sourceId`, so nothing merges on a guess.
+- `evidence-aggregation-v2` groups supporting records by that identity **in addition to** excluding
+  `RELATED` rows, so two source records reaching the same document corroborate once. The status
+  precedence is unchanged; `v1` output is byte-identical; `apparentCorroboratingSourceCount` still names
+  the `v1` figure so the disagreement is visible.
+- The canonical URI is threaded through the whole path: `activeRelationshipsForProposition`, the
+  achievements evidence query, and the report `snapshot` mapper now populate
+  `EvidenceRelationshipRecord.canonicalUri`. No schema change (`sources.canonical_uri` already existed).
+- **Default stays `v1`; ADR-025 stays Proposed.** Flipping `EVIDENCE_RULE_VERSION` is the owner's
+  decision and remains a single, atomic change.
+
+Tests (all fail against the relevant prior behaviour): `tests/unit/source-identity.test.ts` (7),
+`tests/unit/evidence-aggregation-v2.test.ts` (+4 shared-canonical cases), and the DB-to-core path case in
+`tests/integration/repositories-evidence.test.ts`.
+
+## 4. Objective 3 — cross-platform CI (added; CI result pending at time of writing)
+
+`.github/workflows/ci.yml` now runs Node 24 `npm run check` and `npm run verify:workflow` as a
+Windows / Linux / macOS matrix with `fail-fast: false`. This is the live-workflow cross-platform
+evidence v0.4 recorded as not run. It is reported as **verified only after the runners pass**; a platform
+that cannot bind a loopback port fails the job rather than passing vacuously.
+
+## 5. Objectives still in progress
+
+- **Objective 4** — reliability and accessibility hardening (durability, concurrency, failure injection,
+  migration/backup, report consistency; keyboard/responsive/browser a11y). Automated checks and manual
+  verification are kept apart and named as such.
+- **Objective 2** — benchmark curation workflows (annotation provenance, import/export, reproducible
+  local evaluation). No fabricated reviewers, gold cases or accuracy.
+- **Objective 5** — documentation sweep, roadmap and testing guide.
+
+## 6. Commit ledger
+
+Every pushed checkpoint was preceded by a green `npm run check` (713 tests after objective 1).
+
+| # | Commit | Area | Summary |
+|---|---|---|---|
+| 1 | `824fbef` | feat(core) | underlying-source identity; v2 counts corroboration by it; v1 unchanged |
+| 2 | `643ff1e` | feat(evidence) | canonical URI threaded DB→core→report; integration test |
+| 3 | `16223a6` | docs(adr-025) | record §1 rule 1 implemented; still Proposed, still not default |
+| 4 | `fcdd9da` | ci | Node 24 check + live workflow across Windows/Linux/macOS |
+
+Checkpoint 1 = commits 1–4, pushed to `origin/feat/aporia-local-core-v0.5-evaluation-reliability`.
+
+## 7. What is NOT claimed
+
+- Evaluator accuracy is not established and no gold corpus is asserted; the benchmark harness still
+  refuses accuracy over an empty corpus.
+- `evidence-aggregation-v2` is not the default and no stored verdict is recomputed.
+- Cross-platform CI is not reported as passing until the runners for this branch are green.
+- Aporia is not production-ready, provider-validated, or independently reviewed.
