@@ -16,17 +16,19 @@ import type {
   BenchmarkCase,
   BenchmarkCorpusValidation,
   DimensionScore,
+  EvidenceRuleRow,
   RegressionResultRow,
 } from './types.ts';
 import {
   HUMAN_JUDGEMENT_DIMENSIONS,
   produceMetricCounts,
+  evidenceRuleRegressions,
   regressionLimitations,
   type ExpectedMetricCount,
 } from './regression.ts';
 import { BENCHMARK_LIMITS } from './validate.ts';
 
-export const BENCHMARK_REPORT_VERSION = 'benchmark-report-v1';
+export const BENCHMARK_REPORT_VERSION = 'benchmark-report-v2';
 
 /**
  * What went into the corpus, distinguished by what the digest actually covers.
@@ -97,6 +99,12 @@ export interface BenchmarkReport {
     readonly mismatches: readonly RegressionResultRow[];
     readonly metricChecks: readonly MetricRegressionRow[];
     readonly humanJudgementDimensions: readonly string[];
+    /** Every proposition scored under both `evidence-aggregation-v1` and `-v2` (verdict + corroboration count). */
+    readonly evidenceRules: readonly EvidenceRuleRow[];
+    /** Propositions where the two rules produce different verdict labels. */
+    readonly ruleStatusDisagreements: number;
+    /** Propositions where v2 counts fewer underlying corroborating sources than v1. */
+    readonly corroborationCollapses: number;
     readonly unusableEvidence: readonly {
       readonly caseId: string;
       readonly propositionId: string;
@@ -243,6 +251,32 @@ export function buildBenchmarkReport(
     unusableEvidenceRecords: unusableEvidence.length,
     legacyContractCases: v1Cases,
   };
+  const evidenceRules = evidenceRuleRegressions(validation.cases);
+  // Pair each proposition's v1 and v2 rows to report where the two rules disagree, without
+  // resolving one into the other. A v2 divergence from a gold label is not a code regression — the
+  // product default is still v1 and v2 is only the ADR-025 proposal — so these are analysis, never
+  // part of the failing gate.
+  const byProposition = new Map<string, Record<string, EvidenceRuleRow>>();
+  for (const row of evidenceRules) {
+    const bucket = byProposition.get(`${row.caseId}/${row.propositionId}`) ?? {};
+    bucket[row.ruleVersion] = row;
+    byProposition.set(`${row.caseId}/${row.propositionId}`, bucket);
+  }
+  let ruleStatusDisagreements = 0;
+  let corroborationCollapses = 0;
+  for (const bucket of byProposition.values()) {
+    const v1 = bucket['evidence-aggregation-v1'];
+    const v2 = bucket['evidence-aggregation-v2'];
+    if (v1 === undefined || v2 === undefined) {
+      continue;
+    }
+    if (v1.produced !== v2.produced) {
+      ruleStatusDisagreements += 1;
+    }
+    if (v2.supportingSourceCount < v1.supportingSourceCount) {
+      corroborationCollapses += 1;
+    }
+  }
   return {
     version: BENCHMARK_REPORT_VERSION,
     caseFormat: BENCHMARK_CASE_VERSION,
@@ -266,6 +300,9 @@ export function buildBenchmarkReport(
       mismatches,
       metricChecks: metricChecks(validation.cases),
       humanJudgementDimensions: [...HUMAN_JUDGEMENT_DIMENSIONS],
+      evidenceRules,
+      ruleStatusDisagreements,
+      corroborationCollapses,
       // Evidence the deterministic rule could not read. Reported, never dropped: a silently discarded
       // relationship leaves the proposition looking unassessed, which can then "match" a garbage gold
       // label and pass as a regression.

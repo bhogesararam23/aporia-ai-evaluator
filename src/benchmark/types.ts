@@ -108,6 +108,13 @@ export interface BenchmarkEvidenceRecord {
   readonly relation: string;
   /** Identity of the underlying source, so duplicate and syndicated material collapses. Absent on a v1 case, where the relationship id stands in — which is reported, not repaired silently. */
   readonly sourceId?: string;
+  /**
+   * The canonical URI of the underlying source, when the reviewer recorded one (ADR-025 §1 rule 1).
+   *
+   * Optional and additive, so an older v1/v2 file still reads: it is simply absent. `evidence-aggregation-v2`
+   * uses it to recognise two records that are the same document reached differently, and counts them once.
+   */
+  readonly canonicalUri?: string | null;
   readonly sourceType: string;
   readonly independence: string;
   readonly locator: string;
@@ -298,6 +305,28 @@ export interface RegressionResultRow {
   readonly produced: string;
   readonly matched: boolean;
   readonly component: string;
+}
+
+/**
+ * One proposition scored under one evidence-aggregation rule version.
+ *
+ * The pipeline is deliberately version-aware: it runs `evidence-aggregation-v1` and
+ * `evidence-aggregation-v2` over the same frozen evidence and records **both the verdict and the
+ * corroboration count** for each, so a reader can see a rule change move the corroborating-source
+ * figure even where the verdict label is unchanged. `statusMatched` compares the produced verdict to
+ * the case's gold label; `corroborationCollapsed` is true where v2 counts fewer underlying sources
+ * than v1. A v1/v2 disagreement is a methodology signal, not a code regression — v2 is only a
+ * proposal (ADR-025) and the product default stays v1.
+ */
+export interface EvidenceRuleRow {
+  readonly caseId: string;
+  readonly propositionId: string;
+  readonly ruleVersion: string;
+  readonly expected: string | null;
+  readonly produced: string;
+  readonly statusMatched: boolean;
+  readonly supportingSourceCount: number;
+  readonly apparentCorroboratingSourceCount: number | null;
 }
 
 /**
