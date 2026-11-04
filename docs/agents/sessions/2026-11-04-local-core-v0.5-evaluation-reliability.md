@@ -83,8 +83,9 @@ claim over an empty/synthetic corpus.
 
 ## 7. Commit ledger
 
-Every pushed checkpoint was preceded by a green `npm run check`. Count re-measured by glob after the
-accessibility fix: **717 tests — 397 unit, 320 integration** (session-start baseline was 701).
+The branch is **20 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`).
+Test count re-measured by glob after this work: **721 tests — 401 unit, 320 integration** (session-start
+baseline was 701). Every pushed checkpoint was preceded by a green `npm run check`.
 
 | # | Commit | Area | Summary |
 |---|---|---|---|
@@ -94,24 +95,31 @@ accessibility fix: **717 tests — 397 unit, 320 integration** (session-start ba
 | 4 | `fcdd9da` | ci | Node 24 check + live workflow across Windows/Linux/macOS |
 | 5 | `040d0ee` | docs(session) | open the v0.5 audit, traceability and commit ledger |
 | 6 | `f071a6e` | docs(session) | record checkpoint-1 CI verified across three OSes |
-| 7 | `737eeff` | docs(testing) | re-measure 713 (393/320); record three-OS CI |
+| 7 | `737eeff` | docs(testing) | re-measure 713; record three-OS CI |
 | 8 | `098971e` | test(a11y) | link accessible-name + no-positive-tabindex guards (pass) |
 | 9 | `fe1a92a` | docs(limitations) | record the duplicate field-id accessibility defect from the audit |
-| 10 | `f46b71e` | feat(a11y) | optional per-form id scope in shared field components |
-| 11 | `1fb3337` | fix(a11y) | scope statement-workspace form ids |
-| 12 | `d793b53` | fix(a11y) | scope claim-page evidence/assessment/supersede ids |
-| 13 | `e64c482` | fix(a11y) | scope run-detail assessment + void form ids |
-| 14 | `5bf1ccf` | fix(a11y) | scope finding transition/amendment note ids |
-| 15 | `413cdb4` | test(a11y) | enforce unique ids + resolvable label refs in the checker |
-| 16 | `afe0cfd` | test(a11y) | regression coverage for repeated forms + rejected submissions |
+| 10 | `395df5d` | docs(session) | update ledger to 9 commits, record the guards and the defect |
+| 11 | `f46b71e` | feat(a11y) | optional per-form id scope in shared field components |
+| 12 | `1fb3337` | fix(a11y) | scope statement-workspace form ids |
+| 13 | `d793b53` | fix(a11y) | scope claim-page evidence/assessment/supersede ids |
+| 14 | `e64c482` | fix(a11y) | scope run-detail assessment + void form ids |
+| 15 | `5bf1ccf` | fix(a11y) | scope finding transition/amendment note ids |
+| 16 | `413cdb4` | test(a11y) | enforce unique ids + resolvable label refs in the checker |
+| 17 | `afe0cfd` | test(a11y) | regression coverage for repeated forms + rejected submissions |
+| 18 | `1d66771` | docs | record the id-scope fix complete; update limitations and ledger |
+| 19 | `d104d5a` | feat(benchmark) | version-aware v1/v2 evidence scoring + canonical URI + corroboration counts |
+| 20 | `0a59298` | docs(benchmark) | document the version-aware regression and canonical identity |
 
-Checkpoints pushed: #1 = commits 1–4 (`fcdd9da`, CI `41807701771`), #2 = commits 5–7 (`737eeff`, CI
-`41814916079`), #3 = commits 8–9 (in `41815709425`). PR #8 head had lagged at `737eeff` (7 commits)
-while the branch remote was already at `395df5d` (10); a fresh push advances the PR head to the current
-tip. This checkpoint (#4) adds the accessibility id-scope fix (commits 10–16) and these ledger updates.
+Checkpoints pushed: #1 `fcdd9da` (CI `41807701771` ✓), #2 `737eeff` (CI `41814916079` ✓),
+#3 `395df5d` (CI `41815709425` ✓), #4 `1d66771` (CI ✓ — the a11y id-scope fix; this push also
+reconciled PR #8's stale head from 7 commits to the branch tip). Checkpoint #5 = `d104d5a`+`0a59298`
+(the benchmark version-aware pipeline).
 
-Pull request **#8** (unmerged): Objectives 1, 3, 5 and 4(a11y) done and verified; Objective 2 and the
-Objective-4 reliability/browser-manual remainder are in progress.
+Pull request **#8** (unmerged): Objectives 1 (evidence identity + benchmark version-aware pipeline), 3
+and 5, and the Objective-4 accessibility defect are done and verified; the benchmark authoring /
+import-export / annotation-provenance CLI, Objective-2, and the Objective-3 reliability audit and the
+manual browser/screen-reader checks remain.
+
 
 ## 8. What is NOT claimed
 
