@@ -429,6 +429,110 @@ export function adjudicationTemplate(benchmarkCase: BenchmarkCase): Adjudication
   };
 }
 
+export type AdjudicationResult =
+  | { readonly ok: true; readonly case: BenchmarkCase }
+  | { readonly ok: false; readonly reasons: readonly string[] };
+
+/**
+ * A human's proposed adjudication for one subject, before it is accepted onto the case. The label is
+ * `null` for a genuinely-ambiguous outcome and a real value only for a RESOLVED one.
+ */
+export interface PendingAdjudication {
+  readonly dimension: BenchmarkDimension;
+  readonly subjectId: string;
+  readonly outcome: string;
+  readonly label: string | null;
+  readonly reason: string;
+  readonly adjudicatedBy: string;
+}
+
+/**
+ * Apply a scoped adjudication to a case — but only where it is genuinely warranted, so an adjudication
+ * can never manufacture a consensus.
+ *
+ * It refuses (leaving the case untouched) unless the named subject is a real, current `UNRESOLVED`
+ * disagreement: something is only "adjudicated" if reviewers actually split, so this cannot settle a
+ * subject nobody disputed, overwrite an existing adjudication, or decide for a unanimous or lone
+ * reviewer. A `RESOLVED` outcome must carry a label drawn from that dimension's vocabulary; a
+ * `GENUINELY_AMBIGUOUS` outcome must carry **no** label, because recording a decision that decides
+ * nothing is how an unresolved case would quietly become gold. The reason and adjudicator must be
+ * present (the adjudicator is operator-asserted, not authenticated). On success it appends one scoped
+ * `BenchmarkAdjudication`; it never edits the gold `expected` array or a reviewer's label.
+ */
+export function applyAdjudication(
+  benchmarkCase: BenchmarkCase,
+  adjudication: PendingAdjudication,
+): AdjudicationResult {
+  const reasons: string[] = [];
+  const report = disagreementReport(benchmarkCase);
+  const subject = report.subjects.find(
+    (entry) =>
+      entry.dimension === adjudication.dimension && entry.subjectId === adjudication.subjectId,
+  );
+  if (subject === undefined) {
+    reasons.push(
+      `Adjudication targets "${adjudication.dimension}/${adjudication.subjectId}", which is not a subject of this case.`,
+    );
+  } else if (subject.status !== 'UNRESOLVED') {
+    reasons.push(
+      `Adjudication refuses to act on "${subject.dimension}/${subject.subjectId}": it is ${subject.status}, not an unresolved disagreement. There is nothing to settle, so adjudicating here would manufacture a decision.`,
+    );
+  }
+
+  const outcome = adjudication.outcome;
+  if (outcome !== 'RESOLVED' && outcome !== 'GENUINELY_AMBIGUOUS') {
+    reasons.push(`Adjudication outcome "${outcome}" must be RESOLVED or GENUINELY_AMBIGUOUS.`);
+  }
+  if (outcome === 'RESOLVED') {
+    if (adjudication.label === null || adjudication.label.trim() === '') {
+      reasons.push('A RESOLVED adjudication must name the label it settled.');
+    } else if (
+      adjudication.label !== null &&
+      !benchmarkDimensionLabels(adjudication.dimension).includes(adjudication.label)
+    ) {
+      reasons.push(
+        `Adjudicated label "${adjudication.label}" is not valid for ${adjudication.dimension}.`,
+      );
+    }
+  }
+  if (outcome === 'GENUINELY_AMBIGUOUS') {
+    if (adjudication.label !== null && adjudication.label.trim() !== '') {
+      reasons.push(
+        'A GENUINELY_AMBIGUOUS outcome may not carry a label; recording one would score an unresolved subject as ordinary gold.',
+      );
+    }
+  }
+  if (adjudication.reason.trim() === '') {
+    reasons.push(
+      'An adjudication must state the reason a human settled (or declined to settle) it.',
+    );
+  }
+  if (adjudication.adjudicatedBy.trim() === '') {
+    reasons.push(
+      'An adjudication must name its adjudicator; the tool will not invent one. The name is operator-asserted.',
+    );
+  }
+
+  if (reasons.length > 0) {
+    return { ok: false, reasons };
+  }
+  const entry: BenchmarkAdjudication = {
+    dimension: adjudication.dimension,
+    subjectId: adjudication.subjectId,
+    outcome: outcome as BenchmarkAdjudication['outcome'],
+    label: outcome === 'RESOLVED' ? (adjudication.label as string) : null,
+    reason: adjudication.reason,
+    adjudicatedBy: adjudication.adjudicatedBy.trim(),
+  };
+  return {
+    ok: true,
+    case: {
+      ...benchmarkCase,
+      adjudications: [...(benchmarkCase.adjudications ?? []), entry],
+    },
+  };
+}
+
 export const AUDIT_VERSION = BENCHMARK_AUDIT_VERSION;
 
 export interface CaseReadiness {

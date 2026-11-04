@@ -317,6 +317,99 @@ test('audit reports coverage and provenance without claiming accuracy', async ()
   }
 });
 
+test('adjudicate applies a human scoped adjudication only where a real disagreement exists', async () => {
+  const corpus = tempDir();
+  const adjudications = tempDir();
+  const out = tempDir();
+  try {
+    const splitCase = validCase('case-adjcli');
+    splitCase['reviewerLabels'] = [
+      {
+        reviewer: 'dana',
+        dimension: 'EVIDENCE_SUPPORT',
+        label: 'SUPPORTED_WITHIN_SCOPE',
+        subjectId: 'prop-1',
+        note: null,
+      },
+      {
+        reviewer: 'sam',
+        dimension: 'EVIDENCE_SUPPORT',
+        label: 'CONTRADICTED',
+        subjectId: 'prop-1',
+        note: null,
+      },
+    ];
+    writeFileSync(join(corpus.path, 'a.json'), JSON.stringify(splitCase), 'utf8');
+
+    writeFileSync(
+      join(adjudications.path, 'adj.json'),
+      JSON.stringify({
+        caseId: 'case-adjcli',
+        dimension: 'EVIDENCE_SUPPORT',
+        subjectId: 'prop-1',
+        outcome: 'RESOLVED',
+        label: 'CONTRADICTED',
+        reason: 'The second reviewer read the primary source directly.',
+        adjudicatedBy: 'sam',
+      }),
+      'utf8',
+    );
+    const result = await cli([
+      'adjudicate',
+      '--corpus',
+      corpus.path,
+      '--adjudications',
+      adjudications.path,
+      '--out',
+      out.path,
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const mergedCase = JSON.parse(readFileSync(join(out.path, 'case-adjcli.json'), 'utf8')) as {
+      adjudications: unknown[];
+      expected: unknown[];
+    };
+    assert.equal(mergedCase.adjudications.length, 1, 'the adjudication is applied to its subject');
+    assert.equal(mergedCase.expected.length, 1, 'gold labels are never edited by adjudication');
+
+    // A second run on an out-of-vocabulary label is refused, leaving nothing half-applied.
+    const badDir = tempDir();
+    const badOut = tempDir();
+    try {
+      writeFileSync(
+        join(badDir.path, 'bad.json'),
+        JSON.stringify({
+          caseId: 'case-adjcli',
+          dimension: 'EVIDENCE_SUPPORT',
+          subjectId: 'prop-1',
+          outcome: 'RESOLVED',
+          label: 'NOT_A_REAL_LABEL',
+          reason: 'Trying an invalid label.',
+          adjudicatedBy: 'sam',
+        }),
+        'utf8',
+      );
+      const rejected = await cli([
+        'adjudicate',
+        '--corpus',
+        corpus.path,
+        '--adjudications',
+        badDir.path,
+        '--out',
+        badOut.path,
+      ]);
+      assert.notEqual(rejected.code, 0);
+      assert.match(rejected.stderr, /not valid|manufacture|unresolved/i);
+    } finally {
+      badDir.remove();
+      badOut.remove();
+    }
+  } finally {
+    corpus.remove();
+    adjudications.remove();
+    out.remove();
+  }
+});
+
 test('merge refuses a malformed submission file rather than throwing', async () => {
   const corpus = tempDir();
   const submissions = tempDir();
@@ -349,7 +442,7 @@ test('merge refuses a malformed submission file rather than throwing', async () 
 
 test('the subcommand list in usage mentions the review workflow', async () => {
   const result = await cli([]);
-  for (const name of ['packet', 'merge', 'review', 'audit']) {
+  for (const name of ['packet', 'merge', 'review', 'audit', 'adjudicate']) {
     assert.match(result.stdout, new RegExp(name));
   }
 });

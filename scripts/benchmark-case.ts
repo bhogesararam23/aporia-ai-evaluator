@@ -18,6 +18,7 @@
  *   merge      --corpus <dir> --submissions <dir> --out <dir>  safely import submissions; refuse stale/duplicate/mismatched
  *   review     --corpus <dir>                      per-subject agreement / disagreement report (never resolves)
  *   audit      --corpus <dir>                      corpus readiness + provenance (never claims accuracy)
+ *   adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply a human scoped adjudication, only where a real disagreement exists
  *
  * The review subcommands are the offline counterpart to `src/benchmark/review.ts`: they read parsed
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
@@ -37,7 +38,9 @@ import {
   buildSubmissionTemplate,
   disagreementReport,
   mergeSubmissions,
+  applyAdjudication,
   type AnnotationSubmission,
+  type PendingAdjudication,
 } from '../src/benchmark/review.ts';
 import { BENCHMARK_STRATA, type BenchmarkCase } from '../src/benchmark/types.ts';
 
@@ -52,6 +55,7 @@ interface Options {
   out: string | null;
   stratum: string | null;
   submissions: string | null;
+  adjudications: string | null;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -62,6 +66,7 @@ function parseArguments(argv: readonly string[]): Options {
     out: null,
     stratum: null,
     submissions: null,
+    adjudications: null,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -73,6 +78,8 @@ function parseArguments(argv: readonly string[]): Options {
       options.stratum = argv[(index += 1)] ?? null;
     } else if (argument === '--submissions') {
       options.submissions = argv[(index += 1)] ?? null;
+    } else if (argument === '--adjudications') {
+      options.adjudications = argv[(index += 1)] ?? null;
     } else {
       fail(`Unknown argument: ${String(argument)}`);
     }
@@ -260,6 +267,31 @@ function coerceSubmission(value: unknown): AnnotationSubmission | null {
   return value as unknown as AnnotationSubmission;
 }
 
+/** A submission object extended with the case it targets, so a batch can route each entry. */
+interface PendingAdjudicationFile extends PendingAdjudication {
+  readonly caseId: string;
+}
+
+function coerceAdjudication(value: unknown): PendingAdjudicationFile | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const labelField = record['label'];
+  if (
+    typeof record['caseId'] !== 'string' ||
+    typeof record['dimension'] !== 'string' ||
+    typeof record['subjectId'] !== 'string' ||
+    typeof record['outcome'] !== 'string' ||
+    typeof record['reason'] !== 'string' ||
+    typeof record['adjudicatedBy'] !== 'string' ||
+    !(labelField === null || typeof labelField === 'string')
+  ) {
+    return null;
+  }
+  return value as unknown as PendingAdjudicationFile;
+}
+
 function packet(options: Options): void {
   if (options.out === null) {
     fail('packet needs --out <directory> to write blinded packets and submission templates into.');
@@ -406,6 +438,80 @@ function audit(options: Options): void {
   }
 }
 
+function adjudicate(options: Options): void {
+  if (options.out === null) {
+    fail('adjudicate needs --out <directory> to write cases with adjudications applied into.');
+  }
+  if (options.adjudications === null) {
+    fail('adjudicate needs --adjudications <directory> holding scoped adjudication entry files.');
+  }
+  const result = validateBenchmarkCorpus(readCorpus(requireCorpus(options)));
+  const byId = new Map(
+    (result.cases as unknown as readonly BenchmarkCase[]).map((benchmarkCase) => [
+      benchmarkCase.id,
+      benchmarkCase,
+    ]),
+  );
+  const current = new Map(byId);
+  const applied: { caseId: string; subject: string }[] = [];
+  const rejected: { caseId: string; subject: string; reasons: readonly string[] }[] = [];
+  const malformed: string[] = [];
+  for (const entry of readJsonDir(resolve(options.adjudications), 'adjudications')) {
+    const coerced = coerceAdjudication(entry.value);
+    if (coerced === null) {
+      malformed.push(entry.name);
+      continue;
+    }
+    const target = current.get(coerced.caseId);
+    if (target === undefined) {
+      rejected.push({
+        caseId: coerced.caseId,
+        subject: `${coerced.dimension}/${coerced.subjectId}`,
+        reasons: ['No case in the corpus matches this adjudication’s case id.'],
+      });
+      continue;
+    }
+    const outcome = applyAdjudication(target, coerced);
+    if (outcome.ok) {
+      current.set(coerced.caseId, outcome.case);
+      applied.push({
+        caseId: coerced.caseId,
+        subject: `${coerced.dimension}/${coerced.subjectId}`,
+      });
+    } else {
+      rejected.push({
+        caseId: coerced.caseId,
+        subject: `${coerced.dimension}/${coerced.subjectId}`,
+        reasons: outcome.reasons,
+      });
+    }
+  }
+  const target = resolve(options.out);
+  mkdirSync(target, { recursive: true });
+  for (const benchmarkCase of current.values()) {
+    writeFileSync(join(target, `${benchmarkCase.id}.json`), normaliseCase(benchmarkCase), 'utf8');
+  }
+  console.error(
+    `benchmark:case: applied ${String(applied.length)} adjudication(s); ` +
+      `rejected ${String(rejected.length)}; wrote ${String(current.size)} case(s) to ${target}. ` +
+      'An adjudication is accepted only for a subject actually in unresolved disagreement; gold labels are never edited.',
+  );
+  for (const rejection of rejected) {
+    console.error(`  REJECTED ${rejection.caseId} ${rejection.subject}:`);
+    for (const reason of rejection.reasons) {
+      console.error(`    - ${reason}`);
+    }
+  }
+  for (const name of malformed) {
+    console.error(
+      `  REJECTED malformed adjudication file ${name} (not a well-formed entry object).`,
+    );
+  }
+  if (rejected.length > 0 || malformed.length > 0 || result.issues.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
 function main(): void {
   const options = parseArguments(process.argv.slice(2));
   switch (options.command) {
@@ -433,6 +539,9 @@ function main(): void {
     case 'audit':
       audit(options);
       break;
+    case 'adjudicate':
+      adjudicate(options);
+      break;
     default:
       console.log(
         'Usage: npm run benchmark:case -- <subcommand> [options]\n' +
@@ -443,7 +552,8 @@ function main(): void {
           '  packet     --corpus <dir> --out <dir>\n' +
           '  merge      --corpus <dir> --submissions <dir> --out <dir>\n' +
           '  review     --corpus <dir>\n' +
-          '  audit      --corpus <dir>',
+          '  audit      --corpus <dir>\n' +
+          '  adjudicate --corpus <dir> --adjudications <dir> --out <dir>',
       );
       if (options.command !== '' && options.command !== '--help' && options.command !== '-h') {
         fail(`Unknown subcommand "${options.command}".`);
