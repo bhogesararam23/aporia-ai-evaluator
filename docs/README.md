@@ -58,6 +58,8 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Local Core v0.2 Session](agents/sessions/2026-10-30-local-core-v0.2.md) — metrics v2, achievement records and exports, backup/restore, validation, limits, and handoff.
 - [Local Core v0.3 Session](agents/sessions/2026-11-01-local-core-v0.3-claim-level-evaluation.md) — answer-statement decomposition, findings and retests, the offline benchmark harness, and the six workflow steps it left unverified.
 - [Local Core v0.4 Audit and Traceability Session](agents/sessions/2026-11-02-local-core-v0.4-audit-and-traceability.md) — the route-by-route traceability map, the defect register with the fix and failing test for each, claim eligibility and metrics-v4, retest provenance, benchmark contract v2, the measured query-count and atomicity results, and the 24-step live workflow run.
+- [Local Core v0.5 Session](agents/sessions/2026-11-04-local-core-v0.5-evaluation-reliability.md) — evidence corroboration by underlying source (`evidence-aggregation-v2`, still not the default), the version-aware benchmark pipeline and the local case-authoring CLI, the duplicate-field-id accessibility fix, and the three-OS CI matrix.
+- [Local Core v0.6 Session](agents/sessions/2026-11-04-local-core-v0.6-benchmark-review-workflow.md) — the offline benchmark human-review workflow (blinded hashed packets, separate submissions, all-or-nothing safe merge, disagreement report with guarded scoped adjudication, corpus readiness/provenance audit) as new *artifact* versions with the case contract and report unchanged (ADR-026).
 
 ## How to use the documents
 
