@@ -1,9 +1,40 @@
 # Implementation Roadmap
 
 - Status: Proposed sequencing, not a delivery commitment
-- Date: 2026-11-04
+- Date: 2026-11-05
 
-## Implementation note — 2026-11-04 (v0.6, in progress — PR pending, not merged)
+## Implementation note — 2026-11-05 (v0.7, in progress — PR open, not merged)
+
+Local core v0.7 closes five defects that were reproduced in the merged v0.6 review workflow and adds
+reproducible corpus releases ([ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md)).
+v0.6 had built honest *mechanics* but leaked the results: it demanded a reviewer's rationale and
+submission timestamp and then discarded both, it accepted reviewer names the case never authorised — so
+`merge` wrote corpora that `validate` rejected — an adjudication was checked against whatever the
+disagreement happened to be at application time rather than the one it was written against, and a batch
+partially applied with no dry run, staging or recovery. v0.7 persists the rationale, the reviewer's own
+timestamp, the packet hash and a submission hash as **optional additive fields on `benchmark-case-v2`, so
+there is no contract bump and no migration**; enforces the declared roster without ever widening it;
+canonicalises reviewer identity so one person cannot be counted twice by respelling their name; binds every
+new adjudication to a hash of the exact disagreement and resolves `MATCHING`/`STALE`/`UNBOUND` in **one**
+resolver shared by the disagreement report and the benchmark scorer; and makes batch writes atomic by
+default, published through a staging directory and a journal so an interrupted run rolls back or completes
+to the bytes a clean run would have produced. `npm run benchmark:release` then freezes a corpus into a
+deterministic `benchmark-release-manifest-v1` — per-case canonical digests, a content-derived release id, no
+clock, path or machine input — with verify, diff and named provenance/completeness gates.
+
+Two things changed deliberately: the batch default is now atomic (`--allow-partial` restores the v0.6
+behaviour), and ordering that reaches a digest is by code unit rather than locale collation, so v0.6-computed
+packet hashes differ and an old packet must be re-issued — no such packet exists, since no review has been
+run. `benchmark-case-v1`/`v2` and `benchmark-report-v2` still read, and the report keeps its version and
+status vocabulary, disclosing binding through additive fields only.
+
+**What v0.7 does not do:** it establishes no accuracy. A hash is an integrity check over recorded content,
+not proof of reviewer identity or material genuineness; readiness gates are not validation; legacy unbound
+adjudications are disclosed rather than credited; and no case, reviewer, timestamp or label is real. Phase
+3's reviewed gold set still does not exist. `accuracyClaimable` remains `false`, the
+`evidence-aggregation-v1` default is untouched, and ADR-025/026/027 all still await owner acceptance.
+
+## Implementation note — 2026-11-04 (v0.6, merged to `main` at `2b1ecab` via PR #9)
 
 Local core v0.6 turns the offline benchmark tooling into a reproducible human-review workflow
 ([ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md)), and changes only what v0.5 had
@@ -25,7 +56,8 @@ untouched, so **no corpus migration and no change to the `evidence-aggregation` 
 local-first boundaries hold (no network, database, provider, auth, billing, or reviewer accounts), and
 reviewer identity stays operator-asserted with no independence claim. Phase 3's reviewed gold set still
 does not exist — v0.6 makes running that review honest and reproducible; it does not perform one.
-This milestone is on a feature branch with a pull request pending and is not owner-accepted.
+This milestone was merged to `main` as v0.6 (PR #9, `2b1ecab`) on 2026-11-05 and is not owner-accepted;
+five of its gaps are closed by v0.7 above.
 
 ## Implementation note — 2026-11-04 (v0.5)
 
