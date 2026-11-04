@@ -35,7 +35,15 @@ function jsonFileNames(directory: string): string[] {
 function parseJson(name: string, text: string): unknown {
   try {
     return JSON.parse(text);
-  } catch {
+  } catch (error) {
+    // A pathological document can fail the parser's own depth limit rather than its syntax check. Saying so
+    // keeps the operator's next action obvious — this file is not merely missing a comma.
+    if (error instanceof RangeError) {
+      throw new CorpusReadError(
+        'json',
+        `${name} is structured too deeply for the parser to read. Split or flatten it and try again.`,
+      );
+    }
     throw new CorpusReadError('json', `${name} is not valid JSON.`);
   }
 }

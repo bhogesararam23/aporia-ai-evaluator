@@ -18,7 +18,7 @@ import {
   type BenchmarkStratum,
 } from './types.ts';
 import { reviewerIdentity } from './provenance.ts';
-import { isContentHash } from './hashing.ts';
+import { isContentHash, MAX_CANONICAL_DEPTH, nestsDeeperThan } from './hashing.ts';
 
 /**
  * Bounds a hostile or careless corpus file can be forced to respect at load time.
@@ -823,6 +823,17 @@ export function validateBenchmarkCase(source: unknown, index: number): Benchmark
   const fallbackId = `case#${String(index)}`;
   if (!isRecord(source)) {
     return [{ caseId: fallbackId, field: 'case', message: 'A benchmark case must be an object.' }];
+  }
+  if (nestsDeeperThan(source, MAX_CANONICAL_DEPTH)) {
+    // Refused here rather than blowing the stack later: a document nested past the canonicaliser's bound
+    // cannot be hashed, and a case that cannot be hashed cannot appear in a release manifest.
+    return [
+      {
+        caseId: fallbackId,
+        field: 'case',
+        message: `The case is nested deeper than ${String(MAX_CANONICAL_DEPTH)} levels, which the canonical hasher will not traverse. Flatten it; do not trim it silently.`,
+      },
+    ];
   }
   const caseId =
     typeof source['id'] === 'string' && source['id'].length > 0 ? source['id'] : fallbackId;

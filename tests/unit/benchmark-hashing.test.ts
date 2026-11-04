@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canonicalise, contentHash, isContentHash } from '../../src/benchmark/hashing.ts';
+import {
+  canonicalise,
+  contentHash,
+  DepthExceededError,
+  isContentHash,
+  MAX_CANONICAL_DEPTH,
+  nestsDeeperThan,
+} from '../../src/benchmark/hashing.ts';
+import { validateBenchmarkCase } from '../../src/benchmark/validate.ts';
 
 /**
  * Canonical hashing (ADR-026, hardened in ADR-027).
@@ -71,4 +79,40 @@ test('isContentHash rejects the shapes that would silently disable a staleness c
     assert.equal(isContentHash(bad), false, `${String(bad)} should not be a content hash`);
   }
   assert.equal(isContentHash('a'.repeat(64)), true);
+});
+
+test('the canonicaliser is bounded, and refuses rather than exhausting the stack', () => {
+  // Pathological depth would otherwise surface as a RangeError in the middle of a merge, audit or freeze.
+  const shallow = { a: { b: { c: { d: [1, 2] } } } };
+  assert.equal(nestsDeeperThan(shallow, MAX_CANONICAL_DEPTH), false);
+  assert.equal(canonicalise(shallow) !== undefined, true);
+
+  let deep: unknown = 'leaf';
+  for (let index = 0; index < MAX_CANONICAL_DEPTH + 8; index += 1) {
+    deep = { nested: deep };
+  }
+  assert.equal(nestsDeeperThan(deep, MAX_CANONICAL_DEPTH), true);
+  assert.throws(() => canonicalise(deep), DepthExceededError);
+  assert.throws(() => contentHash(deep), DepthExceededError);
+});
+
+test('an array nested past the bound is refused too, not just an object', () => {
+  let deep: unknown = 'leaf';
+  for (let index = 0; index < MAX_CANONICAL_DEPTH + 2; index += 1) {
+    deep = [deep];
+  }
+  assert.equal(nestsDeeperThan(deep, MAX_CANONICAL_DEPTH), true);
+});
+
+test('the validator refuses an over-deep case with a reason instead of letting the hasher throw', () => {
+  let deep: unknown = 'leaf';
+  for (let index = 0; index < MAX_CANONICAL_DEPTH + 4; index += 1) {
+    deep = { nested: deep };
+  }
+  const issues = validateBenchmarkCase(deep, 7);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.field, 'case');
+  assert.match(issues[0]?.message ?? '', /nested deeper than 64 levels/);
+  // The refusal is reported for the case index, so the operator can find the file.
+  assert.equal(issues[0]?.caseId, 'case#7');
 });
