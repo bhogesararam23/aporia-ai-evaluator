@@ -129,10 +129,28 @@ export function accessibilityViolations(html: string): string[] {
       violations.push(`positive tabindex on <${element.tagName}> (disrupts keyboard order)`);
     }
   }
-  // NOTE (tracked, see docs/KNOWN_LIMITATIONS.md): duplicate `id` attributes also occur where the same
-  // form is rendered once per record (run detail, statement workspace), which breaks every <label for>
-  // and aria-describedby reference but the first. Enforcing uniqueness here would fail today, so it is
-  // recorded as a known accessibility defect awaiting a per-form id-scope refactor rather than asserted.
+  // Duplicate ids break every reference mechanism at once: a <label for>, an aria-describedby or an
+  // anchor fragment resolves to one arbitrary element, so a second control sharing the id silently
+  // loses its label or help text. ids must be unique within a page.
+  const idCounts = new Map<string, number>();
+  for (const element of all) {
+    const id = attrs(element).get('id');
+    if (id !== undefined) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  }
+  for (const [id, count] of idCounts) {
+    if (count > 1) {
+      violations.push(`duplicate id #${id} used ${String(count)} times`);
+    }
+  }
+  // A labelled control's <label for> target must be an existing element; a dangling reference is the
+  // silent-loss defect these guards exist to catch, and is only detectable once ids are unique.
+  const existingIds = new Set(idCounts.keys());
+  for (const label of all.filter((element) => element.tagName === 'label')) {
+    const forId = attrs(label).get('for');
+    if (forId !== undefined && !existingIds.has(forId)) {
+      violations.push(`label[for] points at missing #${forId}`);
+    }
+  }
   return violations;
 }
 
