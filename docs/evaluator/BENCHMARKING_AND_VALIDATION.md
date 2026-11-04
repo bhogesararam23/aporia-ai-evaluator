@@ -2,7 +2,7 @@
 
 - Status: Required before public reliability claims. No accuracy claim is currently supportable.
 - Goal: Validate claim/evidence judgments and AI-answer metrics against human-reviewed cases.
-- Implementation record: [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-023](../agents/adrs/ADR-023-claim-eligibility-metrics-v4.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md), `npm run benchmark -- --corpus <directory>`, `npm run benchmark:case -- <subcommand>`
+- Implementation record: [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-023](../agents/adrs/ADR-023-claim-eligibility-metrics-v4.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md), [ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md), `npm run benchmark -- --corpus <directory>`, `npm run benchmark:case -- <subcommand>`, `npm run benchmark:release -- <subcommand>`
 
 ## 0. What exists and what is only planned
 
@@ -18,7 +18,7 @@ a benchmark becomes decoration.
 | 5. Ablation | Version-aware deterministic regression of `evidence-aggregation-v1` **and** `-v2` (verdict plus corroborating-source count) over a frozen input pack, plus metric-formula checks. Duplicate-source counting and canonical-URI collapse are expressible and tested since v2. | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
 | 6. Leakage | Not applicable to an offline corpus of reviewer-recorded cases | Development/validation/held-out splits and time splits. Meaningless until a real corpus exists. |
 | 7. Provider integration | — | Everything. There are no providers, no adapters, and no network access in this build. |
-| 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata | Any release gate that depends on measured results. |
+| 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata. Since v0.7, `npm run benchmark:release` adds **corpus** gates — case validity, duplicate ids, storage authorisation, review date, roster conformity, stale bindings, annotation coverage, two-reviewer depth, unresolved disagreement — over a deterministic manifest that freezes case digests. | Any release gate that depends on measured results. Corpus gates establish that a corpus is consistent, attributable as declared and unchanged; they establish nothing about accuracy, and a passing gate set over fabricated labels is a faithful digest of fabricated labels. |
 | 9. Monitoring | — | Nothing. Local single-operator use has no monitoring pipeline. |
 | 10. Public claims | `accuracyClaimable` is reported as `false` in every artifact, with the reason beside it | — |
 
@@ -158,6 +158,36 @@ merged case is an ordinary case file with `reviewerLabels` populated. Reviewer n
 operator-supplied and unverified; independence is never claimed. The adjudication step remains a human act
 recorded as a scoped `benchmark-adjudication-v1` entry on the case — see [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md).
 
+### 3.5 Provenance, binding, batches and releases (v0.7, ADR-027)
+
+Five properties of the merged v0.6 workflow were reproduced and corrected, because a workflow that discards
+what it collected cannot support a validation claim:
+
+- **Provenance is retained.** A merged label keeps the reviewer's rationale, their supplied timestamp, the
+  packet hash it was bound to, and a hash of the submission record. These are optional additive fields on
+  `benchmark-case-v2`, so `v1`/`v2` files still read and no migration exists to run.
+- **The roster is enforced.** A reviewer must be declared in `provenance.reviewedBy`; merge refuses otherwise
+  and never widens the list. Names are canonicalised, so alias spellings count as one reviewer — which is what
+  makes the "two distinct reviewers" requirement mean anything. This is a guard against one person being
+  counted twice, **not** a proof of independence: there is no authentication.
+- **Adjudications bind.** Each new decision carries a hash of the disagreement it settles (frozen input, the
+  subject, and every label on it). A drifted binding is refused and the subject stays unresolved; a v0.6 record
+  with no binding still settles but is reported `UNBOUND`. The disagreement report and the scorer share one
+  resolver, so they cannot disagree about whether a subject was settled.
+- **Batches are atomic, staged and recoverable.** Planning is pure and order-independent; publishing goes
+  through a staging directory with a journal, so an interrupted run can be rolled back or completed to the
+  bytes a clean run would have produced. `--dry-run` previews; `--allow-partial` is the explicit opt-in to
+  partial application.
+- **Corpora are releasable.** `benchmark-release-manifest-v1` records canonical per-case digests, a
+  content-derived release id and named gates, with no clock, path or machine input. `verify` isolates
+  added/removed/changed cases and duplicate ids; `diff` compares two releases.
+
+**What a release gate is not.** Every gate measures integrity, provenance or completeness — that the corpus is
+what it says it is, internally consistent, and reviewed as declared. None of them measures whether the
+evaluator is right. A hash authenticates no reviewer and vouches for no material; a fully-passing release over
+fabricated labels is a faithful digest of fabricated labels. `accuracyClaimable` stays `false`, and public
+reliability claims remain barred until §8's conditions are met with genuine review.
+
 
 ## 4. Evaluator performance measures
 
@@ -180,6 +210,16 @@ For each adapter, test success, malformed/empty/partial output, timeout, rate li
 ## 8. Release gates
 
 Before public reliability claims, document dataset size and composition, annotation guidance, reviewer agreement, target metrics/tolerances, validation split, evaluator version, measured results, and limitations. Initial engineering release requires regression cases for all verdict labels, wrong attribution, citation-support mismatch, and provider-unavailable states. Critical regressions block release unless an owner-approved exception is documented.
+
+From v0.7 there are two different things called a gate, and they must not be merged:
+
+- **Corpus release gates** (`npm run benchmark:release gates|freeze`) are mechanical and local: case validity,
+  duplicate ids, storage authorisation, review date, roster conformity, stale bindings, annotation coverage,
+  two-reviewer depth and unresolved disagreements. Passing them makes a corpus *release-ready and auditable*.
+- **Validation gates** are the list above: a real reviewed corpus, measured accuracy, stated tolerances and
+  splits. Release gates are a **precondition** of these, never a substitute. A corpus can pass every release
+  gate while telling you nothing about the evaluator, because gates check consistency with what was declared,
+  not truth.
 
 ## 9. Monitoring after launch
 

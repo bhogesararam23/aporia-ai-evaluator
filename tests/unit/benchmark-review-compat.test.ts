@@ -72,6 +72,10 @@ function submissionFor(
   const template = buildSubmissionTemplate(buildReviewerPacket(benchmarkCase));
   return {
     ...template,
+    // Pinned to v1 deliberately: this test's whole point is that a submission file written under v0.6 —
+    // including its date-only timestamp — still merges. Inheriting the current template default would
+    // silently stop covering the older artifact.
+    version: SUBMISSION_VERSION,
     reviewer,
     submittedAt: '2026-11-05',
     annotations: template.annotations.map((annotation) => ({
@@ -109,7 +113,11 @@ test('both benchmark-case-v1 and v2 still validate, and the review workflow read
       );
     }
     const submission = submissionFor(benchmarkCase, 'dana');
-    assert.equal(submission.version, SUBMISSION_VERSION);
+    assert.equal(
+      submission.version,
+      SUBMISSION_VERSION,
+      'a v0.6 submission artifact is what is being read here',
+    );
     const merged = mergeSubmission(benchmarkCase, submission);
     assert.equal(merged.ok, true, `merge must accept a valid ${benchmarkCase.version} submission`);
     if (merged.ok) {

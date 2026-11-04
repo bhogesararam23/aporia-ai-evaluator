@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
   disagreementReport,
   adjudicationTemplate,
-  ADJUDICATION_TEMPLATE_VERSION,
+  ADJUDICATION_TEMPLATE_VERSION_V2,
 } from '../../src/benchmark/review.ts';
 import { BENCHMARK_CASE_VERSION, type BenchmarkCase } from '../../src/benchmark/types.ts';
 
@@ -136,7 +136,8 @@ test('an adjudication template lists only unresolved subjects, with nothing pre-
       ...labels('sam', [['EVIDENCE_SUPPORT', 'p1', 'CONTRADICTED']]),
     ]),
   );
-  assert.equal(template.version, ADJUDICATION_TEMPLATE_VERSION);
+  // v0.7 templates are v2 and carry a binding hash per entry; the v1 artifact no longer has an issuer path.
+  assert.equal(template.version, ADJUDICATION_TEMPLATE_VERSION_V2);
   assert.equal(template.adjudications.length, 1);
   const entry = template.adjudications[0];
   assert.ok(entry);

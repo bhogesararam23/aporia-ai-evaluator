@@ -12,6 +12,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Implementation Roadmap](product/IMPLEMENTATION_ROADMAP.md) — dependency-ordered delivery phases and exit criteria.
 - [v0.3 Requirements Traceability](product/V03_REQUIREMENTS_TRACEABILITY.md) — audited requirement-to-code-to-test matrix for the claim-level milestone.
 - [v0.4 Requirements Traceability](product/V04_REQUIREMENTS_TRACEABILITY.md) — each v0.4 obligation in evaluator semantics, citation lifecycle, benchmark integrity, retest provenance, persistence and boundaries, mapped to the code that satisfies it and the check that would fail without it.
+- [v0.7 Requirements Traceability](product/V07_REQUIREMENTS_TRACEABILITY.md) — every v0.7 obligation in review provenance, reviewer roster and identity, adjudication binding, batch semantics, corpus releases and compatibility, mapped to its implementation and the test that pins it.
 - [Product Governance and Boundaries](business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md) — product promises and separation from evaluator verdicts.
 
 ## Technical design
@@ -20,6 +21,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Local Schema](technical/LOCAL_SCHEMA.md) — SQLite tables, migrations, triggers, immutability, and deletion behavior.
 - [Local HTTP Route Map](technical/HTTP_ROUTE_MAP.md) — implemented pages, actions, scoping, and error behavior.
 - [Module Boundaries](technical/MODULE_BOUNDARIES.md) — enforceable dependency directions, package rules, and future CI requirements.
+- [Benchmark Review Provenance and Corpus Releases](technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md) — the v0.7 design: what the merged v0.6 workflow discarded or mis-accepted, how provenance, roster enforcement, disagreement binding, atomic batch publishing and deterministic release manifests replace it, and what a hash and a readiness gate each do not prove.
 - [Data Model](technical/DATA_MODEL.md) — entities, relationships, lifecycle, provenance, retention, and versioning.
 - [API and Job Contracts](technical/API_AND_JOB_CONTRACTS.md) — normalized request/response, job state, idempotency, and error semantics.
 - [Provider Adapters](technical/PROVIDER_ADAPTERS.md) — provider interface, capabilities, failures, and integration criteria.
@@ -60,6 +62,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Local Core v0.4 Audit and Traceability Session](agents/sessions/2026-11-02-local-core-v0.4-audit-and-traceability.md) — the route-by-route traceability map, the defect register with the fix and failing test for each, claim eligibility and metrics-v4, retest provenance, benchmark contract v2, the measured query-count and atomicity results, and the 24-step live workflow run.
 - [Local Core v0.5 Session](agents/sessions/2026-11-04-local-core-v0.5-evaluation-reliability.md) — evidence corroboration by underlying source (`evidence-aggregation-v2`, still not the default), the version-aware benchmark pipeline and the local case-authoring CLI, the duplicate-field-id accessibility fix, and the three-OS CI matrix.
 - [Local Core v0.6 Session](agents/sessions/2026-11-04-local-core-v0.6-benchmark-review-workflow.md) — the offline benchmark human-review workflow (blinded hashed packets, separate submissions, all-or-nothing safe merge, disagreement report with guarded scoped adjudication, corpus readiness/provenance audit) as new *artifact* versions with the case contract and report unchanged (ADR-026).
+- [Local Core v0.7 Session](agents/sessions/2026-11-05-local-core-v0.7-review-provenance-corpus-releases.md) — the five v0.6 defects reproduced against merged `main`, and their closure: persisted reviewer provenance, an enforced roster with canonical identity, adjudications bound to the disagreement they settle, one shared binding resolver, atomic staged recoverable batch writes, and deterministic offline corpus releases (ADR-027).
 
 ## How to use the documents
 

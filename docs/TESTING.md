@@ -1,7 +1,7 @@
 # Testing and Verification Guide
 
 - Status: Local checks passing; the full local workflow is verified against the running application, and both checks and the workflow now run in CI across Windows, Linux and macOS
-- Date: 2026-11-04
+- Date: 2026-11-05
 - Runtime used: Node.js v24.13.1; npm 11.8.0. Automated results below were measured on Windows x64; `.github/workflows/ci.yml` runs `npm run check` and `npm run verify:workflow` on a Node 24 Windows/Linux/macOS matrix.
 - Test runner: `node --test` with native TypeScript type stripping
 
@@ -57,6 +57,28 @@ or lone reviewer, requiring a label for `RESOLVED` and none for `GENUINELY_AMBIG
 `expected`). All are pure local file tooling —
 no network, no database, no clock; reviewer names and timestamps stay operator-asserted.
 
+v0.7 (ADR-027) hardened that workflow where it was leaking or unsafe, and added releases:
+
+- `merge` now **keeps** the reviewer's rationale, their supplied timestamp, the packet hash and a hash of
+  the submission record; a `benchmark-submission-v1` file still merges under its original lenient timestamp
+  rule, while a new v2 template requires a real instant.
+- `merge` and `adjudicate` enforce the **declared roster** (`provenance.reviewedBy`) and never add to it, and
+  compare reviewers by canonical identity, so `Sam`/`sam`/`SAM` cannot pose as two reviewers. `roster` reports
+  declared-versus-used reviewers and writes nothing.
+- `adjudicate --issue` writes blank adjudication forms bound to a hash of the exact disagreement, and
+  `adjudicate` refuses a decision whose binding has drifted. One shared resolver decides binding for both the
+  disagreement report and the benchmark scorer.
+- Both batch commands are **atomic by default**: one refusal — including a malformed input file — writes
+  nothing. `--dry-run` reports the plan without creating the target, `--allow-partial` opts back in to
+  partial application and prints every accepted and rejected item, and output is published through a staging
+  directory plus a journal, so `--recover` rolls back an interrupted `staged` run or completes a `committing`
+  one to the bytes an uninterrupted run would have produced.
+- `npm run benchmark:release` (ADR-027) freezes a corpus into a deterministic `benchmark-release-manifest-v1`
+  (`freeze`, `verify`, `diff`, `gates`). A manifest contains no timestamp, absolute path or machine identity;
+  `--snapshot` is opt-in because it duplicates corpus material. Gates report integrity, provenance and
+  completeness only, and every manifest states that a hash authenticates no reviewer and that
+  `accuracyClaimable` is `false`.
+
 `verify:workflow` drives §6's 24-step sequence by submitting the forms the running application served:
 it reads each form's action, method, field names, select choices and default values from the returned
 HTML, and treats a field it cannot fill, or a value the page never offered, as a failure of that step.
@@ -104,28 +126,39 @@ Most tests use in-memory SQLite and temporary data directories. No test writes t
 
 ## 4. Results at the time of this document
 
-Measured on 2026-11-04 in this checkout (`feat/aporia-v0.6-benchmark-review-workflow`), Node
-v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix confirms all three OSes):
+Measured on 2026-11-05 in this checkout (`feat/aporia-v0.7-review-provenance-corpus-releases`,
+baseline `main` = `2b1ecab`), Node v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix
+confirms all three OSes):
 
 - `npm ci`: pass.
 - `npm run typecheck`: pass.
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **772 tests, 772 passing, 0 failing** — 439 under `tests/unit`, 333 under
+- `npm test`: **956 tests, 956 passing, 0 failing** — 593 under `tests/unit`, 363 under
   `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 772/772 result.
+- `npm run check`: exit 0 with the same 956/956 result.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
-  `0.4.0` (the v0.5 work is additive; the release version is not bumped while ADR-025 stays Proposed).
+  `0.4.0` (the v0.5–v0.7 work is additive; the release version is not bumped while ADR-025 stays Proposed).
   The run entered every record by hand through the served forms; nothing was seeded, and no
   provider or network call was made.
+- `npm run benchmark` on the isolated workflow-fixture corpus: pass.
 - CI (`.github/workflows/ci.yml`): `npm run check` and `npm run verify:workflow` each run on Windows,
-  Linux and macOS runners on Node 24. Confirmed green on v0.5 run `41807701771` — all six jobs passed,
-  including the 25-step live workflow on every platform.
+  Linux and macOS runners on Node 24. The v0.7 run's per-job results are recorded in the pull request and the
+  v0.7 session report; a job that has not finished is reported as not finished. Confirmed green across all six
+  jobs on the v0.5 run `41807701771`.
 - Backup, verification, restore into a separate temporary directory, restart on the restored data, and
   a read-back of the restored statements, both reports, and the finding with its recorded comparison
   all completed inside that same run (steps 22–24).
+- v0.7 added these suites: `benchmark-hashing`, `benchmark-contracts`, `benchmark-reviewer-identity`,
+  `benchmark-roster`, `benchmark-label-provenance`, `benchmark-adjudication-binding`,
+  `benchmark-fixture-validity`, `benchmark-review-merge-provenance`, `benchmark-validate-provenance`,
+  `benchmark-review-disagreement-binding`, `benchmark-review-adjudication-stale`,
+  `benchmark-scoring-binding`, `benchmark-batch-plan`, `benchmark-release`, `benchmark-review-malformed`,
+  `benchmark-batch-cli`, `benchmark-release-cli`, `benchmark-roster-cli`,
+  `benchmark-review-lifecycle` and `benchmark-v06-compatibility`.
+
 - Earlier runs of this workflow recorded the specific refusals it depends on rather than assuming
   them: a reviewer description claiming a verbatim position, a quote absent from the captured answer, a
   `REFUSED` fidelity label filed against a statement that addresses the target, a measured status with

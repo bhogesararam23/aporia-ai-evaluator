@@ -1,8 +1,8 @@
 # Benchmark Annotation Rubric
 
-- Status: Current for `benchmark-case-v1` and `benchmark-case-v2`, and for the v0.6 offline review workflow (ADR-026)
-- Date: 2026-11-04
-- Related: [Benchmarking and Validation](BENCHMARKING_AND_VALIDATION.md), [Implemented Metrics v3](IMPLEMENTED_METRICS_V3.md), [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md)
+- Status: Current for `benchmark-case-v1` and `benchmark-case-v2`, and for the v0.6 offline review workflow (ADR-026) as hardened by v0.7 (ADR-027)
+- Date: 2026-11-05
+- Related: [Benchmarking and Validation](BENCHMARKING_AND_VALIDATION.md), [Implemented Metrics v3](IMPLEMENTED_METRICS_V3.md), [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md), [ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md), [Review Provenance and Corpus Release design](../technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md)
 
 This rubric tells a human reviewer how to assign the gold labels a benchmark case carries. It exists
 because a benchmark is only as good as the discipline behind its labels, and because Aporia's own
@@ -206,4 +206,33 @@ blinded, separate, and safely merged. It is local file tooling only — no netwo
    It always reports `accuracyClaimable: false` — readiness to review is not a claim that the evaluator is
    accurate, which would require a genuinely reviewed, authorised corpus and validity checks this build
    does not have.
+
+## 10. What v0.7 adds for the reviewer (ADR-027)
+
+The rules above did not change. What changed is that the workflow now keeps what you gave it, and refuses
+more:
+
+- **Your rationale is kept.** v0.6 required it and then discarded it. A merged label now stores your
+  rationale verbatim beside the label, so §6 is enforceable months later.
+- **Your timestamp and the packet you saw are recorded.** Each merged label carries the `submittedAt` you
+  supplied, the `packetHash` of the packet it was bound to, and a hash of the submission it arrived in. New
+  templates are `benchmark-submission-v2`, which means a real instant with a timezone (`2026-11-05T09:00:00Z`),
+  not a bare date; a v1 file you already filled in still merges and keeps the value you wrote.
+- **You must be on the case's declared roster.** `merge` refuses a reviewer who is not listed in
+  `provenance.reviewedBy`, and never adds one — naming a new reviewer is your edit to the case, made
+  deliberately, and a release verify will show it as a change. Spellings are folded, so `Sam`, `sam` and
+  `SAM` are one reviewer and cannot appear as two.
+- **An adjudication must name the disagreement it settles.** `adjudicate --issue --out <dir>` now writes a
+  form per unresolved subject carrying that disagreement's hash; fill it and return it. If reviewers change
+  their labels after the form was issued, the decision is **stale** and is refused rather than applied to a
+  different split. Re-issue and adjudicate the current state. A v0.6 decision with no binding still settles
+  its subject, but is reported as `UNBOUND` and never counts as verified provenance.
+- **A batch will not half-apply.** `merge` and `adjudicate` are atomic: one refusal — including one malformed
+  file — writes nothing, and the run says which items were accepted and which were refused. Use `--dry-run` to
+  see the plan first, `--allow-partial` to import the accepted items anyway, and `--recover` if a run was
+  interrupted part-way through writing.
+- **A corpus can be frozen.** `npm run benchmark:release freeze` writes a manifest of case digests that
+  contains no timestamp and no file paths, so anyone can reproduce it; `verify` says exactly which case
+  changed; `gates` reports provenance and completeness. Freezing does not make a corpus accurate, and a hash
+  does not prove a reviewer was who the file says it was.
 

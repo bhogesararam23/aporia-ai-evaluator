@@ -39,6 +39,17 @@ not read live application state, because then a benchmark result would depend on
 the database rather than on the frozen case. It must never generate gold material: a label it invents
 is a fabricated validation result.
 
+Internal layering inside `src/benchmark` is directional, so one rule has one owner (ADR-027):
+`hashing.ts` (canonical hashing, no imports) ← `types.ts` (contracts, no behaviour) ← `provenance.ts`
+(reviewer identity, roster, label provenance, disagreement state hash, the single adjudication-binding
+resolver) ← `review.ts` (packets, submissions, merge, report, template, apply, audit) ← `batch.ts`
+(pure batch planning, staged rendering, journal) and `release.ts` (case digests, manifest, verify, diff,
+gates). `scoring.ts` consumes `provenance.ts` and `review.ts`; `validate.ts` and `authoring.ts` consume
+`provenance.ts` and `hashing.ts`. Nothing in this layer may import back up the chain, and `provenance.ts`
+must not import `review.ts` — that cycle would let the report and the scorer resolve an adjudication
+differently, which is how a split reported as unresolved becomes a number reported as settled. Filesystem
+access stays in `scripts/`, so the whole `benchmark` layer remains a pure function of parsed JSON.
+
 ### Commercial module (optional future)
 Owns products/plans, billing, invoices, usage accounting, customer lifecycle, and entitlements. It may provide a quota decision at the API/application boundary. It MUST NOT be imported by evaluator core or influence verdict weights, source selection, claim confidence, attribution, or metric formulas.
 

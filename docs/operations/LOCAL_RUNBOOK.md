@@ -1,10 +1,12 @@
 # Local Operations Runbook
 
-- Scope: local core v0.4 on a single operator workstation
+- Scope: local core v0.1–v0.7 on a single operator workstation
 - Status: Implemented, not a production operations plan
-- Date: 2026-10-30
+- Date: 2026-11-05 (v0.7 added §9's provenance and roster rules and §10 for corpus releases and batch recovery)
 
-This runbook covers starting, inspecting, backing up, and removing local data. It does not cover remote hosting, multi-user access, provider credentials, or public publication.
+This runbook covers starting, inspecting, backing up, and removing local data, plus the offline benchmark
+review cycle (§9) and corpus releases and interrupted-batch recovery (§10). It does not cover remote hosting,
+multi-user access, provider credentials, or public publication.
 
 ## 1. Start and stop
 
@@ -166,20 +168,32 @@ npm run benchmark:case -- packet --corpus ./corpus --out ./packets
 #    subject. Nothing is pre-filled; hand it back as JSON.
 
 # 3. Import submissions safely. A stale packetHash, a wrong case, a duplicate reviewer, an unknown
-#    subject, an out-of-vocabulary label or a blank rationale is refused and leaves that case untouched.
+#    subject, an out-of-vocabulary label, a blank rationale, or a reviewer who is not declared in the
+#    case's provenance.reviewedBy, is refused. Refused items report every reason.
+npm run benchmark:case -- merge --corpus ./corpus --submissions ./returned --out ./corpus-merged --dry-run
 npm run benchmark:case -- merge --corpus ./corpus --submissions ./returned --out ./corpus-merged
-#    exits non-zero if anything was refused; gold `expected` is never edited.
+#    v0.7 default is ATOMIC: one refusal (including one malformed file) writes NOTHING to --out and the
+#    command exits non-zero. Add --allow-partial to import the accepted items anyway; it prints each
+#    ACCEPTED and REJECTED item. Gold `expected` is never edited, and no reviewer is ever authorised by
+#    the tool. A merged label keeps the reviewer's rationale, their timestamp and the packet hash.
+
+# 3b. See who the case declares versus who actually labelled. Read-only; it never edits the roster.
+npm run benchmark:case -- roster --corpus ./corpus-merged
 
 # 4. See where reviewers actually agree or split (a split stays UNRESOLVED; nothing is averaged).
 npm run benchmark:case -- review --corpus ./corpus-merged
 
-# 5. Where a subject genuinely split, a person records a scoped adjudication and it is applied only to
-#    that disputed subject. A RESOLVED outcome must name an in-vocabulary label; a GENUINELY_AMBIGUOUS
-#    one must carry none.
+# 5. Where a subject genuinely split, ISSUE the bound form, let a person fill it in, then apply it.
+npm run benchmark:case -- adjudicate --corpus ./corpus-merged --issue --out ./adjudications
+#    -> <id>.adjudication.json, one entry per unresolved subject, each carrying the disagreementHash it
+#    settles; outcome/label/reason/adjudicator/timestamp are left blank because deciding is a human act.
 npm run benchmark:case -- adjudicate --corpus ./corpus-merged --adjudications ./adjudications --out ./corpus-final
+#    A RESOLVED outcome must name an in-vocabulary label; a GENUINELY_AMBIGUOUS one must carry none. The
+#    decision is applied ONLY while its disagreementHash still matches the current split: if reviewers
+#    moved after the form was issued, it is refused as stale and the subject stays unresolved.
 
-# 6. Audit corpus readiness and provenance. This reports coverage, authorisation and agreement state —
-#    never accuracy; it always prints accuracyClaimable=false.
+# 6. Audit corpus readiness and provenance. This reports coverage, authorisation, agreement state, roster
+#    gaps and stale/unbound decisions — never accuracy; it always prints accuracyClaimable=false.
 npm run benchmark:case -- audit --corpus ./corpus-final
 ```
 
@@ -188,3 +202,42 @@ sensitive claims and evidence excerpts and are operator-managed local files. The
 versions; the `benchmark-case-v1`/`v2` contract and the report are unchanged, so no corpus migration is
 implied. Reviewer names and timestamps are operator-asserted and prove no independent review or
 authentication. See [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md).
+
+## 10. Corpus releases and interrupted-batch recovery
+
+A release answers one operational question: **is this the exact corpus my last report was computed from?**
+
+```bash
+# Freeze: writes a deterministic manifest of case digests. It refuses a corpus that does not validate.
+npm run benchmark:release -- freeze --corpus ./corpus-final --out ./releases/release-one.json
+#    add --label "Q4 set" to record a human name for the release; it never changes the release id,
+#    which is derived from content alone. Add --snapshot ./frozen only if you truly want a second copy
+#    of the case files: it duplicates possibly-sensitive material into a new directory.
+npm run benchmark:release -- gates --corpus ./corpus-final
+
+# Later, check the corpus you are about to review against the freeze:
+npm run benchmark:release -- verify --corpus ./corpus-final --manifest ./releases/release-one.json
+#    VERIFIED or DRIFTED, naming every added / removed / changed case. Non-zero exit on drift.
+# Freeze again after new review, then compare the two:
+npm run benchmark:release -- diff --before ./releases/release-one.json --after ./releases/release-two.json
+```
+
+What a release does **not** give you: no signature, no timestamp, no publication and no external attestation.
+A digest detects that a file changed; it does not prove a reviewer was a real person or that any material is
+genuine, and every passing gate is a statement about consistency and declared provenance, not accuracy.
+
+**If a batch write was interrupted** (power loss, killed process, full disk) a staging directory survives at
+`<out>.staging/` with a `journal.json`. Re-run the same command with `--recover`:
+
+```bash
+npm run benchmark:case -- merge --corpus ./corpus --submissions ./returned --out ./corpus-merged --recover
+```
+
+A journal still at `staged` means the target was never touched, so the run is rolled back and the staging
+directory removed. A journal at `committing` means publishing had begun, so the remaining files are completed —
+by content hash, so files already in place are skipped — and the result is byte-identical to an uninterrupted
+run. If the corpus or submissions changed since the interruption, the plan hash no longer matches and recovery
+refuses rather than mixing two batches; inspect or remove the staging directory and run again. Recovery with
+no journal present is reported as such and changes nothing. See
+[ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md) and the
+[design document](../technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md).

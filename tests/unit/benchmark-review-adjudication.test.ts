@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  adjudicationTemplate,
   applyAdjudication,
   disagreementReport,
   type PendingAdjudication,
@@ -51,14 +52,30 @@ function caseWith(reviewerLabels: unknown[], adjudications: unknown[] = []): Ben
 
 const split = [label('dana', 'SUPPORTED_WITHIN_SCOPE'), label('sam', 'CONTRADICTED')];
 
-const resolved: PendingAdjudication = {
-  dimension: 'EVIDENCE_SUPPORT',
-  subjectId: 'p1',
-  outcome: 'RESOLVED',
-  label: 'CONTRADICTED',
-  reason: 'The second reviewer read the primary source.',
-  adjudicatedBy: 'sam',
-};
+/**
+ * Build the decision from the case's own template, which is what carries the binding hash from v0.7.
+ *
+ * v0.6 let a hand-written decision settle any subject in the case; the version of this file that shipped
+ * then was written before binding existed, so the hash is read from the current template rather than being
+ * hard-coded, and the staleness refusal has its own test file.
+ */
+function resolvedFor(caseValue: BenchmarkCase): PendingAdjudication {
+  const entry = adjudicationTemplate(caseValue).adjudications[0];
+  assert.ok(entry, 'the fixture split yields one template entry');
+  return {
+    caseId: caseValue.id,
+    dimension: 'EVIDENCE_SUPPORT',
+    subjectId: 'p1',
+    outcome: 'RESOLVED',
+    label: 'CONTRADICTED',
+    reason: 'The second reviewer read the primary source.',
+    adjudicatedBy: 'sam',
+    disagreementHash: entry.disagreementHash,
+    adjudicatedAt: '2026-11-05T12:00:00Z',
+  };
+}
+
+const resolved = resolvedFor(caseWith(split));
 
 test('a resolved adjudication settles exactly the subject that actually disagreed', () => {
   const result = applyAdjudication(caseWith(split), resolved);
