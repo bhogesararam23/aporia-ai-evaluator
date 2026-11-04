@@ -12,6 +12,7 @@
  * is unchanged (`benchmark-case-v1`/`v2` still read), so no corpus migration is implied.
  */
 import { createHash } from 'node:crypto';
+import { BENCHMARK_STRATA } from './types.ts';
 import type {
   BenchmarkAdjudication,
   BenchmarkCase,
@@ -417,5 +418,97 @@ export function adjudicationTemplate(benchmarkCase: BenchmarkCase): Adjudication
         reason: '' as const,
         adjudicatedBy: '' as const,
       })),
+  };
+}
+
+export const AUDIT_VERSION = 'benchmark-audit-v1';
+
+export interface CaseReadiness {
+  readonly id: string;
+  readonly stratum: string;
+  readonly authorizedForStorage: boolean;
+  readonly reviewedAt: string;
+  readonly reviewerCount: number;
+  readonly incompleteSubjects: number;
+  readonly singleReviewerSubjects: number;
+  readonly unanimousSubjects: number;
+  readonly adjudicatedSubjects: number;
+  readonly unresolvedSubjects: number;
+}
+
+export interface CorpusAudit {
+  readonly version: string;
+  readonly caseCount: number;
+  readonly missingStrata: readonly string[];
+  readonly cases: readonly CaseReadiness[];
+  readonly summary: {
+    readonly casesMissingAuthorisation: number;
+    readonly casesBelowTwoReviewers: number;
+    readonly incompleteSubjects: number;
+    readonly unresolvedSubjects: number;
+  };
+  readonly accuracyClaimable: false;
+  readonly accuracyReason: string;
+}
+
+/**
+ * Report corpus readiness and provenance honestly. This is a *readiness* audit, not a score: it names
+ * missing strata, cases without storage authorisation or a review date, subjects nobody or only one
+ * reviewer has judged, and disagreements still unresolved — and it keeps `accuracyClaimable` false,
+ * because none of that is a claim that the evaluator is accurate. A thin, honest corpus reads as
+ * under-ready; the audit never pads a case to look complete.
+ */
+export function auditCorpus(cases: readonly BenchmarkCase[]): CorpusAudit {
+  const present = new Set(cases.map((benchmarkCase) => benchmarkCase.stratum));
+  const missingStrata = BENCHMARK_STRATA.filter((stratum) => !present.has(stratum));
+  let casesMissingAuthorisation = 0;
+  let casesBelowTwoReviewers = 0;
+  let incompleteSubjectsTotal = 0;
+  let unresolvedSubjectsTotal = 0;
+  const caseReports: CaseReadiness[] = cases.map((benchmarkCase) => {
+    const report = disagreementReport(benchmarkCase);
+    const reviewerLabels = benchmarkCase.reviewerLabels;
+    const reviewerCount = new Set(reviewerLabels.map((label) => label.reviewer)).size;
+    const statusCount = (status: SubjectAgreementStatus): number =>
+      report.subjects.filter((subject) => subject.status === status).length;
+    const incomplete = statusCount('UNANNOTATED');
+    const authorized = benchmarkCase.provenance.authorizedForStorage === true;
+    if (!authorized) {
+      casesMissingAuthorisation += 1;
+    }
+    if (reviewerCount < 2) {
+      casesBelowTwoReviewers += 1;
+    }
+    incompleteSubjectsTotal += incomplete;
+    unresolvedSubjectsTotal += statusCount('UNRESOLVED');
+    return {
+      id: benchmarkCase.id,
+      stratum: benchmarkCase.stratum,
+      authorizedForStorage: authorized,
+      reviewedAt: benchmarkCase.provenance.reviewedAt,
+      reviewerCount,
+      incompleteSubjects: incomplete,
+      singleReviewerSubjects: statusCount('SINGLE_REVIEWER'),
+      unanimousSubjects: statusCount('UNANIMOUS'),
+      adjudicatedSubjects: statusCount('ADJUDICATED'),
+      unresolvedSubjects: statusCount('UNRESOLVED'),
+    };
+  });
+  return {
+    version: AUDIT_VERSION,
+    caseCount: cases.length,
+    missingStrata,
+    cases: caseReports,
+    summary: {
+      casesMissingAuthorisation,
+      casesBelowTwoReviewers,
+      incompleteSubjects: incompleteSubjectsTotal,
+      unresolvedSubjects: unresolvedSubjectsTotal,
+    },
+    accuracyClaimable: false,
+    accuracyReason:
+      'Readiness is not accuracy. This audit counts coverage, authorisation and agreement state from ' +
+      'operator-asserted reviewer labels; it does not and cannot establish that the evaluator is ' +
+      'accurate, which would require a genuinely reviewed corpus and measures this build does not have.',
   };
 }

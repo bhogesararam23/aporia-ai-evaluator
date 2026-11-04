@@ -117,8 +117,10 @@ test('a packet lists exactly the subjects derived from the input, per dimension 
 
 test('the packet hash binds the frozen input and changes when the input changes', () => {
   const before = buildReviewerPacket(fixtureCase());
-  const mutated = fixtureCase();
-  mutated.input.answerText = 'A totally different answer.';
+  const mutated: BenchmarkCase = {
+    ...fixtureCase(),
+    input: { ...fixtureCase().input, answerText: 'A totally different answer.' },
+  };
   const after = buildReviewerPacket(mutated);
   assert.notEqual(before.packetHash, after.packetHash, 'a changed input pack yields a new hash');
 });
