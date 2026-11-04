@@ -146,6 +146,11 @@ pure file tooling (no network, no database, no clock) built on `src/benchmark/re
 - **audit** — corpus readiness and provenance: missing strata, cases lacking storage authorisation or a
   review date, subjects judged by fewer than two reviewers, and unresolved disagreements — always reporting
   `accuracyClaimable: false`. Readiness to review is explicitly not a claim that the evaluator is accurate.
+- **adjudicate** — apply a human-authored scoped adjudication, but *only* to a subject currently in
+  unresolved disagreement. It refuses to settle a unanimous or single-reviewer subject (there is nothing to
+  settle), requires a `RESOLVED` outcome to carry an in-vocabulary label and a `GENUINELY_AMBIGUOUS` outcome
+  to carry none, and never edits `expected` — so the tool can never turn an unresolved split into a gold
+  label by fiat.
 
 These are new *workflow artifact* versions; the benchmark **case** contract (`benchmark-case-v1`/`v2`) and
 the report are unchanged, so no corpus migration is implied and existing benchmark reports stay valid. A

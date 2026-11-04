@@ -196,7 +196,11 @@ blinded, separate, and safely merged. It is local file tooling only — no netwo
    unresolved; nothing here picks a side for you.
 5. **Adjudicate as a human.** Where reviewers genuinely split, a person files a scoped adjudication naming
    the exact dimension and subject and stating the outcome and reason — or records that the case is
-   genuinely ambiguous. An unresolved disagreement must never become a gold label by default.
+   genuinely ambiguous. `adjudicate --corpus <dir> --adjudications <dir> --out <dir>` applies it, but only
+   to a subject that is *actually* in unresolved disagreement: it refuses to settle a unanimous or
+   single-reviewer subject, requires a `RESOLVED` outcome to carry an in-vocabulary label and a
+   `GENUINELY_AMBIGUOUS` outcome to carry none, and never edits `expected`. An unresolved disagreement must
+   never become a gold label by default.
 6. **Audit readiness, not accuracy.** `audit --corpus <dir>` reports missing strata, cases without storage
    authorisation or a review date, subjects fewer than two reviewers judged, and unresolved disagreements.
    It always reports `accuracyClaimable: false` — readiness to review is not a claim that the evaluator is

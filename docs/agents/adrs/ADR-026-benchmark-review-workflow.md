@@ -73,10 +73,15 @@ mechanics that never manufactures a label, a reviewer, a timestamp, a permission
    reviewer judged, and unresolved disagreements, and it hard-codes `accuracyClaimable: false` with a
    reason. A thin, honest corpus reads as under-ready; the audit never pads a case to look complete and
    never converts readiness into an accuracy claim.
-8. **One CLI, new subcommands.** `npm run benchmark:case` gains `packet`, `merge`, `review`, `audit`
-   alongside the existing `scaffold`/`validate`/`normalise`/`provenance`. They read and write local JSON
-   files only. `merge` re-exports every valid case unchanged (so an import is a full-corpus rewrite, not a
-   partial one), sets a non-zero exit when any submission is refused, and prints each rejection reason.
+8. **One CLI, new subcommands.** `npm run benchmark:case` gains `packet`, `merge`, `review`, `audit` and
+   `adjudicate` alongside the existing `scaffold`/`validate`/`normalise`/`provenance`. They read and write
+   local JSON files only. `merge` re-exports every valid case unchanged (so an import is a full-corpus
+   rewrite, not a partial one), sets a non-zero exit when any submission is refused, and prints each
+   rejection reason. `adjudicate` applies a human-authored scoped adjudication to a case via
+   `applyAdjudication`, which **refuses** to settle a subject that is not currently an `UNRESOLVED`
+   disagreement (so an adjudication cannot manufacture a decision where reviewers did not split, overwrite
+   an existing adjudication, or decide for a lone or unanimous reviewer), requires an in-vocabulary label
+   for `RESOLVED` and **no** label for `GENUINELY_AMBIGUOUS`, and never edits the gold `expected` array.
 9. **The `benchmark` layer boundary is unchanged.** This stays pure logic in `src/benchmark/` importing
    `core` and Node builtins only (ADR-022). It reaches no network, no database, no provider, no clock.
 
@@ -130,10 +135,11 @@ mechanics that never manufactures a label, a reviewer, a timestamp, a permission
 1. `src/benchmark/types.ts` — review-artifact version constants and `KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS`.
 2. `src/benchmark/review.ts` — `contentHash`, `deriveSubjects`, `buildReviewerPacket`,
    `buildSubmissionTemplate`, `mergeSubmission`, `mergeSubmissions`, `disagreementReport`,
-   `adjudicationTemplate`, `auditCorpus`.
+   `adjudicationTemplate`, `applyAdjudication`, `auditCorpus`.
 3. `src/benchmark/validate.ts` — export `benchmarkDimensionLabels` so merge checks the same vocabulary the
    validator uses (single source, no duplicated label lists).
-4. `scripts/benchmark-case.ts` — `packet` / `merge` / `review` / `audit` subcommands; `--submissions` flag.
+4. `scripts/benchmark-case.ts` — `packet` / `merge` / `review` / `audit` / `adjudicate` subcommands;
+   `--submissions` and `--adjudications` flags.
 5. Tests — unit coverage for packets/hashing, merge refusals and all-or-nothing, disagreement/adjudication,
    and the audit; integration coverage for the CLI end to end (hash binding, stale, duplicate, malformed).
 
@@ -152,5 +158,8 @@ mechanics that never manufactures a label, a reviewer, a timestamp, a permission
 - The CLI: `packet` writes a blinded packet + blank template; `merge` applies a valid submission and
   refuses a stale/duplicate/malformed one (non-zero exit) while still re-exporting the untouched cases;
   `review` shows an unresolved split without resolving; `audit` reports coverage without claiming accuracy.
+- `applyAdjudication`/`adjudicate`: a `RESOLVED` adjudication is accepted only for a subject currently in
+  unresolved disagreement, must carry an in-vocabulary label, and never edits `expected`; adjudicating a
+  unanimous or single-reviewer subject, or a `GENUINELY_AMBIGUOUS` outcome carrying a label, is refused.
 - No review code imports persistence, reporting, app, or website; the boundary check and `no-network` test
   keep passing.
