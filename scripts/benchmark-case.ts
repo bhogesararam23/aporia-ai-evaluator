@@ -15,10 +15,11 @@
  *
  * Subcommands (human-review workflow, ADR-026):
  *   packet     --corpus <dir> --out <dir>          blinded reviewer packets + empty submission templates per case
- *   merge      --corpus <dir> --submissions <dir> --out <dir>  safely import submissions; refuse stale/duplicate/mismatched
+ *   merge      --corpus <dir> --submissions <dir> --out <dir>  safely import submissions; refuse stale/duplicate/mismatched/undeclared
  *   review     --corpus <dir>                      per-subject agreement / disagreement report (never resolves)
  *   audit      --corpus <dir>                      corpus readiness + provenance (never claims accuracy)
- *   adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply a human scoped adjudication, only where a real disagreement exists
+ *   adjudicate --corpus <dir> --issue --out <dir>  write blank adjudication forms bound to each disagreement
+ *   adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply a human adjudication, only where its binding still matches
  *
  * The review subcommands are the offline counterpart to `src/benchmark/review.ts`: they read parsed
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
@@ -34,6 +35,7 @@ import {
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
 import {
   auditCorpus,
+  adjudicationTemplate,
   buildReviewerPacket,
   buildSubmissionTemplate,
   disagreementReport,
@@ -56,6 +58,7 @@ interface Options {
   stratum: string | null;
   submissions: string | null;
   adjudications: string | null;
+  issue: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -67,6 +70,7 @@ function parseArguments(argv: readonly string[]): Options {
     stratum: null,
     submissions: null,
     adjudications: null,
+    issue: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -80,6 +84,8 @@ function parseArguments(argv: readonly string[]): Options {
       options.submissions = argv[(index += 1)] ?? null;
     } else if (argument === '--adjudications') {
       options.adjudications = argv[(index += 1)] ?? null;
+    } else if (argument === '--issue') {
+      options.issue = true;
     } else {
       fail(`Unknown argument: ${String(argument)}`);
     }
@@ -267,12 +273,18 @@ function coerceSubmission(value: unknown): AnnotationSubmission | null {
   return value as unknown as AnnotationSubmission;
 }
 
-/** A submission object extended with the case it targets, so a batch can route each entry. */
-interface PendingAdjudicationFile extends PendingAdjudication {
-  readonly caseId: string;
-}
+/**
+ * A submission object extended with the case it targets, so a batch can route each entry. From v0.7
+ * `PendingAdjudication` carries `caseId` itself, so no separate file shape is needed.
+ */
 
-function coerceAdjudication(value: unknown): PendingAdjudicationFile | null {
+/**
+ * Accept only a well-formed adjudication entry; anything else is refused as malformed before the pure layer
+ * sees it. v0.7 adds two required fields, `disagreementHash` and `adjudicatedAt`: without checking them here,
+ * a hand-edited or truncated file would reach `applyAdjudication` as `undefined` and throw, which is exactly
+ * the hostile-input failure the offline review workflow is supposed to turn into a printed refusal.
+ */
+function coerceAdjudication(value: unknown): PendingAdjudication | null {
   if (typeof value !== 'object' || value === null) {
     return null;
   }
@@ -285,11 +297,23 @@ function coerceAdjudication(value: unknown): PendingAdjudicationFile | null {
     typeof record['outcome'] !== 'string' ||
     typeof record['reason'] !== 'string' ||
     typeof record['adjudicatedBy'] !== 'string' ||
+    typeof record['disagreementHash'] !== 'string' ||
+    typeof record['adjudicatedAt'] !== 'string' ||
     !(labelField === null || typeof labelField === 'string')
   ) {
     return null;
   }
-  return value as unknown as PendingAdjudicationFile;
+  return {
+    caseId: record['caseId'],
+    dimension: record['dimension'] as PendingAdjudication['dimension'],
+    subjectId: record['subjectId'],
+    outcome: record['outcome'],
+    label: (labelField as string | null) ?? null,
+    reason: record['reason'],
+    adjudicatedBy: record['adjudicatedBy'],
+    disagreementHash: record['disagreementHash'],
+    adjudicatedAt: record['adjudicatedAt'],
+  };
 }
 
 function packet(options: Options): void {
@@ -442,10 +466,57 @@ function adjudicate(options: Options): void {
   if (options.out === null) {
     fail('adjudicate needs --out <directory> to write cases with adjudications applied into.');
   }
-  if (options.adjudications === null) {
-    fail('adjudicate needs --adjudications <directory> holding scoped adjudication entry files.');
-  }
   const result = validateBenchmarkCorpus(readCorpus(requireCorpus(options)));
+
+  // `--issue` writes the blank bound forms a human fills in. Without it there is no offline way to obtain a
+  // `disagreementHash`, and an unbound decision is exactly what v0.7 refuses to apply. Each file is a flat
+  // array of entries, the shape `adjudicate --adjudications` reads back, so a form can be filled in and
+  // applied without a conversion step.
+  if (options.issue) {
+    const target = resolve(options.out);
+    mkdirSync(target, { recursive: true });
+    let issued = 0;
+    for (const entry of result.cases) {
+      const benchmarkCase = entry as unknown as BenchmarkCase;
+      const template = adjudicationTemplate(benchmarkCase);
+      if (template.adjudications.length === 0) {
+        continue;
+      }
+      const forms = template.adjudications.map((adjudication) => ({
+        caseId: benchmarkCase.id,
+        dimension: adjudication.dimension,
+        subjectId: adjudication.subjectId,
+        outcome: '',
+        label: '',
+        reason: '',
+        adjudicatedBy: '',
+        disagreementHash: adjudication.disagreementHash,
+        adjudicatedAt: '',
+      }));
+      issued += forms.length;
+      writeFileSync(
+        join(target, `${benchmarkCase.id}.adjudication.json`),
+        `${JSON.stringify(forms, null, 2)}\n`,
+        'utf8',
+      );
+    }
+    console.error(
+      `benchmark:case: issued ${String(issued)} bound adjudication entr(y/ies) to ${target}. ` +
+        'Each entry carries the disagreement hash it settles; outcome, label, reason, adjudicator and the ' +
+        'moment of filing are left blank because resolving a disagreement is a human act. Refused ' +
+        `${String(result.issues.length)} invalid entr(y/ies).`,
+    );
+    if (result.issues.length > 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (options.adjudications === null) {
+    fail(
+      'adjudicate needs --adjudications <directory> holding scoped adjudication entry files, or --issue to write the blank bound forms instead.',
+    );
+  }
   const byId = new Map(
     (result.cases as unknown as readonly BenchmarkCase[]).map((benchmarkCase) => [
       benchmarkCase.id,
@@ -550,10 +621,11 @@ function main(): void {
           '  normalise  --corpus <dir> --out <dir>\n' +
           '  provenance --corpus <dir>\n' +
           '  packet     --corpus <dir> --out <dir>\n' +
-          '  merge      --corpus <dir> --submissions <dir> --out <dir>\n' +
           '  review     --corpus <dir>\n' +
           '  audit      --corpus <dir>\n' +
-          '  adjudicate --corpus <dir> --adjudications <dir> --out <dir>',
+          '  adjudicate --corpus <dir> --issue --out <dir>        write the blank bound forms for a human\n' +
+          '  adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply decisions that still bind\n' +
+          '  merge      --corpus <dir> --submissions <dir> --out <dir>',
       );
       if (options.command !== '' && options.command !== '--help' && options.command !== '-h') {
         fail(`Unknown subcommand "${options.command}".`);

@@ -72,14 +72,18 @@ test('an explicit null provenance field is accepted, because absence is a record
 });
 
 test('a non-string provenance value is reported rather than coerced', () => {
-  const bad = caseWithLabel(
-    labelFor('dana', 'EVIDENCE_SUPPORT', 'p1', 'SUPPORTED_WITHIN_SCOPE', {
-      rationale: 42,
-      submittedAt: true,
-      packetHash: ['a'],
-      submissionHash: { nested: true },
-    }),
-  );
+  // Deliberately untyped: a hostile or corrupted file is exactly what the validator must survive.
+  const bad = caseWithLabel({
+    reviewer: 'dana',
+    dimension: 'EVIDENCE_SUPPORT',
+    label: 'SUPPORTED_WITHIN_SCOPE',
+    subjectId: 'p1',
+    note: null,
+    rationale: 42,
+    submittedAt: true,
+    packetHash: ['a'],
+    submissionHash: { nested: true },
+  });
   const fields = fieldsOf(bad);
   for (const field of ['rationale', 'submittedAt', 'packetHash', 'submissionHash']) {
     assert.ok(
@@ -91,9 +95,14 @@ test('a non-string provenance value is reported rather than coerced', () => {
 
 test('a malformed hash shape is reported, since a wrong-length digest silently defeats staleness checks', () => {
   for (const bad of ['deadbeef', 'A'.repeat(64), 'z'.repeat(64), 'a'.repeat(63), 'a'.repeat(65)]) {
-    const caseValue = caseWithLabel(
-      labelFor('dana', 'EVIDENCE_SUPPORT', 'p1', 'SUPPORTED_WITHIN_SCOPE', { packetHash: bad }),
-    );
+    const caseValue = caseWithLabel({
+      reviewer: 'dana',
+      dimension: 'EVIDENCE_SUPPORT',
+      label: 'SUPPORTED_WITHIN_SCOPE',
+      subjectId: 'p1',
+      note: null,
+      packetHash: bad,
+    });
     assert.ok(
       fieldsOf(caseValue).some((field) => field.includes('packetHash')),
       `"${bad}" must be reported as a malformed packetHash`,

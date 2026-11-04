@@ -330,9 +330,10 @@ test('audit reports coverage and provenance without claiming accuracy', async ()
   }
 });
 
-test('adjudicate applies a human scoped adjudication only where a real disagreement exists', async () => {
+test('adjudicate issues a bound form and applies only a decision that still matches the disagreement', async () => {
   const corpus = tempDir();
-  const adjudications = tempDir();
+  const forms = tempDir();
+  const filled = tempDir();
   const out = tempDir();
   try {
     const splitCase = validCase('case-adjcli');
@@ -354,37 +355,60 @@ test('adjudicate applies a human scoped adjudication only where a real disagreem
     ];
     writeFileSync(join(corpus.path, 'a.json'), JSON.stringify(splitCase), 'utf8');
 
-    writeFileSync(
-      join(adjudications.path, 'adj.json'),
-      JSON.stringify({
-        caseId: 'case-adjcli',
-        dimension: 'EVIDENCE_SUPPORT',
-        subjectId: 'prop-1',
+    // 1. The operator issues the form and gets the binding hash, with nothing pre-selected.
+    const issuedRun = await cli([
+      'adjudicate',
+      '--corpus',
+      corpus.path,
+      '--issue',
+      '--out',
+      forms.path,
+    ]);
+    assert.equal(issuedRun.code, 0, issuedRun.stderr);
+    const issued = JSON.parse(
+      readFileSync(join(forms.path, 'case-adjcli.adjudication.json'), 'utf8'),
+    ) as Record<string, unknown>[];
+    assert.equal(issued.length, 1, 'one unresolved subject yields one form');
+    assert.match(String(issued[0]?.['disagreementHash']), /^[0-9a-f]{64}$/);
+    assert.equal(issued[0]?.['outcome'], '', 'the adjudicator decides; the tool does not');
+    assert.equal(issued[0]?.['adjudicatedBy'], '');
+
+    // 2. A human fills it in and the decision applies, carrying its binding.
+    const signed = [
+      {
+        ...issued[0],
         outcome: 'RESOLVED',
         label: 'CONTRADICTED',
         reason: 'The second reviewer read the primary source directly.',
         adjudicatedBy: 'sam',
-      }),
-      'utf8',
-    );
+        adjudicatedAt: '2026-11-05T12:00:00Z',
+      },
+    ];
+    writeFileSync(join(filled.path, 'adj.json'), JSON.stringify(signed), 'utf8');
     const result = await cli([
       'adjudicate',
       '--corpus',
       corpus.path,
       '--adjudications',
-      adjudications.path,
+      filled.path,
       '--out',
       out.path,
     ]);
     assert.equal(result.code, 0, result.stderr);
     const mergedCase = JSON.parse(readFileSync(join(out.path, 'case-adjcli.json'), 'utf8')) as {
-      adjudications: unknown[];
+      adjudications: Record<string, unknown>[];
       expected: unknown[];
     };
     assert.equal(mergedCase.adjudications.length, 1, 'the adjudication is applied to its subject');
     assert.equal(mergedCase.expected.length, 1, 'gold labels are never edited by adjudication');
+    assert.match(
+      String(mergedCase.adjudications[0]?.['disagreementHash']),
+      /^[0-9a-f]{64}$/,
+      'the stored record keeps the disagreement it settled',
+    );
+    assert.equal(mergedCase.adjudications[0]?.['adjudicatedBy'], 'sam');
 
-    // A second run on an out-of-vocabulary label is refused, leaving nothing half-applied.
+    // 3. A v0.6-shaped decision with no binding is refused, not thrown on.
     const badDir = tempDir();
     const badOut = tempDir();
     try {
@@ -395,8 +419,8 @@ test('adjudicate applies a human scoped adjudication only where a real disagreem
           dimension: 'EVIDENCE_SUPPORT',
           subjectId: 'prop-1',
           outcome: 'RESOLVED',
-          label: 'NOT_A_REAL_LABEL',
-          reason: 'Trying an invalid label.',
+          label: 'CONTRADICTED',
+          reason: 'An unbound decision.',
           adjudicatedBy: 'sam',
         }),
         'utf8',
@@ -410,15 +434,47 @@ test('adjudicate applies a human scoped adjudication only where a real disagreem
         '--out',
         badOut.path,
       ]);
-      assert.notEqual(rejected.code, 0);
-      assert.match(rejected.stderr, /not valid|manufacture|unresolved/i);
+      assert.notEqual(rejected.code, 0, 'an unbound decision must not apply');
+      assert.match(rejected.stderr, /malformed|binding/i);
     } finally {
       badDir.remove();
       badOut.remove();
     }
+
+    // 4. An out-of-vocabulary label is refused with its reasons printed.
+    const wrongDir = tempDir();
+    const wrongOut = tempDir();
+    try {
+      writeFileSync(
+        join(wrongDir.path, 'wrong.json'),
+        JSON.stringify([
+          {
+            ...signed[0],
+            label: 'NOT_A_REAL_LABEL',
+            reason: 'Trying an invalid label.',
+          },
+        ]),
+        'utf8',
+      );
+      const wrong = await cli([
+        'adjudicate',
+        '--corpus',
+        corpus.path,
+        '--adjudications',
+        wrongDir.path,
+        '--out',
+        wrongOut.path,
+      ]);
+      assert.notEqual(wrong.code, 0);
+      assert.match(wrong.stderr, /not valid|not an unresolved disagreement/i);
+    } finally {
+      wrongDir.remove();
+      wrongOut.remove();
+    }
   } finally {
     corpus.remove();
-    adjudications.remove();
+    forms.remove();
+    filled.remove();
     out.remove();
   }
 });

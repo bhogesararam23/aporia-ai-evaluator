@@ -13,6 +13,7 @@
  */
 import {
   BENCHMARK_ADJUDICATION_VERSION,
+  BENCHMARK_ADJUDICATION_VERSION_V2,
   BENCHMARK_AUDIT_VERSION,
   BENCHMARK_PACKET_VERSION,
   BENCHMARK_STRATA,
@@ -31,12 +32,19 @@ import { contentHash } from './hashing.ts';
 import { benchmarkDimensionLabels } from './validate.ts';
 import { isoDateTime } from '../core/validation.ts';
 import {
+  compareStrings,
   declaredRoster,
+  disagreementStateHash,
+  isDeclaredReviewer,
+  resolveSettlingAdjudication,
   reviewerIdentity,
   reviewerLabelFromAnnotation,
+  subjectLabelEntries,
   submissionHash,
+  type AdjudicationBinding,
   type LabelProvenance,
 } from './provenance.ts';
+import { isContentHash } from './hashing.ts';
 
 // The canonical version strings live in `types.ts` (the contracts module); these are stable aliases so
 // callers of this module keep a single source of truth for a workflow artifact's version.
@@ -358,6 +366,8 @@ export interface SubjectAgreement {
   readonly labels: readonly string[];
   readonly status: SubjectAgreementStatus;
   readonly adjudicatedLabel: string | null;
+  /** Why this subject stands where it does, when an adjudication is involved. `null` when none is. */
+  readonly binding: AdjudicationBinding | null;
 }
 
 export interface DisagreementReport {
@@ -366,30 +376,61 @@ export interface DisagreementReport {
   readonly unanimous: number;
   readonly adjudicated: number;
   readonly unresolved: number;
+  /** Bound decisions whose disagreement has moved. These are counted inside `unresolved`, not instead of it. */
+  readonly stale: number;
+  /** Legacy decisions with no binding. They settle a subject and are reported as unverified provenance. */
+  readonly unbound: number;
+}
+
+/** How many subjects in the case genuinely disagree, which is what a v1 unscoped record could settle. */
+function disagreeingSubjectCount(benchmarkCase: BenchmarkCase): number {
+  const grouped = new Map<string, Set<string>>();
+  for (const label of benchmarkCase.reviewerLabels) {
+    const key = `${label.dimension}/${label.subjectId}`;
+    const bucket = grouped.get(key) ?? new Set<string>();
+    bucket.add(label.label);
+    grouped.set(key, bucket);
+  }
+  return [...grouped.values()].filter((labels) => labels.size > 1).length;
 }
 
 /**
- * Report agreement per subject without ever resolving it. A subject needs at least two distinct
- * reviewers before a shared label is called agreement; a lone label is `SINGLE_REVIEWER`, not
- * consensus. A split is `UNRESOLVED` unless a scoped adjudication names that exact dimension and
- * subject, in which case the adjudication's own label is echoed — never chosen here.
+ * Report agreement per subject without ever resolving it. A subject needs at least two distinct canonical
+ * reviewers before a shared label is called agreement; a lone label is `SINGLE_REVIEWER`, not consensus. A
+ * split is `UNRESOLVED` unless the shared resolver finds a decision that still binds it, in which case it is
+ * `ADJUDICATED` and `binding` says whether that binding matches the current disagreement or is a legacy
+ * record that predates bindings.
+ *
+ * A `STALE` binding leaves the subject `UNRESOLVED`, and its adjudicated label is never echoed: a decision
+ * about a different split must not supply this one's answer. Reviewer names stay operator-asserted.
  */
 export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementReport {
   const packet = buildReviewerPacket(benchmarkCase);
-  const adjudicationBySubject = new Map<string, BenchmarkAdjudication>();
-  for (const adjudication of benchmarkCase.adjudications ?? []) {
-    adjudicationBySubject.set(`${adjudication.dimension}/${adjudication.subjectId}`, adjudication);
-  }
+  const disagreementCount = disagreeingSubjectCount(benchmarkCase);
   let unanimous = 0;
   let adjudicated = 0;
   let unresolved = 0;
+  let stale = 0;
+  let unbound = 0;
   const subjects: SubjectAgreement[] = packet.subjects.map((subject) => {
     const matching = benchmarkCase.reviewerLabels.filter(
       (label) => label.dimension === subject.dimension && label.subjectId === subject.subjectId,
     );
-    const reviewers = [...new Set(matching.map((label) => label.reviewer))].sort();
-    const distinctLabels = [...new Set(matching.map((label) => label.label))].sort();
-    const adjudication = adjudicationBySubject.get(`${subject.dimension}/${subject.subjectId}`);
+    const reviewers = [...new Set(matching.map((label) => reviewerIdentity(label.reviewer)))].sort(
+      compareStrings,
+    );
+    const distinctLabels = [...new Set(matching.map((label) => label.label))].sort(compareStrings);
+    const settling = resolveSettlingAdjudication(
+      benchmarkCase,
+      packet.packetHash,
+      subject.dimension,
+      subject.subjectId,
+      disagreementCount,
+    );
+    const binding = settling.binding;
+    if (binding === 'STALE') {
+      stale += 1;
+    }
     let status: SubjectAgreementStatus;
     if (matching.length === 0) {
       status = 'UNANNOTATED';
@@ -397,7 +438,7 @@ export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementRe
       status = 'SINGLE_REVIEWER';
     } else if (distinctLabels.length === 1) {
       status = 'UNANIMOUS';
-    } else if (adjudication !== undefined) {
+    } else if (binding === 'MATCHING' || binding === 'UNBOUND') {
       status = 'ADJUDICATED';
     } else {
       status = 'UNRESOLVED';
@@ -407,6 +448,9 @@ export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementRe
     }
     if (status === 'ADJUDICATED') {
       adjudicated += 1;
+    }
+    if (binding === 'UNBOUND') {
+      unbound += 1;
     }
     if (status === 'UNRESOLVED') {
       unresolved += 1;
@@ -418,52 +462,82 @@ export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementRe
       labels: matching.map((label) => label.label),
       status,
       adjudicatedLabel:
-        status === 'ADJUDICATED' && adjudication?.outcome === 'RESOLVED'
-          ? (adjudication.label ?? null)
+        status === 'ADJUDICATED' && settling.adjudication?.outcome === 'RESOLVED'
+          ? (settling.adjudication.label ?? null)
           : null,
+      binding,
     };
   });
-  return { caseId: benchmarkCase.id, subjects, unanimous, adjudicated, unresolved };
+  return { caseId: benchmarkCase.id, subjects, unanimous, adjudicated, unresolved, stale, unbound };
 }
 
 export const ADJUDICATION_TEMPLATE_VERSION = BENCHMARK_ADJUDICATION_VERSION;
+export const ADJUDICATION_TEMPLATE_VERSION_V2 = BENCHMARK_ADJUDICATION_VERSION_V2;
 
 export interface AdjudicationTemplateEntry {
   readonly dimension: BenchmarkDimension;
   readonly subjectId: string;
+  /** The exact disagreement this entry would settle, so a later application can be checked against it. */
+  readonly disagreementHash: string;
   readonly outcome: '';
   readonly label: '';
   readonly reason: '';
   readonly adjudicatedBy: '';
+  readonly adjudicatedAt: '';
 }
 
 export interface AdjudicationTemplate {
   readonly version: string;
   readonly caseId: string;
+  readonly templateHash: string;
   readonly adjudications: readonly AdjudicationTemplateEntry[];
 }
 
+/** The binding hash a template entry carries, computed from the case exactly as it stands now. */
+export function adjudicationBindingHash(
+  benchmarkCase: BenchmarkCase,
+  dimension: BenchmarkDimension,
+  subjectId: string,
+): string {
+  return disagreementStateHash({
+    packetHash: buildReviewerPacket(benchmarkCase).packetHash,
+    dimension,
+    subjectId,
+    entries: subjectLabelEntries(benchmarkCase, dimension, subjectId),
+  });
+}
+
 /**
- * A fill-in skeleton for the subjects still in unresolved disagreement — one blank entry each. The
- * outcome, label, reason and adjudicator are left empty on purpose: resolving a disagreement is a
- * human act, and the tool never pre-selects a side.
+ * A fill-in skeleton for the subjects still in unresolved disagreement — one bound entry each. The outcome,
+ * label, reason, adjudicator and moment are left empty on purpose: resolving a disagreement is a human act,
+ * and the tool never pre-selects a side.
+ *
+ * Subjects whose recorded decision has gone stale appear here again, because they genuinely are unsettled.
  */
 export function adjudicationTemplate(benchmarkCase: BenchmarkCase): AdjudicationTemplate {
   const report = disagreementReport(benchmarkCase);
-  return {
-    version: ADJUDICATION_TEMPLATE_VERSION,
+  const entries = report.subjects
+    .filter((subject) => subject.status === 'UNRESOLVED')
+    .map((subject) => ({
+      dimension: subject.dimension,
+      subjectId: subject.subjectId,
+      disagreementHash: adjudicationBindingHash(
+        benchmarkCase,
+        subject.dimension,
+        subject.subjectId,
+      ),
+      outcome: '' as const,
+      label: '' as const,
+      reason: '' as const,
+      adjudicatedBy: '' as const,
+      adjudicatedAt: '' as const,
+    }));
+  const content = {
+    version: ADJUDICATION_TEMPLATE_VERSION_V2,
     caseId: benchmarkCase.id,
-    adjudications: report.subjects
-      .filter((subject) => subject.status === 'UNRESOLVED')
-      .map((subject) => ({
-        dimension: subject.dimension,
-        subjectId: subject.subjectId,
-        outcome: '' as const,
-        label: '' as const,
-        reason: '' as const,
-        adjudicatedBy: '' as const,
-      })),
+    adjudications: entries,
   };
+  return { ...content, templateHash: contentHash(content) };
 }
 
 export type AdjudicationResult =
@@ -473,34 +547,61 @@ export type AdjudicationResult =
 /**
  * A human's proposed adjudication for one subject, before it is accepted onto the case. The label is
  * `null` for a genuinely-ambiguous outcome and a real value only for a RESOLVED one.
+ *
+ * `disagreementHash` and `adjudicatedAt` are part of the contract from v0.7: a decision must name the split
+ * it settles and the moment a human filed it. Both are supplied by the person or copied from the template —
+ * the tool infers neither.
  */
 export interface PendingAdjudication {
+  readonly caseId: string;
   readonly dimension: BenchmarkDimension;
   readonly subjectId: string;
   readonly outcome: string;
   readonly label: string | null;
   readonly reason: string;
   readonly adjudicatedBy: string;
+  readonly disagreementHash: string;
+  readonly adjudicatedAt: string;
 }
 
 /**
- * Apply a scoped adjudication to a case — but only where it is genuinely warranted, so an adjudication
- * can never manufacture a consensus.
+ * Read a field a caller may not have validated as text.
  *
- * It refuses (leaving the case untouched) unless the named subject is a real, current `UNRESOLVED`
- * disagreement: something is only "adjudicated" if reviewers actually split, so this cannot settle a
- * subject nobody disputed, overwrite an existing adjudication, or decide for a unanimous or lone
- * reviewer. A `RESOLVED` outcome must carry a label drawn from that dimension's vocabulary; a
- * `GENUINELY_AMBIGUOUS` outcome must carry **no** label, because recording a decision that decides
- * nothing is how an unresolved case would quietly become gold. The reason and adjudicator must be
- * present (the adjudicator is operator-asserted, not authenticated). On success it appends one scoped
- * `BenchmarkAdjudication`; it never edits the gold `expected` array or a reviewer's label.
+ * `scripts/benchmark-case.ts` already refuses a malformed adjudication file before this function runs. This
+ * is the second layer: `applyAdjudication` is a public pure API, and a caller that hands it parsed JSON
+ * directly must get a refusal rather than a `TypeError` from `.trim()` on undefined.
+ */
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * Apply a scoped, state-bound adjudication to a case — but only where it is genuinely warranted, so an
+ * adjudication can never manufacture a consensus or settle a split it was not written against.
+ *
+ * It refuses, leaving the case untouched, unless: the named subject is a real, current `UNRESOLVED`
+ * disagreement; the submission carries the binding hash of that exact disagreement; and that hash still
+ * matches the state as it now stands. The third condition is what closes defect 4 — a decision written
+ * against Monday's split cannot be applied to Tuesday's different one, because the state it named is gone.
+ *
+ * A `RESOLVED` outcome must carry a label drawn from that dimension's vocabulary; a `GENUINELY_AMBIGUOUS`
+ * outcome must carry **no** label, because recording a decision that decides nothing is how an unresolved
+ * case would quietly become gold. The reason, adjudicator and a human-supplied instant are all required.
+ *
+ * On success it appends one bound `BenchmarkAdjudication` and never deletes an earlier one: a decision that
+ * went stale stays in the record, because erasing it would hide that the disagreement moved.
  */
 export function applyAdjudication(
   benchmarkCase: BenchmarkCase,
   adjudication: PendingAdjudication,
 ): AdjudicationResult {
   const reasons: string[] = [];
+  if (adjudication.caseId !== benchmarkCase.id) {
+    reasons.push(
+      `Adjudication is for case "${adjudication.caseId}", which does not match this case "${benchmarkCase.id}".`,
+    );
+  }
+  const submittedHash = textOf(adjudication.disagreementHash);
   const report = disagreementReport(benchmarkCase);
   const subject = report.subjects.find(
     (entry) =>
@@ -516,38 +617,74 @@ export function applyAdjudication(
     );
   }
 
+  // The binding: a decision must name the disagreement it was written against, and that disagreement must
+  // still be the one on the case.
+  const currentHash = adjudicationBindingHash(
+    benchmarkCase,
+    adjudication.dimension,
+    adjudication.subjectId,
+  );
+  if (!isContentHash(submittedHash)) {
+    reasons.push(
+      'An adjudication must carry the disagreement hash issued with its template. Without a binding there is no way to tell which split it settles, so it is refused rather than trusted.',
+    );
+  } else if (submittedHash !== currentHash) {
+    reasons.push(
+      `Adjudication is stale: "${adjudication.dimension}/${adjudication.subjectId}" is no longer the disagreement this decision was written against. Issue a fresh template and adjudicate the current state, so the record shows which split was actually settled.`,
+    );
+  }
+
   const outcome = adjudication.outcome;
   if (outcome !== 'RESOLVED' && outcome !== 'GENUINELY_AMBIGUOUS') {
     reasons.push(`Adjudication outcome "${outcome}" must be RESOLVED or GENUINELY_AMBIGUOUS.`);
   }
   if (outcome === 'RESOLVED') {
-    if (adjudication.label === null || adjudication.label.trim() === '') {
+    const settledLabel = textOf(adjudication.label);
+    if (settledLabel === '') {
       reasons.push('A RESOLVED adjudication must name the label it settled.');
-    } else if (
-      adjudication.label !== null &&
-      !benchmarkDimensionLabels(adjudication.dimension).includes(adjudication.label)
-    ) {
+    } else if (!benchmarkDimensionLabels(adjudication.dimension).includes(settledLabel)) {
       reasons.push(
-        `Adjudicated label "${adjudication.label}" is not valid for ${adjudication.dimension}.`,
+        `Adjudicated label "${settledLabel}" is not valid for ${adjudication.dimension}.`,
       );
     }
   }
   if (outcome === 'GENUINELY_AMBIGUOUS') {
-    if (adjudication.label !== null && adjudication.label.trim() !== '') {
+    if (textOf(adjudication.label) !== '') {
       reasons.push(
         'A GENUINELY_AMBIGUOUS outcome may not carry a label; recording one would score an unresolved subject as ordinary gold.',
       );
     }
   }
-  if (adjudication.reason.trim() === '') {
+  if (textOf(adjudication.reason) === '') {
     reasons.push(
       'An adjudication must state the reason a human settled (or declined to settle) it.',
     );
   }
-  if (adjudication.adjudicatedBy.trim() === '') {
+  const adjudicator = reviewerIdentity(textOf(adjudication.adjudicatedBy));
+  if (adjudicator === '') {
     reasons.push(
       'An adjudication must name its adjudicator; the tool will not invent one. The name is operator-asserted.',
     );
+  } else if (!isDeclaredReviewer(benchmarkCase, adjudicator)) {
+    reasons.push(
+      `Adjudicator "${textOf(adjudication.adjudicatedBy)}" is not in the declared roster (provenance.reviewedBy). Settling a disagreement is an act the case has to authorise, and a merge or adjudication never widens the roster itself.`,
+    );
+  }
+  const filedAt = textOf(adjudication.adjudicatedAt);
+  let adjudicatedAt = '';
+  if (filedAt === '') {
+    reasons.push(
+      'An adjudication must carry the moment a human filed it; the tool has no clock and will not supply one.',
+    );
+  } else {
+    const checked = isoDateTime(filedAt, 'adjudication.adjudicatedAt');
+    if (checked.ok) {
+      adjudicatedAt = checked.value;
+    } else {
+      reasons.push(
+        checked.issues[0]?.message ?? 'The adjudication timestamp is not a valid instant.',
+      );
+    }
   }
 
   if (reasons.length > 0) {
@@ -557,9 +694,11 @@ export function applyAdjudication(
     dimension: adjudication.dimension,
     subjectId: adjudication.subjectId,
     outcome: outcome as BenchmarkAdjudication['outcome'],
-    label: outcome === 'RESOLVED' ? (adjudication.label as string) : null,
+    label: outcome === 'RESOLVED' ? textOf(adjudication.label) : null,
     reason: adjudication.reason,
-    adjudicatedBy: adjudication.adjudicatedBy.trim(),
+    adjudicatedBy: adjudicator,
+    disagreementHash: submittedHash,
+    adjudicatedAt,
   };
   return {
     ok: true,
