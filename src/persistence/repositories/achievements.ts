@@ -333,7 +333,7 @@ function evaluateClaim(
   for (const proposition of claim.propositions) {
     const relationships = db
       .prepare(
-        `SELECT r.id, r.relation, s.id AS source_id, s.source_type, s.independence
+        `SELECT r.id, r.relation, s.id AS source_id, s.source_type, s.independence, s.canonical_uri
          FROM evidence_relationships r
          JOIN evidence_items e ON e.id = r.evidence_id
          JOIN sources s ON s.id = e.source_id
@@ -349,6 +349,7 @@ function evaluateClaim(
           row,
           'independence',
         ) as EvidenceRelationshipRecord['independence'],
+        canonicalUri: nullableStringValue(row, 'canonical_uri'),
       }));
     relationshipCount += relationships.length;
     const derived = deriveEvidenceStatus(relationships);

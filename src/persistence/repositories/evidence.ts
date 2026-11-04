@@ -483,7 +483,7 @@ export function activeRelationshipsForProposition(
 ): EvidenceRelationshipRecord[] {
   return db
     .prepare(
-      `SELECT er.id, er.relation, e.source_id, s.source_type, s.independence
+      `SELECT er.id, er.relation, e.source_id, s.source_type, s.independence, s.canonical_uri
        FROM evidence_relationships er
        JOIN evidence_items e ON e.id = er.evidence_id AND e.project_id = er.project_id
        JOIN sources s ON s.id = e.source_id AND s.project_id = e.project_id
@@ -497,6 +497,7 @@ export function activeRelationshipsForProposition(
       sourceId: stringValue(row, 'source_id'),
       sourceType: stringValue(row, 'source_type') as SourceType,
       independence: stringValue(row, 'independence') as SourceIndependence,
+      canonicalUri: nullableStringValue(row, 'canonical_uri'),
     }));
 }
 
