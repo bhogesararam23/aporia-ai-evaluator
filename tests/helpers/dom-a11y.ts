@@ -108,7 +108,47 @@ export function accessibilityViolations(html: string): string[] {
       violations.push('button without accessible name');
     }
   }
+  // A link is navigable by keyboard and read out by name; an anchor with no text and no label is a
+  // silent dead drop for a screen-reader or keyboard user, the same class of defect as an unnamed
+  // button. Apply the same rule to every <a href>.
+  for (const link of all.filter((element) => element.tagName === 'a')) {
+    const attributes = attrs(link);
+    if (!attributes.has('href')) continue;
+    const name =
+      textOf(link).trim() ||
+      (attributes.get('aria-label') ?? '').trim() ||
+      (attributes.get('aria-labelledby') ?? '').trim() ||
+      (attributes.get('title') ?? '').trim();
+    if (name.length === 0) violations.push('link without accessible name');
+  }
+  // A positive tabindex rewires the natural focus order and is a keyboard-navigation anti-pattern WCAG
+  // discourages. Programmatic focus targets use tabindex="-1", which stays allowed.
+  for (const element of all) {
+    const value = attrs(element).get('tabindex');
+    if (value !== undefined && Number.parseInt(value, 10) > 0) {
+      violations.push(`positive tabindex on <${element.tagName}> (disrupts keyboard order)`);
+    }
+  }
+  // NOTE (tracked, see docs/KNOWN_LIMITATIONS.md): duplicate `id` attributes also occur where the same
+  // form is rendered once per record (run detail, statement workspace), which breaks every <label for>
+  // and aria-describedby reference but the first. Enforcing uniqueness here would fail today, so it is
+  // recorded as a known accessibility defect awaiting a per-form id-scope refactor rather than asserted.
   return violations;
+}
+
+/** The concatenated text content of a subtree, used to decide whether a control has an accessible name. */
+function textOf(element: Element): string {
+  const stack: Node[] = [element];
+  let text = '';
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined) continue;
+    if (node.nodeName === '#text' && 'value' in node) text += node.value;
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) stack.push(child);
+    }
+  }
+  return text;
 }
 
 /**
