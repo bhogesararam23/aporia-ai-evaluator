@@ -38,13 +38,24 @@ temporary directory rather than only an in-memory database:
 ```bash
 npm run verify:workflow   # boots the server on a free loopback port against a fresh temp data dir
 npm run benchmark -- --corpus <dir>   # scores a corpus of reviewed cases you supply
-npm run benchmark:case -- scaffold --stratum <S> | validate --corpus <dir> | normalise ... | provenance ...
+npm run benchmark:case -- scaffold --stratum <S> | validate --corpus <dir> | normalise ... | provenance ... | packet ... | merge ... | review ... | audit ... | adjudicate ...
 ```
 
 `benchmark:case` supports local corpus authoring without fabricating anything: `scaffold` writes a
 non-scoreable template (refused by `validate`), `normalise` canonicalises valid cases for a
 reproducible import/export, and `provenance` reports reviewer labels, disagreements and scoped
 adjudications as the operator's own assertions.
+
+Since v0.6 the same command runs the offline human-review workflow (ADR-026): `packet` writes a blinded
+reviewer packet (no gold, no prior annotations, no evaluator output) plus a blank submission template per
+case, bound to a stable content hash; `merge` imports filled submissions into `reviewerLabels` and refuses
+stale, duplicate, mismatched, out-of-vocabulary or blank-rationale input (non-zero exit, case untouched,
+`expected` never edited); `review` reports per-subject agreement leaving a split unresolved; `audit`
+reports corpus readiness and provenance with `accuracyClaimable: false`; and `adjudicate` applies a human
+scoped adjudication only to a subject actually in unresolved disagreement (refusing to settle a unanimous
+or lone reviewer, requiring a label for `RESOLVED` and none for `GENUINELY_AMBIGUOUS`, never editing
+`expected`). All are pure local file tooling —
+no network, no database, no clock; reviewer names and timestamps stay operator-asserted.
 
 `verify:workflow` drives §6's 24-step sequence by submitting the forms the running application served:
 it reads each form's action, method, field names, select choices and default values from the returned
@@ -86,13 +97,14 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 | Integration: query-count and write-atomicity measurement | `query-counts.test.ts`, `write-atomicity.test.ts`, `audit-atomicity.test.ts` | Measured statement counts that must not grow with the number of records, and every multi-record write path rolling back as one unit when a later step or the audit append fails |
 | Unit: report compatibility | `report-compatibility.test.ts`, `reporting-snapshot.test.ts` | `metrics-v1` to `v4` and `report-template-v1` to `v4` snapshots rendering the figures they were stored with, absent blocks shown as not recorded rather than zero, and the review-progress wording following the version that produced the snapshot |
 | Unit and integration: benchmark contract | `benchmark-validate.test.ts`, `benchmark-source-identity.test.ts`, `benchmark-cli.test.ts` | Nested field-by-field corpus validation, evidence versus underlying-source identity, reviewer disagreement staying unresolved rather than becoming a manufactured consensus, adjudication scoping, and a harness that refuses to present an accuracy claim from synthetic or insufficient material |
+| Unit and integration: benchmark review workflow (v0.6) | `benchmark-review-packet.test.ts`, `benchmark-review-merge.test.ts`, `benchmark-review-disagreement.test.ts`, `benchmark-review-adjudication.test.ts`, `benchmark-review-audit.test.ts`, `benchmark-review-compat.test.ts`, `benchmark-review-cli.test.ts` | Blinded packets that leak no gold/annotation/output and a stable content hash that detects a stale input; all-or-nothing submission merge refusing stale/duplicate/mismatched/unknown-subject/out-of-vocabulary/blank cases without touching `expected`; per-subject agreement with a split left unresolved; `applyAdjudication` that settles only a real disagreement and refuses to manufacture consensus; corpus readiness/provenance audit with `accuracyClaimable: false`; v1/v2 case-reading compatibility preserved through the workflow; and the `packet`/`merge`/`review`/`audit`/`adjudicate` CLI end to end |
 | Architecture and policy | `boundaries.test.ts`, `docs-links.test.ts`, `no-network.test.ts` | Layer boundaries, relative documentation links, no external network/provider client code |
 
 Most tests use in-memory SQLite and temporary data directories. No test writes to the production `data/` directory. Test fixtures are isolated from the shipped application; the application starts with no seeded projects, claims, runs, or reports.
 
 ## 4. Results at the time of this document
 
-Measured on 2026-11-04 in this checkout (`feat/aporia-local-core-v0.5-evaluation-reliability`), Node
+Measured on 2026-11-04 in this checkout (`feat/aporia-v0.6-benchmark-review-workflow`), Node
 v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix confirms all three OSes):
 
 - `npm ci`: pass.
@@ -100,9 +112,9 @@ v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix confirms
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **713 tests, 713 passing, 0 failing** — 393 under `tests/unit`, 320 under
+- `npm test`: **772 tests, 772 passing, 0 failing** — 439 under `tests/unit`, 333 under
   `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 713/713 result.
+- `npm run check`: exit 0 with the same 772/772 result.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
   `0.4.0` (the v0.5 work is additive; the release version is not bumped while ADR-025 stays Proposed).

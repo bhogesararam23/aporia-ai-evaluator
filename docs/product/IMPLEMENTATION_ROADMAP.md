@@ -3,6 +3,30 @@
 - Status: Proposed sequencing, not a delivery commitment
 - Date: 2026-11-04
 
+## Implementation note — 2026-11-04 (v0.6, in progress — PR pending, not merged)
+
+Local core v0.6 turns the offline benchmark tooling into a reproducible human-review workflow
+([ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md)), and changes only what v0.5 had
+skipped — the *mechanics of running a review* — not what it had shipped. Four new
+`npm run benchmark:case` subcommands (`packet`, `merge`, `review`, `audit`) over a pure
+`src/benchmark/review.ts` module let a reviewer work **blinded**: a packet carries only the frozen
+input and the subjects derived from it, bound by a key-order-independent content hash, and omits gold
+labels, existing annotations and evaluator output so a judgement is not anchored by the tool. Separate
+submissions carry the reviewer's own labels, rationale, identity and timestamp — none of which the tool
+ever invents. An **all-or-nothing merge** refuses a stale packet hash, a wrong case, a duplicate
+reviewer, an unknown or repeated subject, an out-of-vocabulary label or a blank rationale, and never
+edits the gold `expected` array or removes another reviewer's label. A **disagreement report** classifies
+each subject (single-reviewer is not consensus; a split stays `UNRESOLVED` and is never averaged into a
+label), leaving adjudication to a human via a blank scoped `benchmark-adjudication-v1` entry. A **corpus
+readiness/provenance audit** names missing strata, cases lacking storage authorisation or a review date,
+thin review and unresolved disagreement, and always reports `accuracyClaimable: false`. These are new
+*workflow artifact* versions; the `benchmark-case-v1`/`v2` contract and `benchmark-report-v2` are
+untouched, so **no corpus migration and no change to the `evidence-aggregation` default**. The
+local-first boundaries hold (no network, database, provider, auth, billing, or reviewer accounts), and
+reviewer identity stays operator-asserted with no independence claim. Phase 3's reviewed gold set still
+does not exist — v0.6 makes running that review honest and reproducible; it does not perform one.
+This milestone is on a feature branch with a pull request pending and is not owner-accepted.
+
 ## Implementation note — 2026-11-04 (v0.5)
 
 Local core v0.5 continued on the merged v0.4 line and stayed a correctness/coverage milestone, not a

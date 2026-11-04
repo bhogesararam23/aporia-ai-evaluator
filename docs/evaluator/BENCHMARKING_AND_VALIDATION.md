@@ -2,7 +2,7 @@
 
 - Status: Required before public reliability claims. No accuracy claim is currently supportable.
 - Goal: Validate claim/evidence judgments and AI-answer metrics against human-reviewed cases.
-- Implementation record: [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-023](../agents/adrs/ADR-023-claim-eligibility-metrics-v4.md), `npm run benchmark -- --corpus <directory>`
+- Implementation record: [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-023](../agents/adrs/ADR-023-claim-eligibility-metrics-v4.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md), `npm run benchmark -- --corpus <directory>`, `npm run benchmark:case -- <subcommand>`
 
 ## 0. What exists and what is only planned
 
@@ -13,7 +13,7 @@ a benchmark becomes decoration.
 | Section | Implemented | Not implemented |
 | --- | --- | --- |
 | 2. Strata | 16 required strata, enforced by `src/benchmark/validate.ts`; a corpus missing one fails the run unless `--allow-partial-strata`, and the absence is printed either way | Any real case material. There is no gold corpus in this repository. |
-| 3. Gold labels | Case contract `benchmark-case-v2`: provenance and authorisation, named reviewers, per-dimension gold labels with rationale and subject, reviewer labels retained separately, scoped adjudications | Independent review. The application has no authentication, so reviewer identity is operator-asserted. Two names agreeing is not proof two people reviewed. |
+| 3. Gold labels | Case contract `benchmark-case-v2`: provenance and authorisation, named reviewers, per-dimension gold labels with rationale and subject, reviewer labels retained separately, scoped adjudications. Since v0.6, the offline review workflow (§3.4) issues blinded packets, safely merges separate submissions, reports disagreement per subject, and audits corpus readiness — all as new *artifact* versions, with the case contract and report unchanged. | Independent review. The application has no authentication, so reviewer identity is operator-asserted. Two names agreeing is not proof two people reviewed. And no gold corpus exists yet — the workflow runs the review; it does not perform one. |
 | 4. Performance measures | Per-class precision/recall, confusion matrices, macro-F1 with an explicit reason when withheld, per-dimension and per-label reporting, no composite score | Confidence intervals, calibration, class-balance reporting. Sample sizes in any plausible local corpus are too small to justify either. |
 | 5. Ablation | Version-aware deterministic regression of `evidence-aggregation-v1` **and** `-v2` (verdict plus corroborating-source count) over a frozen input pack, plus metric-formula checks. Duplicate-source counting and canonical-URI collapse are expressible and tested since v2. | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
 | 6. Leakage | Not applicable to an offline corpus of reviewer-recorded cases | Development/validation/held-out splits and time splits. Meaningless until a real corpus exists. |
@@ -125,6 +125,39 @@ fabricate one:
 
 None of these reaches the network or the application database. They are authoring aids, not a source
 of gold cases.
+
+### 3.4 Offline human-review workflow (v0.6, ADR-026)
+
+The authoring aids prepare a corpus; the review workflow runs the human judgement *against* a corpus
+without letting the tool bias or overwrite it. It is four more `npm run benchmark:case` subcommands, all
+pure file tooling (no network, no database, no clock) built on `src/benchmark/review.ts`:
+
+- **packet** — per case, emit a blinded `benchmark-packet-v1` (the frozen input, the subject list derived
+  from the input alone, and rubric guidance) and a blank `benchmark-submission-v1` template. The packet
+  omits gold `expected`, existing annotations, the stratum, provenance, and evaluator output, and is bound
+  by a key-order-independent SHA-256 of the input, so a review is made *before* and apart from what Aporia
+  concluded. This is the "initial label before showing the automated verdict" rule from §3, made mechanical.
+- **merge** — import filled submissions into the case's `reviewerLabels`, refusing (leaving the case
+  untouched) a stale packet hash, a wrong case id, a duplicate reviewer, an unknown or repeated subject, an
+  out-of-vocabulary label, a blank rationale, or a missing reviewer/timestamp. It never edits `expected` and
+  never deletes another reviewer's label; a rejected import exits non-zero so a partial merge cannot slip in.
+- **review** — per-subject agreement status (unannotated / single-reviewer / unanimous / adjudicated /
+  **unresolved**). A split is reported as unresolved and left unresolved; the tool never picks a side.
+- **audit** — corpus readiness and provenance: missing strata, cases lacking storage authorisation or a
+  review date, subjects judged by fewer than two reviewers, and unresolved disagreements — always reporting
+  `accuracyClaimable: false`. Readiness to review is explicitly not a claim that the evaluator is accurate.
+- **adjudicate** — apply a human-authored scoped adjudication, but *only* to a subject currently in
+  unresolved disagreement. It refuses to settle a unanimous or single-reviewer subject (there is nothing to
+  settle), requires a `RESOLVED` outcome to carry an in-vocabulary label and a `GENUINELY_AMBIGUOUS` outcome
+  to carry none, and never edits `expected` — so the tool can never turn an unresolved split into a gold
+  label by fiat.
+
+These are new *workflow artifact* versions; the benchmark **case** contract (`benchmark-case-v1`/`v2`) and
+the report are unchanged, so no corpus migration is implied and existing benchmark reports stay valid. A
+merged case is an ordinary case file with `reviewerLabels` populated. Reviewer names and timestamps stay
+operator-supplied and unverified; independence is never claimed. The adjudication step remains a human act
+recorded as a scoped `benchmark-adjudication-v1` entry on the case — see [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md).
+
 
 ## 4. Evaluator performance measures
 

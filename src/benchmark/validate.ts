@@ -67,6 +67,15 @@ const DIMENSION_LABELS: Record<BenchmarkDimension, readonly string[]> = {
 };
 
 /**
+ * The label vocabulary for a scored dimension, exported so the review-merge path validates a
+ * submission label against the same list the corpus validator uses, rather than a second copy that
+ * could drift.
+ */
+export function benchmarkDimensionLabels(dimension: BenchmarkDimension): readonly string[] {
+  return DIMENSION_LABELS[dimension] ?? [];
+}
+
+/**
  * Which object a dimension's label judges.
  *
  * Evidence support is a property of a proposition; fidelity, citation support and attribution are
