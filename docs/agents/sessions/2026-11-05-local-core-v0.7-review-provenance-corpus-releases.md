@@ -70,9 +70,10 @@ benchmark-fixtures.ts` now provides a validating fixture and `benchmark-fixture-
 
 ## 5. Decisions and ADRs
 
-- **ADR-027 created (Proposed, not owner-accepted)** with the full decision, alternatives, consequences,
-  security/privacy/validity implications, migration plan (none) and open questions. ADR index row added in the
-  same commit, as `docs-links` requires.
+- **ADR-027 created — Proposed, implemented and tested, NOT owner-accepted.** ADR-025 stays Proposed with its
+  default unchanged; ADR-026 stays Proposed; ADR-027 is not accepted on the owner's behalf. ADR-027 §Open
+  questions lists three owner decisions this session deliberately did **not** make. The ADR index row landed in
+  the same commit as the ADR, as `docs-links` requires.
 - Additive optional fields on `benchmark-case-v2` rather than a `v3` bump: no corpus migration, older files read.
 - Report stays `benchmark-report-v2`; `AgreementRow.status` enum not extended; binding is disclosed additively.
 - Atomic-by-default batch writes accepted as a deliberate CLI default change (owner approved), with
@@ -93,8 +94,8 @@ benchmark-fixtures.ts` now provides a validating fixture and `benchmark-fixture-
 
 ## 6. Validation
 
-- `npm run check` — **exit 0**: typecheck, eslint, prettier, boundary check, and **953 tests, 953 passing, 0
-  failing** (590 under `tests/unit`, 363 under `tests/integration`, measured by running each glob separately).
+- `npm run check` — **exit 0**: typecheck, eslint, prettier, boundary check, and **956 tests, 956 passing, 0
+  failing** (593 under `tests/unit`, 363 under `tests/integration`, measured by running each glob separately).
 - `npm run verify:workflow` — **exit 0**: 25 `[PASSED]` step entries, 0 `[FAILED]`, run twice (after the
   binding/batch work and again after the hostile-input hardening), against a real server on a fresh temporary
   data directory.
@@ -181,14 +182,26 @@ Ledger from the verified baseline: `git rev-list --count 2b1ecab..HEAD`.
 | `68931fa` | docs(validation): separate corpus release gates from validation gates and record v0.7 |
 | `330e930` | docs(runbook): add the release procedure and interrupted-batch recovery steps |
 | `b543f5d` | fix(benchmark): refuse half-written and hostile input in the pure layer instead of crashing |
+| `060989d` | docs(v0.7): add the session report, requirement traceability and index entries |
+| `9227801` | fix(benchmark): bound canonicalisation depth so a pathological document is refused, not a stack overflow |
 
-- Push/branch result: pushed to `origin/feat/aporia-v0.7-review-provenance-corpus-releases` at four
+30 commits precede this report's finalising commit, which carries the counts and CI evidence appended below;
+the authoritative total is `git rev-list --count 2b1ecab..HEAD` recorded in the pull request.
+
+- Push/branch result: pushed to `origin/feat/aporia-v0.7-review-provenance-corpus-releases` at seven
   checkpoints, each after `npm run check` was green. **No force-push, no push to `main`, no merge.**
-- Pull request: open against `main`; URL recorded in the appendix below once created. **Left unmerged for
-  owner review.**
-- Failed or partial writes: none. Every commit was verified green before it was pushed at the checkpoint;
-  intermediate commits were checked at file granularity (typecheck plus the affected suite) rather than by
-  running the full gate on each of the 28.
+- Pull request: **https://github.com/bhogesararam23/aporia-ai-evaluator/pull/10** — opened against `main`,
+  **left open and unmerged** for owner review.
+- CI, PR run `41931317464` at head `9227801` (the current PR head) — **all six jobs completed successfully**:
+  `check` on windows-latest (2m1s), macos-latest (50s) and ubuntu-latest (1m4s); `live workflow` on
+  windows-latest (1m12s), ubuntu-latest (36s) and macos-latest (1m8s). An earlier PR run, `41930889699` at
+  head `060989d`, also finished with all six jobs green. Results observed through `gh run view` on 2026-11-05.
+- Only observed GitHub annotation: a platform notice that `actions/checkout@v4` and `actions/setup-node@v4`
+  target deprecated Node 20 while being forced onto Node 24. It concerns the workflow's action versions, not
+  this change, and is left as a separate tooling follow-up.
+- Failed or partial writes: none. Every checkpoint was pushed only after `npm run check` was green;
+  intermediate commits were verified at file granularity (typecheck plus the affected suites) rather than by
+  running the full gate on each of the 30.
 
 ## 10. Handoff
 
@@ -198,10 +211,12 @@ Ledger from the verified baseline: `git rev-list --count 2b1ecab..HEAD`.
 2. Owner: produce a real corpus — a human reviewer authorised to hold the material, working through
    `packet → submit → merge`, then `freeze`. Until then every accuracy statement remains unavailable.
 3. Next engineering candidates, in priority order:
-   - a bounded-depth guard in `canonicalise`/the loader so pathologically nested JSON is refused rather than
-     reaching a stack limit (the byte caps make it unlikely, not impossible);
+   - ~~a bounded-depth guard in `canonicalise`~~ **done in this milestone** (`9227801`): `MAX_CANONICAL_DEPTH`
+     with `nestsDeeperThan` refusing an over-deep case in the validator and `DepthExceededError` guarding the
+     canonicaliser, so a pathological document is refused with a reason instead of reaching a stack limit;
    - per-file incremental release export, so a one-case change does not rewrite the whole corpus;
    - a simple lock file around batch publishing if concurrent operators become real;
+   - a tooling PR to move `actions/checkout` and `actions/setup-node` off the Node-20-deprecated versions;
    - the v0.8 candidate already implied by ADR-025: owner acceptance and the one-line default flip, with a
      stored-snapshot re-reading plan.
 4. Resume point: `docs/technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md` for semantics, ADR-027 for
@@ -220,7 +235,5 @@ accuracy claim is made anywhere in this milestone.
 ### Appendix: CI and pull-request outcome (appended after §9 was written)
 
 Recorded here as a dated appendage, per the operating protocol's rule against overwriting session history.
-
-- Pull request: pending creation in this session; see the PR body for the requirement-to-check summary.
-- CI: `check` and `live workflow` each on ubuntu / macos / windows at Node 24. Results are appended below once
-  observed; a job still queued is reported as queued, not as passing.
+See §9 for the commit ledger, the PR URL and the per-job CI results, all observed through `gh` on
+2026-11-05.
