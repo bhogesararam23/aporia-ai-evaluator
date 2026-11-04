@@ -1,8 +1,12 @@
 # ADR-025: Count Corroboration by Underlying Source, Not by Evidence Record (`evidence-aggregation-v2`)
 
-- Status: Proposed — **not implemented**
+- Status: Proposed — **rule implemented and tested, not the application default**. `evidence-aggregation-v2`
+  now exists in `src/core/evidence.ts` behind the versioned `deriveEvidenceStatus(relationships, ruleVersion)`
+  entry point and is covered by `tests/unit/evidence-aggregation-v2.test.ts`. `EVIDENCE_RULE_VERSION` still
+  resolves to `evidence-aggregation-v1`, so no live report, claim view, achievement or stored snapshot
+  changes until the owner accepts this ADR and flips the default. Acceptance remains the owner's decision.
 - Date: 2026-11-02
-- Decision owners: Project owner (implementation delegated; owner review pending)
+- Decision owners: Project owner (rule implemented on delegated authority; acceptance and the default change pending owner review)
 - Related: ADR-009, ADR-015, ADR-019, ADR-022, ADR-023
 
 ## Context
@@ -65,23 +69,30 @@ independence as the gate:
   `RELATED` and `UNKNOWN`, and the benchmark layer already distinguishes an evidence record from its
   underlying source.
 
-## Implementation would require
+## Implementation status against this ADR
 
-1. Owner acceptance of this ADR, or a revision of it, because it changes the meaning of a stored verdict.
-2. `EVIDENCE_RULE_VERSION` in `src/core/versions.ts` bumped to `evidence-aggregation-v2`, with `v1`
-   retained wherever the metric versions are listed, and the snapshot renderer honouring it.
-3. A versioned entry point so a stored snapshot can still be re-derived under the rule that produced it,
-   the way claim-level metrics keep `metrics-v3` readable.
-4. Tests that would fail against `v1`: two `RELATED` records with distinct source ids corroborate once;
-   the same canonical URI recorded twice corroborates once; `UNKNOWN` independence produces the caveat and
-   the lower confidence, not the benefit of the doubt; a stored `v1` snapshot still renders its recorded
-   status.
-5. A migration-free change — no column and no stored row is touched — and a check that the backup
-   manifest still validates, since the rule version travels in the snapshot rather than the schema.
+The engineering the ADR described is now in place, held behind the versioned rule so it changes no
+verdict until the owner accepts it:
+
+1. **Pending — the owner's, not made here.** Acceptance of this ADR, because the corroboration figure
+   travels in report snapshots and flipping the default changes what new reports claim.
+2. **Done.** `EVIDENCE_RULE_VERSION_V2 = 'evidence-aggregation-v2'` and `KNOWN_EVIDENCE_RULE_VERSIONS`
+   exist in `src/core/versions.ts`; `EVIDENCE_RULE_VERSION` remains `v1`, so the default does not move.
+3. **Done.** `deriveEvidenceStatus(relationships, ruleVersion)` is the versioned entry point. A stored
+   snapshot recorded under either rule can be re-derived under the rule that produced it, and an
+   unrecognised version is refused rather than silently falling back.
+4. **Done.** `tests/unit/evidence-aggregation-v2.test.ts` has the cases that fail against `v1`: a
+   `RELATED` record does not add a corroborating source; two copies of one underlying source count once;
+   `UNKNOWN` independence keeps its caveat and the benefit of the doubt is not assumed; the status
+   precedence is unchanged; and the `apparentCorroboratingSourceCount` field names the `v1` figure so a
+   reader sees the two rules disagree.
+5. **Done.** The change is migration-free — no column, no stored row — because the rule version travels
+   in the snapshot, so the backup manifest is unaffected.
 
 ## Explicitly out of scope
 
-This ADR records a proposal and changes no code. `evidence-aggregation-v1` remains the implemented rule as
-of local core v0.4, with the limitation stated in `docs/KNOWN_LIMITATIONS.md` and named in the test that
-documents it. No benchmark dataset, provider integration, remote fetch, publication path or authentication
-is introduced by any option considered here.
+This ADR is still **Proposed**: the default rule is unchanged and no existing verdict is recomputed.
+`evidence-aggregation-v1` remains the rule the application applies to new reports as of local core v0.4,
+with the limitation stated in `docs/KNOWN_LIMITATIONS.md`. Accepting this ADR is a single, atomic change to
+`EVIDENCE_RULE_VERSION`, which every call site reads through that one constant. No benchmark dataset,
+provider integration, remote fetch, publication path or authentication is introduced by any option here.

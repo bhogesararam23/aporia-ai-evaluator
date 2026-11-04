@@ -1,4 +1,8 @@
-import { EVIDENCE_RULE_VERSION } from './versions.ts';
+import {
+  EVIDENCE_RULE_VERSION,
+  EVIDENCE_RULE_VERSION_V2,
+  KNOWN_EVIDENCE_RULE_VERSIONS,
+} from './versions.ts';
 import {
   EVIDENCE_RELATIONS,
   type AssessmentMethod,
@@ -18,6 +22,9 @@ export interface EvidenceRelationshipRecord {
 
 export type EvidenceRelationCounts = Record<EvidenceRelation, number>;
 
+/** A rule version this build knows how to compute. */
+export type EvidenceRuleVersion = (typeof KNOWN_EVIDENCE_RULE_VERSIONS)[number];
+
 export interface DerivedEvidenceStatus {
   readonly status: PropositionStatus;
   readonly rationale: string;
@@ -25,6 +32,13 @@ export interface DerivedEvidenceStatus {
   readonly counts: EvidenceRelationCounts;
   readonly sourceCount: number;
   readonly supportingSourceCount: number;
+  /**
+   * Present only under `evidence-aggregation-v2` when the two rules disagree: the number of distinct
+   * supporting sources a `v1` report would have counted, before related/syndicated copies were
+   * collapsed. It lets a reader see that the corroboration figure was reduced, rather than silently
+   * showing a smaller one.
+   */
+  readonly apparentCorroboratingSourceCount?: number;
   readonly notes: readonly string[];
 }
 
@@ -42,9 +56,22 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
 
 export function deriveEvidenceStatus(
   relationships: readonly EvidenceRelationshipRecord[],
+  ruleVersion: string = EVIDENCE_RULE_VERSION,
 ): DerivedEvidenceStatus {
+  if (!(KNOWN_EVIDENCE_RULE_VERSIONS as readonly string[]).includes(ruleVersion)) {
+    throw new Error(
+      `deriveEvidenceStatus: unknown evidence rule version "${ruleVersion}". ` +
+        `Known rule versions: ${KNOWN_EVIDENCE_RULE_VERSIONS.join(', ')}.`,
+    );
+  }
+  const isV2 = ruleVersion === EVIDENCE_RULE_VERSION_V2;
   const counts = emptyCounts();
-  const supportingSources = new Set<string>();
+  // v1 counts every distinct supporting sourceId; v2 counts only those the reviewer did not mark
+  // RELATED, because a related or syndicated copy of material the reviewer already holds cannot
+  // independently corroborate it. `allSupportingSources` is kept for both rules so the disclosure
+  // note and the v1-vs-v2 divergence can name how many sources a v1 report would have shown.
+  const allSupportingSources = new Set<string>();
+  const independentSupportingSources = new Set<string>();
   const allSources = new Set<string>();
   const notes: string[] = [];
 
@@ -52,7 +79,10 @@ export function deriveEvidenceStatus(
     counts[relationship.relation] += 1;
     allSources.add(relationship.sourceId);
     if (relationship.relation === 'SUPPORTS') {
-      supportingSources.add(relationship.sourceId);
+      allSupportingSources.add(relationship.sourceId);
+      if (relationship.independence !== 'RELATED') {
+        independentSupportingSources.add(relationship.sourceId);
+      }
     }
   }
 
@@ -63,7 +93,13 @@ export function deriveEvidenceStatus(
   const contextual = counts.CONTEXTUALIZES;
   const doesNotAddress = counts.DOES_NOT_ADDRESS;
   const sourceCount = allSources.size;
-  const supportingSourceCount = supportingSources.size;
+  const supportingSourceCount = isV2
+    ? independentSupportingSources.size
+    : allSupportingSources.size;
+  // The v1-vs-v2 divergence only exists under v2, and only when a related/syndicated record was
+  // collapsed away. When the two rules agree, no divergence field is emitted at all.
+  const corroborationCollapsed =
+    isV2 && supports > 0 && allSupportingSources.size > independentSupportingSources.size;
 
   let status: PropositionStatus;
   if (relationships.length === 0) {
@@ -111,10 +147,13 @@ export function deriveEvidenceStatus(
       `${plural(contextual + doesNotAddress, 'relationship')} contextualized or did not address the proposition and did not contribute to the status.`,
     );
   }
-  if (supports > 0 && supports > supportingSourceCount) {
+  // This disclosure is about literal duplicate source ids, so it reads against the all-source count
+  // under both rules (identical to `v1`, which never collapsed anything). The v2 independence
+  // collapse is disclosed separately below, so the two mechanisms do not overwrite each other.
+  if (supports > 0 && supports > allSupportingSources.size) {
     notes.push(
       `${plural(supports, 'supporting relationship')} reference ${plural(
-        supportingSourceCount,
+        allSupportingSources.size,
         'distinct source',
       )}. Duplicate or syndicated material does not create independent corroboration.`,
     );
@@ -135,6 +174,25 @@ export function deriveEvidenceStatus(
     if (unknownIndependence > 0) {
       notes.push(
         `Independence is unknown for ${plural(unknownIndependence, 'supporting relationship')}.`,
+      );
+    }
+    // `evidence-aggregation-v2` (ADR-025): a supporting record the reviewer marked RELATED is not an
+    // independent corroborating source. The status is unchanged; the corroboration figure and this
+    // disclosure are what move, so a reader can see the reduction rather than a silently smaller one.
+    if (corroborationCollapsed) {
+      notes.push(
+        `Corroboration is counted by underlying source: ${plural(
+          allSupportingSources.size,
+          'distinct source',
+        )} would count as corroboration under the previous rule, but ${plural(
+          independentSupportingSources.size,
+          'independent source',
+        )} remain once material recorded as related or syndicated is excluded.`,
+      );
+    }
+    if (isV2 && independentSupportingSources.size === 0 && allSupportingSources.size > 0) {
+      notes.push(
+        'No independent corroboration is recorded: every supporting source was marked related or syndicated, so the support rests on material the reviewer does not treat as independent.',
       );
     }
   }
@@ -176,10 +234,13 @@ export function deriveEvidenceStatus(
   return {
     status,
     rationale,
-    ruleVersion: EVIDENCE_RULE_VERSION,
+    ruleVersion,
     counts,
     sourceCount,
     supportingSourceCount,
+    ...(corroborationCollapsed
+      ? { apparentCorroboratingSourceCount: allSupportingSources.size }
+      : {}),
     notes,
   };
 }
