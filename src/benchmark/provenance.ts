@@ -34,14 +34,19 @@ import { contentHash } from './hashing.ts';
  * `toLowerCase` is used rather than `toLocaleLowerCase` because a locale-dependent fold would make the same
  * corpus produce different agreement figures on two machines.
  *
- * A blank name has no identity and returns `''`, so an empty reviewer can never match a real one.
+ * A blank name has no identity and returns `''`, so an empty reviewer can never match a real one. The
+ * parameter is `unknown` deliberately: this is fed straight from parsed JSON in several paths, and a
+ * wrong-typed name must read as *no identity* rather than throw.
  */
-export function reviewerIdentity(name: string): string {
+export function reviewerIdentity(name: unknown): string {
+  if (typeof name !== 'string') {
+    return '';
+  }
   return name.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 /** True when two names, as recorded, denote the same canonical reviewer identity. */
-export function isSameReviewer(left: string, right: string): boolean {
+export function isSameReviewer(left: unknown, right: unknown): boolean {
   const canonical = reviewerIdentity(left);
   return canonical.length > 0 && canonical === reviewerIdentity(right);
 }
@@ -56,18 +61,95 @@ export function isSameReviewer(left: string, right: string): boolean {
  */
 export interface RosterView {
   readonly provenance: { readonly reviewedBy: readonly string[] };
-  readonly reviewerLabels: readonly { readonly reviewer: string }[];
+  readonly reviewerLabels: readonly { readonly reviewer: unknown }[];
 }
 
-/** Canonical reviewer identities that have labelled, from any roster view. */
+/**
+ * Any entry that names a reviewer, which is all a roster comparison needs.
+ *
+ * Deliberately looser than `reviewerLabelsOf`: a roster report is built from a parsed file that may be
+ * invalid as a case (that is the point of reporting it) and may legitimately carry only the reviewer name.
+ * Requiring the full label shape here would silently report "nobody labelled this case" for exactly the
+ * broken file the report exists to catch.
+ */
+function rosterNames(view: RosterView): readonly string[] {
+  return asArray<unknown>(view.reviewerLabels)
+    .map((entry) =>
+      typeof entry === 'object' && entry !== null
+        ? (entry as Record<string, unknown>)['reviewer']
+        : undefined,
+    )
+    .filter((name): name is string => typeof name === 'string');
+}
+
+export function rosterNamesOf(view: RosterView): readonly string[] {
+  return rosterNames(view);
+}
+
+/**
+ * Tolerant readers for case fields a caller may have parsed straight out of a half-written file.
+ *
+ * `BenchmarkCase` declares these arrays as present, and the corpus validator enforces that. But
+ * `mergeSubmission`, `disagreementReport`, `auditCorpus`, the batch planner and the release builder are
+ * exported functions that a caller can hand parsed JSON directly, and a `TypeError` there replaces an
+ * auditable refusal with a stack trace. Reading through these helpers means a broken file yields an empty
+ * list — reported as *nothing recorded* — rather than a crash or a fabricated value.
+ */
+function asArray<T>(value: unknown): readonly T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function hasDimensionAndSubject(value: unknown): boolean {
+  return (
+    typeof value === 'object' && value !== null && 'dimension' in value && 'subjectId' in value
+  );
+}
+
+/** The reviewer labels actually recorded, ignoring malformed entries. */
+export function reviewerLabelsOf(view: RosterView): readonly BenchmarkReviewerLabel[] {
+  return asArray<unknown>(view.reviewerLabels)
+    .filter(isLabelShape)
+    .map((label) => label as BenchmarkReviewerLabel);
+}
+
+/** A label entry has to be an object carrying all five contract fields as strings. */
+function isLabelShape(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record['reviewer'] === 'string' &&
+    typeof record['dimension'] === 'string' &&
+    typeof record['label'] === 'string' &&
+    typeof record['subjectId'] === 'string'
+  );
+}
+
+/** The adjudications actually recorded, ignoring malformed entries. */
+export function adjudicationsOf(benchmarkCase: BenchmarkCase): readonly BenchmarkAdjudication[] {
+  return asArray<BenchmarkAdjudication>(benchmarkCase.adjudications).filter(
+    (entry) => typeof entry === 'object' && entry !== null,
+  );
+}
+
+/** The reviewer identities that labelled, from any view; malformed entries are skipped. */
 export function labelledIdentitiesOf(view: RosterView): readonly string[] {
-  const identities = view.reviewerLabels
-    .map((label) => reviewerIdentity(label.reviewer))
+  const identities = rosterNames(view)
+    .map(reviewerIdentity)
     .filter((identity) => identity.length > 0);
   return [...new Set(identities)].sort(compareStrings);
 }
 
-/** The set of canonical reviewer identities that have labelled a case, sorted for determinism. */
+/** The names a case declares as its reviewers; a non-array roster reads as an empty one. */
+function declaredNameList(view: RosterView): readonly string[] {
+  return asArray<unknown>(view.provenance?.reviewedBy)
+    .filter((name): name is string => typeof name === 'string')
+    .map(reviewerIdentity)
+    .filter((identity) => identity.length > 0);
+}
+
+/** Canonical reviewer identities that labelled a case, sorted for determinism. */
 export function labelledReviewerIdentities(benchmarkCase: BenchmarkCase): readonly string[] {
   return labelledIdentitiesOf(benchmarkCase);
 }
@@ -94,10 +176,7 @@ export function compareStrings(left: string, right: string): number {
  * rather than that anybody is.
  */
 export function declaredRoster(view: RosterView): readonly string[] {
-  const declared = view.provenance.reviewedBy
-    .map(reviewerIdentity)
-    .filter((identity) => identity.length > 0);
-  return [...new Set(declared)].sort(compareStrings);
+  return [...new Set(declaredNameList(view))].sort(compareStrings);
 }
 
 /**
@@ -171,8 +250,14 @@ export function subjectLabelEntries(
   dimension: BenchmarkDimension,
   subjectId: string,
 ): readonly { readonly reviewerKey: string; readonly label: string }[] {
-  const matching = benchmarkCase.reviewerLabels
-    .filter((label) => label.dimension === dimension && label.subjectId === subjectId)
+  const matching = asArray<BenchmarkReviewerLabel>(benchmarkCase.reviewerLabels)
+    .filter(
+      (label) =>
+        typeof label === 'object' &&
+        label !== null &&
+        label.dimension === dimension &&
+        label.subjectId === subjectId,
+    )
     .map((label) => ({ reviewerKey: reviewerIdentity(label.reviewer), label: label.label }));
   return matching.sort(
     (left, right) =>
@@ -181,13 +266,18 @@ export function subjectLabelEntries(
   );
 }
 
+/** True when a value looks like one reviewer label entry, so callers can skip malformed rows. */
+export function isLabelLike(value: unknown): boolean {
+  return hasDimensionAndSubject(value) && 'reviewer' in (value as object);
+}
+
 /** How many adjudications the case already records for this subject, in stored order. */
 export function adjudicationsFor(
   benchmarkCase: BenchmarkCase,
   dimension: BenchmarkDimension,
   subjectId: string,
 ): readonly BenchmarkAdjudication[] {
-  return (benchmarkCase.adjudications ?? []).filter(
+  return adjudicationsOf(benchmarkCase).filter(
     (entry) => entry.dimension === dimension && entry.subjectId === subjectId,
   );
 }

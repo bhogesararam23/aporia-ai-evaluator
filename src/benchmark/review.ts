@@ -30,6 +30,7 @@ import type {
   BenchmarkDimension,
   BenchmarkInputPack,
   BenchmarkReviewerLabel,
+  SubmissionAnnotation,
 } from './types.ts';
 import { contentHash } from './hashing.ts';
 import { benchmarkDimensionLabels } from './validate.ts';
@@ -43,6 +44,8 @@ import {
   resolveSettlingAdjudication,
   reviewerIdentity,
   reviewerLabelFromAnnotation,
+  reviewerLabelsOf,
+  rosterNamesOf,
   subjectLabelEntries,
   submissionHash,
   type AdjudicationBinding,
@@ -103,10 +106,16 @@ export type { AnnotationSubmission, SubmissionAnnotation } from './types.ts';
  */
 export function deriveSubjects(input: BenchmarkInputPack): ReviewerSubject[] {
   const subjects: ReviewerSubject[] = [];
-  for (const proposition of input.propositions) {
+  const propositions = Array.isArray(input?.propositions)
+    ? (input.propositions as readonly { id: string }[])
+    : [];
+  const statements = Array.isArray(input?.statements)
+    ? (input.statements as readonly { id: string }[])
+    : [];
+  for (const proposition of propositions) {
     subjects.push({ dimension: 'EVIDENCE_SUPPORT', subjectId: proposition.id });
   }
-  for (const statement of input.statements) {
+  for (const statement of statements) {
     subjects.push({ dimension: 'ANSWER_FIDELITY', subjectId: statement.id });
     subjects.push({ dimension: 'CITATION_SUPPORT', subjectId: statement.id });
     subjects.push({ dimension: 'ATTRIBUTION', subjectId: statement.id });
@@ -187,7 +196,7 @@ export function mergeSubmission(
   const reasons: string[] = [];
   const versionSupported =
     submission.version === SUBMISSION_VERSION || submission.version === SUBMISSION_VERSION_V2;
-  if (!versionSupported) {
+  if (typeof submission.version !== 'string' || !versionSupported) {
     reasons.push(
       `Unsupported submission version "${submission.version}". Accepted: ${SUBMISSION_VERSION}, ${SUBMISSION_VERSION_V2}.`,
     );
@@ -206,7 +215,7 @@ export function mergeSubmission(
 
   // Reviewer identity is canonical, so one person cannot submit twice by changing capitalisation and be
   // counted as a second reviewer agreeing with themselves.
-  const reviewerKey = reviewerIdentity(submission.reviewer);
+  const reviewerKey = reviewerIdentity(textOf(submission.reviewer));
   if (reviewerKey === '') {
     reasons.push('A submission must carry a reviewer label; the tool will not invent one.');
   } else {
@@ -222,7 +231,7 @@ export function mergeSubmission(
     }
   }
 
-  const suppliedTimestamp = submission.submittedAt.trim();
+  const suppliedTimestamp = textOf(submission.submittedAt);
   let submittedAt = '';
   if (suppliedTimestamp === '') {
     reasons.push(
@@ -244,13 +253,18 @@ export function mergeSubmission(
   }
 
   const priorKeys = new Set([
-    ...benchmarkCase.reviewerLabels.map((label) => reviewerIdentity(label.reviewer)),
+    ...rosterNamesOf(benchmarkCase).map(reviewerIdentity),
     ...alreadyMergedReviewers.map(reviewerIdentity),
   ]);
   if (reviewerKey !== '' && priorKeys.has(reviewerKey)) {
     reasons.push(`Duplicate submission: reviewer "${reviewerKey}" has already labelled this case.`);
   }
-  if (submission.annotations.length === 0) {
+  const annotations = Array.isArray(submission.annotations)
+    ? (submission.annotations as readonly SubmissionAnnotation[])
+    : [];
+  if (!Array.isArray(submission.annotations)) {
+    reasons.push('The submission’s annotations are not a list of annotation objects.');
+  } else if (annotations.length === 0) {
     reasons.push('The submission records no annotations.');
   }
 
@@ -258,8 +272,12 @@ export function mergeSubmission(
     packet.subjects.map((subject) => `${subject.dimension}/${subject.subjectId}`),
   );
   const annotatedKeys = new Set<string>();
-  submission.annotations.forEach((annotation, index) => {
-    const key = `${annotation.dimension}/${annotation.subjectId}`;
+  annotations.forEach((annotation, index) => {
+    if (typeof annotation !== 'object' || annotation === null) {
+      reasons.push(`Annotation ${String(index)} is not an object.`);
+      return;
+    }
+    const key = `${String(annotation.dimension)}/${String(annotation.subjectId)}`;
     if (!subjectKeys.has(key)) {
       reasons.push(
         `Annotation ${String(index)} targets "${key}", which is not a subject of this case.`,
@@ -274,7 +292,7 @@ export function mergeSubmission(
         `Annotation ${String(index)} label "${annotation.label}" is not valid for ${annotation.dimension}.`,
       );
     }
-    if (annotation.rationale.trim() === '') {
+    if (typeof annotation.rationale !== 'string' || annotation.rationale.trim() === '') {
       reasons.push(
         `Annotation ${String(index)} has no rationale. The rubric requires one, and an unexplained gold label cannot be reviewed later.`,
       );
@@ -295,7 +313,7 @@ export function mergeSubmission(
     packetHash: packet.packetHash,
     submissionHash: submissionHash(submission),
   };
-  const appended: BenchmarkReviewerLabel[] = submission.annotations.map((annotation) =>
+  const appended: BenchmarkReviewerLabel[] = annotations.map((annotation) =>
     reviewerLabelFromAnnotation(annotation, provenance),
   );
   return {
@@ -334,8 +352,8 @@ export interface RosterGap {
 export function rosterGaps(view: RosterView): RosterGap[] {
   const roster = declaredRoster(view);
   const labelCounts = new Map<string, number>();
-  for (const label of view.reviewerLabels) {
-    const identity = reviewerIdentity(label.reviewer);
+  for (const name of rosterNamesOf(view)) {
+    const identity = reviewerIdentity(name);
     if (identity === '') {
       continue;
     }
@@ -388,7 +406,7 @@ export interface DisagreementReport {
 /** How many subjects in the case genuinely disagree, which is what a v1 unscoped record could settle. */
 function disagreeingSubjectCount(benchmarkCase: BenchmarkCase): number {
   const grouped = new Map<string, Set<string>>();
-  for (const label of benchmarkCase.reviewerLabels) {
+  for (const label of reviewerLabelsOf(benchmarkCase)) {
     const key = `${label.dimension}/${label.subjectId}`;
     const bucket = grouped.get(key) ?? new Set<string>();
     bucket.add(label.label);
@@ -416,7 +434,7 @@ export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementRe
   let stale = 0;
   let unbound = 0;
   const subjects: SubjectAgreement[] = packet.subjects.map((subject) => {
-    const matching = benchmarkCase.reviewerLabels.filter(
+    const matching = reviewerLabelsOf(benchmarkCase).filter(
       (label) => label.dimension === subject.dimension && label.subjectId === subject.subjectId,
     );
     const reviewers = [...new Set(matching.map((label) => reviewerIdentity(label.reviewer)))].sort(

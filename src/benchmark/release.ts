@@ -124,6 +124,30 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 }
 
 /**
+ * Provenance fields read defensively.
+ *
+ * A release is computed over whatever a caller parsed. `authorizedForStorage === true` and a trimmed
+ * `reviewedAt` are what the gates assert, so both are read through helpers that treat a missing or
+ * wrong-typed value as absent rather than crashing — an absent value fails the gate, which is the honest
+ * outcome, where a stack trace would tell the operator nothing.
+ */
+function provenanceOf(benchmarkCase: BenchmarkCase): Record<string, unknown> {
+  const provenance = (benchmarkCase as unknown as Record<string, unknown>)['provenance'];
+  return typeof provenance === 'object' && provenance !== null
+    ? (provenance as Record<string, unknown>)
+    : {};
+}
+
+function isAuthorised(benchmarkCase: BenchmarkCase): boolean {
+  return provenanceOf(benchmarkCase)['authorizedForStorage'] === true;
+}
+
+function reviewedAtOf(benchmarkCase: BenchmarkCase): string {
+  const value = provenanceOf(benchmarkCase)['reviewedAt'];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
  * The provenance and completeness gates for a corpus.
  *
  * Each is named, and each says which cases it is complaining about, so a failing release is actionable rather
@@ -138,10 +162,10 @@ export function releaseGates(
   const ids = cases.map((benchmarkCase) => benchmarkCase.id);
   const duplicateIds = uniqueSorted(ids.filter((id, index) => ids.indexOf(id) !== index));
   const unauthorised = cases
-    .filter((benchmarkCase) => benchmarkCase.provenance.authorizedForStorage !== true)
+    .filter((benchmarkCase) => !isAuthorised(benchmarkCase))
     .map((benchmarkCase) => benchmarkCase.id);
   const noReviewDate = cases
-    .filter((benchmarkCase) => benchmarkCase.provenance.reviewedAt.trim() === '')
+    .filter((benchmarkCase) => reviewedAtOf(benchmarkCase) === '')
     .map((benchmarkCase) => benchmarkCase.id);
   const undeclared = cases.filter((benchmarkCase) =>
     rosterGaps(benchmarkCase).some((gap) => gap.kind === 'UNDECLARED'),
@@ -298,8 +322,8 @@ export function buildReleaseManifest(
     return {
       caseId: benchmarkCase.id,
       file: supplied.split(/[\\/]/).pop() ?? supplied,
-      caseVersion: benchmarkCase.version,
-      stratum: benchmarkCase.stratum,
+      caseVersion: String(benchmarkCase.version ?? ''),
+      stratum: String(benchmarkCase.stratum ?? ''),
       contentHash: caseContentHash(benchmarkCase),
       bytes: Buffer.byteLength(contents, 'utf8'),
       reviewerCount: labelledIdentitiesOf(benchmarkCase).length,
