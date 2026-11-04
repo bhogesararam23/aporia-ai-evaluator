@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import type {
+  BenchmarkAdjudication,
   BenchmarkCase,
   BenchmarkDimension,
   BenchmarkInputPack,
@@ -298,4 +299,123 @@ export function mergeSubmissions(
     .map((benchmarkCase) => mergedById.get(benchmarkCase.id))
     .filter((value): value is BenchmarkCase => value !== undefined);
   return { mergedCases, applied, rejected };
+}
+
+/** How a subject's reviewer labels stand relative to each other. */
+export type SubjectAgreementStatus =
+  'UNANNOTATED' | 'SINGLE_REVIEWER' | 'UNANIMOUS' | 'ADJUDICATED' | 'UNRESOLVED';
+
+export interface SubjectAgreement {
+  readonly dimension: BenchmarkDimension;
+  readonly subjectId: string;
+  readonly reviewers: readonly string[];
+  readonly labels: readonly string[];
+  readonly status: SubjectAgreementStatus;
+  readonly adjudicatedLabel: string | null;
+}
+
+export interface DisagreementReport {
+  readonly caseId: string;
+  readonly subjects: readonly SubjectAgreement[];
+  readonly unanimous: number;
+  readonly adjudicated: number;
+  readonly unresolved: number;
+}
+
+/**
+ * Report agreement per subject without ever resolving it. A subject needs at least two distinct
+ * reviewers before a shared label is called agreement; a lone label is `SINGLE_REVIEWER`, not
+ * consensus. A split is `UNRESOLVED` unless a scoped adjudication names that exact dimension and
+ * subject, in which case the adjudication's own label is echoed — never chosen here.
+ */
+export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementReport {
+  const packet = buildReviewerPacket(benchmarkCase);
+  const adjudicationBySubject = new Map<string, BenchmarkAdjudication>();
+  for (const adjudication of benchmarkCase.adjudications ?? []) {
+    adjudicationBySubject.set(`${adjudication.dimension}/${adjudication.subjectId}`, adjudication);
+  }
+  let unanimous = 0;
+  let adjudicated = 0;
+  let unresolved = 0;
+  const subjects: SubjectAgreement[] = packet.subjects.map((subject) => {
+    const matching = benchmarkCase.reviewerLabels.filter(
+      (label) => label.dimension === subject.dimension && label.subjectId === subject.subjectId,
+    );
+    const reviewers = [...new Set(matching.map((label) => label.reviewer))].sort();
+    const distinctLabels = [...new Set(matching.map((label) => label.label))].sort();
+    const adjudication = adjudicationBySubject.get(`${subject.dimension}/${subject.subjectId}`);
+    let status: SubjectAgreementStatus;
+    if (matching.length === 0) {
+      status = 'UNANNOTATED';
+    } else if (reviewers.length < 2) {
+      status = 'SINGLE_REVIEWER';
+    } else if (distinctLabels.length === 1) {
+      status = 'UNANIMOUS';
+    } else if (adjudication !== undefined) {
+      status = 'ADJUDICATED';
+    } else {
+      status = 'UNRESOLVED';
+    }
+    if (status === 'UNANIMOUS') {
+      unanimous += 1;
+    }
+    if (status === 'ADJUDICATED') {
+      adjudicated += 1;
+    }
+    if (status === 'UNRESOLVED') {
+      unresolved += 1;
+    }
+    return {
+      dimension: subject.dimension,
+      subjectId: subject.subjectId,
+      reviewers,
+      labels: matching.map((label) => label.label),
+      status,
+      adjudicatedLabel:
+        status === 'ADJUDICATED' && adjudication?.outcome === 'RESOLVED'
+          ? (adjudication.label ?? null)
+          : null,
+    };
+  });
+  return { caseId: benchmarkCase.id, subjects, unanimous, adjudicated, unresolved };
+}
+
+export const ADJUDICATION_TEMPLATE_VERSION = 'benchmark-adjudication-v1';
+
+export interface AdjudicationTemplateEntry {
+  readonly dimension: BenchmarkDimension;
+  readonly subjectId: string;
+  readonly outcome: '';
+  readonly label: '';
+  readonly reason: '';
+  readonly adjudicatedBy: '';
+}
+
+export interface AdjudicationTemplate {
+  readonly version: string;
+  readonly caseId: string;
+  readonly adjudications: readonly AdjudicationTemplateEntry[];
+}
+
+/**
+ * A fill-in skeleton for the subjects still in unresolved disagreement — one blank entry each. The
+ * outcome, label, reason and adjudicator are left empty on purpose: resolving a disagreement is a
+ * human act, and the tool never pre-selects a side.
+ */
+export function adjudicationTemplate(benchmarkCase: BenchmarkCase): AdjudicationTemplate {
+  const report = disagreementReport(benchmarkCase);
+  return {
+    version: ADJUDICATION_TEMPLATE_VERSION,
+    caseId: benchmarkCase.id,
+    adjudications: report.subjects
+      .filter((subject) => subject.status === 'UNRESOLVED')
+      .map((subject) => ({
+        dimension: subject.dimension,
+        subjectId: subject.subjectId,
+        outcome: '' as const,
+        label: '' as const,
+        reason: '' as const,
+        adjudicatedBy: '' as const,
+      })),
+  };
 }
