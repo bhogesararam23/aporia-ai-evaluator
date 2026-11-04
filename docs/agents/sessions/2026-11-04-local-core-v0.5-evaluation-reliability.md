@@ -49,12 +49,14 @@ Tests (all fail against the relevant prior behaviour): `tests/unit/source-identi
 `tests/unit/evidence-aggregation-v2.test.ts` (+4 shared-canonical cases), and the DB-to-core path case in
 `tests/integration/repositories-evidence.test.ts`.
 
-## 4. Objective 3 — cross-platform CI (added; CI result pending at time of writing)
+## 4. Objective 3 — cross-platform CI (Done and verified by CI)
 
 `.github/workflows/ci.yml` now runs Node 24 `npm run check` and `npm run verify:workflow` as a
 Windows / Linux / macOS matrix with `fail-fast: false`. This is the live-workflow cross-platform
-evidence v0.4 recorded as not run. It is reported as **verified only after the runners pass**; a platform
-that cannot bind a loopback port fails the job rather than passing vacuously.
+evidence v0.4 recorded as not run. Confirmed on the pushed checkpoint (run
+`41807701771`, conclusion `success`): `check` passed on all three OSes, and the 25-step
+`npm run verify:workflow` passed end to end on Windows, Linux and macOS runners. A platform that
+cannot bind a loopback port would fail the job rather than pass vacuously; none did.
 
 ## 5. Objectives still in progress
 
@@ -83,5 +85,6 @@ Checkpoint 1 = commits 1–4, pushed to `origin/feat/aporia-local-core-v0.5-eval
 - Evaluator accuracy is not established and no gold corpus is asserted; the benchmark harness still
   refuses accuracy over an empty corpus.
 - `evidence-aggregation-v2` is not the default and no stored verdict is recomputed.
-- Cross-platform CI is not reported as passing until the runners for this branch are green.
+- Cross-platform CI (checks and the live workflow) is verified on the checkpoint-1 run; later
+  checkpoints are only reported as passing when their own runners are green.
 - Aporia is not production-ready, provider-validated, or independently reviewed.
