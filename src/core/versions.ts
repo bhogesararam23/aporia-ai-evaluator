@@ -1,5 +1,19 @@
 export const METHODOLOGY_VERSION = 'methodology-2026-10-28';
 export const EVIDENCE_RULE_VERSION = 'evidence-aggregation-v1';
+/**
+ * `evidence-aggregation-v2` (ADR-025, proposed): corroboration is counted by underlying source with
+ * independence as the gate, so a supporting record the reviewer marked `RELATED` or syndicated no
+ * longer reads as a second independent source. The status precedence is deliberately unchanged; only
+ * the corroborating-source figure moves. It is implemented and tested here but is **not** the
+ * application default — `EVIDENCE_RULE_VERSION` stays `v1` until the owner accepts ADR-025, because
+ * the figure travels in report snapshots and changing it rewrites what new reports claim.
+ */
+export const EVIDENCE_RULE_VERSION_V2 = 'evidence-aggregation-v2';
+/** Every evidence rule version this build can compute. A stored snapshot is never recomputed. */
+export const KNOWN_EVIDENCE_RULE_VERSIONS = [
+  EVIDENCE_RULE_VERSION,
+  EVIDENCE_RULE_VERSION_V2,
+] as const;
 export const METRICS_VERSION = 'metrics-v4';
 /** Historical versions retained for interpreting stored report snapshots (ADR-019, ADR-023). */
 export const METRICS_VERSION_V1 = 'metrics-v1';
