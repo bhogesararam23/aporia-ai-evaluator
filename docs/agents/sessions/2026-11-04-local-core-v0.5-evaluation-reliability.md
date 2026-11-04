@@ -58,18 +58,33 @@ evidence v0.4 recorded as not run. Confirmed on the pushed checkpoint (run
 `npm run verify:workflow` passed end to end on Windows, Linux and macOS runners. A platform that
 cannot bind a loopback port would fail the job rather than pass vacuously; none did.
 
-## 5. Objectives still in progress
+## 5. Objective 4 — reliability and accessibility (audit started)
 
-- **Objective 4** — reliability and accessibility hardening (durability, concurrency, failure injection,
-  migration/backup, report consistency; keyboard/responsive/browser a11y). Automated checks and manual
-  verification are kept apart and named as such.
-- **Objective 2** — benchmark curation workflows (annotation provenance, import/export, reproducible
-  local evaluation). No fabricated reviewers, gold cases or accuracy.
-- **Objective 5** — documentation sweep, roadmap and testing guide.
+Two new structural accessibility guards were added to the shared page-walking checks and pass on every
+visited page: every `<a href>` has an accessible name, and no element uses a positive `tabindex`.
 
-## 6. Commit ledger
+The audit surfaced one **real, unfixed defect**: duplicate `id` attributes where the same form is
+rendered once per record (run detail, statement workspace) — the shared field helpers emit a static
+`field-<name>` id for every instance, so a page can repeat `field-reviewer` etc. up to 11 times and every
+`<label for>` / `aria-describedby` but the first resolves to the wrong control. Form submission is
+unaffected (fields post by `name`), so the functional suite never caught it. Fixing it needs a per-form
+id scope threaded through the repeated-form renderers; it is recorded in
+`docs/KNOWN_LIMITATIONS.md §7` and scheduled as a focused follow-up rather than asserted by the shared
+check (which would fail today).
 
-Every pushed checkpoint was preceded by a green `npm run check` (713 tests after objective 1).
+Durability, concurrency, failure injection, migration and backup/restore already have measured tests from
+v0.4 (`write-atomicity`, `audit-atomicity`, `migrations`, `backup-restore`); no additional gap was
+asserted without a failing test to back it.
+
+## 6. Objective 2 — benchmark curation workflows (not started)
+
+Not begun. Must not fabricate reviewers, gold cases or accuracy; the harness still refuses an accuracy
+claim over an empty/synthetic corpus.
+
+## 7. Commit ledger
+
+Every pushed checkpoint was preceded by a green `npm run check`. Local count re-measured by glob: **713
+tests — 393 unit, 320 integration** (baseline at session start was 701).
 
 | # | Commit | Area | Summary |
 |---|---|---|---|
@@ -77,10 +92,18 @@ Every pushed checkpoint was preceded by a green `npm run check` (713 tests after
 | 2 | `643ff1e` | feat(evidence) | canonical URI threaded DB→core→report; integration test |
 | 3 | `16223a6` | docs(adr-025) | record §1 rule 1 implemented; still Proposed, still not default |
 | 4 | `fcdd9da` | ci | Node 24 check + live workflow across Windows/Linux/macOS |
+| 5 | `040d0ee` | docs(session) | open the v0.5 audit, traceability and commit ledger |
+| 6 | `f071a6e` | docs(session) | record checkpoint-1 CI verified across three OSes |
+| 7 | `737eeff` | docs(testing) | re-measure 713 (393/320); record three-OS CI |
+| 8 | `098971e` | test(a11y) | link accessible-name + no-positive-tabindex guards (pass) |
+| 9 | `fe1a92a` | docs(limitations) | record the duplicate field-id accessibility defect from the audit |
 
-Checkpoint 1 = commits 1–4, pushed to `origin/feat/aporia-local-core-v0.5-evaluation-reliability`.
+Checkpoints pushed: #1 = commits 1–4 (`fcdd9da`), #2 = commits 5–7 (`737eeff`), #3 = commits 8–9.
+Pull request **#8** opened (unmerged), scoped honestly: Objectives 1, 3, 5 and partial 4 done; Objectives 2
+and the remainder of 4 in progress.
 
-## 7. What is NOT claimed
+## 8. What is NOT claimed
+
 
 - Evaluator accuracy is not established and no gold corpus is asserted; the benchmark harness still
   refuses accuracy over an empty corpus.
