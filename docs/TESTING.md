@@ -135,9 +135,9 @@ confirms all three OSes):
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **945 tests, 945 passing, 0 failing** — 582 under `tests/unit`, 363 under
+- `npm test`: **953 tests, 953 passing, 0 failing** — 590 under `tests/unit`, 363 under
   `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 945/945 result.
+- `npm run check`: exit 0 with the same 953/953 result.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
   `0.4.0` (the v0.5–v0.7 work is additive; the release version is not bumped while ADR-025 stays Proposed).
@@ -155,7 +155,7 @@ confirms all three OSes):
   `benchmark-roster`, `benchmark-label-provenance`, `benchmark-adjudication-binding`,
   `benchmark-fixture-validity`, `benchmark-review-merge-provenance`, `benchmark-validate-provenance`,
   `benchmark-review-disagreement-binding`, `benchmark-review-adjudication-stale`,
-  `benchmark-scoring-binding`, `benchmark-batch-plan`, `benchmark-release`,
+  `benchmark-scoring-binding`, `benchmark-batch-plan`, `benchmark-release`, `benchmark-review-malformed`,
   `benchmark-batch-cli`, `benchmark-release-cli`, `benchmark-roster-cli`,
   `benchmark-review-lifecycle` and `benchmark-v06-compatibility`.
 
