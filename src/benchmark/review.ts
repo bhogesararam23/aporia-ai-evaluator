@@ -10,6 +10,9 @@
  *
  * These workflow artifacts are new file formats with their own versions; the benchmark *case* contract
  * is unchanged (`benchmark-case-v1`/`v2` still read), so no corpus migration is implied.
+ *
+ * ADR-027 added the persisted review provenance, the roster check and the adjudication binding. Batch work
+ * moved to `batch.ts`, which plans before it writes.
  */
 import {
   BENCHMARK_ADJUDICATION_VERSION,
@@ -44,6 +47,7 @@ import {
   submissionHash,
   type AdjudicationBinding,
   type LabelProvenance,
+  type RosterView,
 } from './provenance.ts';
 import { isContentHash } from './hashing.ts';
 
@@ -300,60 +304,58 @@ export function mergeSubmission(
   };
 }
 
-export interface MergeOutcome {
-  readonly mergedCases: readonly BenchmarkCase[];
-  readonly applied: readonly { readonly caseId: string; readonly reviewer: string }[];
-  readonly rejected: readonly {
-    readonly caseId: string;
-    readonly reviewer: string;
-    readonly reasons: readonly string[];
-  }[];
-}
+/**
+ * Batch merging lives in `batch.ts` as of ADR-027.
+ *
+ * v0.6 had a `mergeSubmissions` here that applied what it could and returned the rest. That partial-apply
+ * behaviour is now `planBatchMerge(cases, submissions, 'isolated')`, deliberately reachable only by asking
+ * for it: a batch that writes files must be planned first so the filesystem layer can be atomic and
+ * recoverable. The old function had no remaining caller, so it was removed rather than left as a second path
+ * that quietly bypasses the plan.
+ */
 
 /**
- * Merge a batch of submissions into a set of cases, tracking per-case reviewers already applied in the
- * batch so a second submission from the same reviewer in the same run is rejected as a duplicate. A
- * submission whose case is not in the set is rejected (mismatched case). Order is deterministic.
+ * Who the case says may review it, versus who actually labelled.
+ *
+ * `UNDECLARED` is the integrity failure: a label credited to a person the case never authorised. It cannot
+ * arise through `mergeSubmission` any more, so seeing it means a case file was hand-edited — exactly the kind
+ * of change a release verify is meant to surface. `DECLARED_UNUSED` is the opposite gap: an authorised
+ * reviewer whose work is missing.
+ *
+ * Names are canonical identities, so two spellings of one person count once. No pair of distinct names here
+ * proves two humans were involved; there is no authentication.
  */
-export function mergeSubmissions(
-  cases: readonly BenchmarkCase[],
-  submissions: readonly AnnotationSubmission[],
-): MergeOutcome {
-  const byId = new Map(cases.map((benchmarkCase) => [benchmarkCase.id, benchmarkCase]));
-  const mergedReviewers = new Map<string, string[]>();
-  const mergedById = new Map<string, BenchmarkCase>(byId);
-  const applied: { caseId: string; reviewer: string }[] = [];
-  const rejected: { caseId: string; reviewer: string; reasons: readonly string[] }[] = [];
-  for (const submission of submissions) {
-    const benchmarkCase = byId.get(submission.caseId);
-    if (benchmarkCase === undefined) {
-      rejected.push({
-        caseId: submission.caseId,
-        reviewer: submission.reviewer,
-        reasons: ['No case in the corpus matches this submission’s case id.'],
-      });
+export interface RosterGap {
+  readonly reviewer: string;
+  readonly kind: 'UNDECLARED' | 'DECLARED_UNUSED';
+  readonly labelCount: number;
+}
+
+export function rosterGaps(view: RosterView): RosterGap[] {
+  const roster = declaredRoster(view);
+  const labelCounts = new Map<string, number>();
+  for (const label of view.reviewerLabels) {
+    const identity = reviewerIdentity(label.reviewer);
+    if (identity === '') {
       continue;
     }
-    const current = mergedById.get(submission.caseId) as BenchmarkCase;
-    const already = mergedReviewers.get(submission.caseId) ?? [];
-    const result = mergeSubmission(current, submission, already);
-    if (result.ok) {
-      mergedById.set(submission.caseId, result.case);
-      mergedReviewers.set(submission.caseId, [...already, submission.reviewer.trim()]);
-      applied.push({ caseId: submission.caseId, reviewer: submission.reviewer.trim() });
-    } else {
-      rejected.push({
-        caseId: submission.caseId,
-        reviewer: submission.reviewer,
-        reasons: result.reasons,
-      });
+    labelCounts.set(identity, (labelCounts.get(identity) ?? 0) + 1);
+  }
+  const gaps: RosterGap[] = [];
+  for (const [identity, labelCount] of labelCounts) {
+    if (!roster.includes(identity)) {
+      gaps.push({ reviewer: identity, kind: 'UNDECLARED', labelCount });
     }
   }
-  // Emit in the original case order for determinism.
-  const mergedCases = cases
-    .map((benchmarkCase) => mergedById.get(benchmarkCase.id))
-    .filter((value): value is BenchmarkCase => value !== undefined);
-  return { mergedCases, applied, rejected };
+  for (const identity of roster) {
+    if (!labelCounts.has(identity)) {
+      gaps.push({ reviewer: identity, kind: 'DECLARED_UNUSED', labelCount: 0 });
+    }
+  }
+  return gaps.sort(
+    (left, right) =>
+      compareStrings(left.kind, right.kind) || compareStrings(left.reviewer, right.reviewer),
+  );
 }
 
 /** How a subject's reviewer labels stand relative to each other. */

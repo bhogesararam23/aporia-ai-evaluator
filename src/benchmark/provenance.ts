@@ -46,12 +46,30 @@ export function isSameReviewer(left: string, right: string): boolean {
   return canonical.length > 0 && canonical === reviewerIdentity(right);
 }
 
-/** The set of canonical reviewer identities that have labelled a case, sorted for determinism. */
-export function labelledReviewerIdentities(benchmarkCase: BenchmarkCase): readonly string[] {
-  const identities = benchmarkCase.reviewerLabels
+/**
+ * The minimum a roster question needs: who the case declares, and who actually labelled.
+ *
+ * A full `BenchmarkCase` cannot be assumed here. A case carrying a label from an undeclared reviewer is
+ * refused by the corpus validator, so a roster report built only on validated cases would never see the one
+ * problem it exists to surface. Working from this structural view lets a report describe a broken case
+ * without pretending it is scoreable.
+ */
+export interface RosterView {
+  readonly provenance: { readonly reviewedBy: readonly string[] };
+  readonly reviewerLabels: readonly { readonly reviewer: string }[];
+}
+
+/** Canonical reviewer identities that have labelled, from any roster view. */
+export function labelledIdentitiesOf(view: RosterView): readonly string[] {
+  const identities = view.reviewerLabels
     .map((label) => reviewerIdentity(label.reviewer))
     .filter((identity) => identity.length > 0);
   return [...new Set(identities)].sort(compareStrings);
+}
+
+/** The set of canonical reviewer identities that have labelled a case, sorted for determinism. */
+export function labelledReviewerIdentities(benchmarkCase: BenchmarkCase): readonly string[] {
+  return labelledIdentitiesOf(benchmarkCase);
 }
 
 /**
@@ -75,8 +93,8 @@ export function compareStrings(left: string, right: string): number {
  * about who may review this case; nothing here can add to it, and an empty roster means nobody is authorised
  * rather than that anybody is.
  */
-export function declaredRoster(benchmarkCase: BenchmarkCase): readonly string[] {
-  const declared = benchmarkCase.provenance.reviewedBy
+export function declaredRoster(view: RosterView): readonly string[] {
+  const declared = view.provenance.reviewedBy
     .map(reviewerIdentity)
     .filter((identity) => identity.length > 0);
   return [...new Set(declared)].sort(compareStrings);
@@ -88,8 +106,8 @@ export function declaredRoster(benchmarkCase: BenchmarkCase): readonly string[] 
  * An empty roster authorises nobody: accepting the first submission would be the tool deciding who may
  * review, which is a human authorisation decision this application must not make for the owner.
  */
-export function isDeclaredReviewer(benchmarkCase: BenchmarkCase, reviewerKey: string): boolean {
-  return reviewerKey.length > 0 && declaredRoster(benchmarkCase).includes(reviewerKey);
+export function isDeclaredReviewer(view: RosterView, reviewerKey: string): boolean {
+  return reviewerKey.length > 0 && declaredRoster(view).includes(reviewerKey);
 }
 
 /**

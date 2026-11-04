@@ -221,14 +221,42 @@ test('merge applies a valid submission and refuses a stale one, leaving gold unt
         ]);
         assert.notEqual(rejected.code, 0, 'a stale submission must fail the run');
         assert.match(rejected.stderr, /[Ss]tale/);
-        const unchanged = JSON.parse(readFileSync(join(out2.path, 'case-m.json'), 'utf8')) as {
-          reviewerLabels: unknown[];
-        };
+        // v0.7 default: one refusal writes nothing at all, so the target is not even created.
         assert.equal(
-          unchanged.reviewerLabels.length,
-          0,
-          'the rejected merge left no label applied',
+          existsSync(join(out2.path, 'case-m.json')),
+          false,
+          'an atomic batch publishes nothing when any item is refused',
         );
+
+        // The v0.6 behaviour is still available, explicitly, and still leaves the refused case unchanged.
+        const out3 = tempDir();
+        try {
+          const partial = await cli([
+            'merge',
+            '--corpus',
+            corpus.path,
+            '--submissions',
+            staleDir.path,
+            '--out',
+            out3.path,
+            '--allow-partial',
+          ]);
+          assert.notEqual(
+            partial.code,
+            0,
+            'a partial import is still a refusal worth an exit code',
+          );
+          const unchanged = JSON.parse(readFileSync(join(out3.path, 'case-m.json'), 'utf8')) as {
+            reviewerLabels: unknown[];
+          };
+          assert.equal(
+            unchanged.reviewerLabels.length,
+            0,
+            'the rejected submission left no label applied',
+          );
+        } finally {
+          out3.remove();
+        }
       } finally {
         out2.remove();
       }
@@ -271,14 +299,34 @@ test('merge refuses a duplicate reviewer within a single import run', async () =
     ]);
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /[Dd]uplicate/);
-    const mergedCase = JSON.parse(readFileSync(join(out.path, 'case-d.json'), 'utf8')) as {
-      reviewerLabels: { reviewer: string }[];
-    };
-    assert.equal(
-      mergedCase.reviewerLabels.filter((label) => label.reviewer === 'dana').length,
-      1,
-      'only the first of two same-reviewer submissions applies',
-    );
+    // Atomic by default: a duplicate inside one import stops the whole run from writing.
+    assert.equal(existsSync(join(out.path, 'case-d.json')), false);
+
+    // The duplicate rule is the same under the explicit partial mode, where the first submission applies.
+    const partialOut = tempDir();
+    try {
+      const partial = await cli([
+        'merge',
+        '--corpus',
+        corpus.path,
+        '--submissions',
+        submissions.path,
+        '--out',
+        partialOut.path,
+        '--allow-partial',
+      ]);
+      assert.notEqual(partial.code, 0);
+      const mergedCase = JSON.parse(readFileSync(join(partialOut.path, 'case-d.json'), 'utf8')) as {
+        reviewerLabels: { reviewer: string }[];
+      };
+      assert.equal(
+        mergedCase.reviewerLabels.filter((label) => label.reviewer === 'dana').length,
+        1,
+        'only the first of two same-reviewer submissions applies',
+      );
+    } finally {
+      partialOut.remove();
+    }
   } finally {
     corpus.remove();
     packets.remove();
@@ -501,7 +549,34 @@ test('merge refuses a malformed submission file rather than throwing', async () 
     ]);
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /malformed submission/i);
-    assert.ok(existsSync(join(out.path, 'case-bad.json')), 'the untouched case is still exported');
+    assert.doesNotMatch(
+      result.stderr,
+      /TypeError|Cannot read prop/i,
+      'a hostile submission file is refused with a reason, never thrown on',
+    );
+    // v0.7: a malformed file belongs to the batch, so under the atomic default it stops the write too.
+    assert.equal(existsSync(join(out.path, 'case-bad.json')), false);
+
+    const partialOut = tempDir();
+    try {
+      const partial = await cli([
+        'merge',
+        '--corpus',
+        corpus.path,
+        '--submissions',
+        submissions.path,
+        '--out',
+        partialOut.path,
+        '--allow-partial',
+      ]);
+      assert.notEqual(partial.code, 0);
+      assert.ok(
+        existsSync(join(partialOut.path, 'case-bad.json')),
+        'under the explicit partial mode the untouched case is still exported',
+      );
+    } finally {
+      partialOut.remove();
+    }
   } finally {
     corpus.remove();
     submissions.remove();

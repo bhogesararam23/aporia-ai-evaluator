@@ -25,7 +25,15 @@
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
  * never reach the network or the application database, and never edit a case's gold `expected` array.
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   caseProvenanceSummary,
@@ -39,11 +47,24 @@ import {
   buildReviewerPacket,
   buildSubmissionTemplate,
   disagreementReport,
-  mergeSubmissions,
-  applyAdjudication,
+  rosterGaps,
   type AnnotationSubmission,
   type PendingAdjudication,
 } from '../src/benchmark/review.ts';
+import { labelledIdentitiesOf } from '../src/benchmark/provenance.ts';
+import {
+  advanceJournal,
+  createJournal,
+  planBatchAdjudication,
+  planBatchMerge,
+  renderStagedCorpus,
+  type BatchJournal,
+  type BatchMode,
+  type BatchPlan,
+  type StagedFile,
+} from '../src/benchmark/batch.ts';
+import { contentHash } from '../src/benchmark/hashing.ts';
+import { BENCHMARK_BATCH_JOURNAL_VERSION } from '../src/benchmark/types.ts';
 import { BENCHMARK_STRATA, type BenchmarkCase } from '../src/benchmark/types.ts';
 
 function fail(message: string): never {
@@ -59,6 +80,9 @@ interface Options {
   submissions: string | null;
   adjudications: string | null;
   issue: boolean;
+  dryRun: boolean;
+  allowPartial: boolean;
+  recover: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -71,6 +95,9 @@ function parseArguments(argv: readonly string[]): Options {
     submissions: null,
     adjudications: null,
     issue: false,
+    dryRun: false,
+    allowPartial: false,
+    recover: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -86,6 +113,12 @@ function parseArguments(argv: readonly string[]): Options {
       options.adjudications = argv[(index += 1)] ?? null;
     } else if (argument === '--issue') {
       options.issue = true;
+    } else if (argument === '--dry-run') {
+      options.dryRun = true;
+    } else if (argument === '--allow-partial') {
+      options.allowPartial = true;
+    } else if (argument === '--recover') {
+      options.recover = true;
     } else {
       fail(`Unknown argument: ${String(argument)}`);
     }
@@ -316,6 +349,318 @@ function coerceAdjudication(value: unknown): PendingAdjudication | null {
   };
 }
 
+/**
+ * Publish one file so a reader never sees a half-written case: write a sibling temp file, then rename it over
+ * the target. `renameSync` replaces atomically on Windows, Linux and macOS, which is why the batch can be
+ * resumed file by file after an interruption instead of started again.
+ */
+function publishFile(target: string, file: StagedFile): void {
+  const temporary = join(target, `${file.name}.tmp`);
+  writeFileSync(temporary, file.contents, 'utf8');
+  renameSync(temporary, join(target, file.name));
+}
+
+function fileHash(path: string): string | null {
+  try {
+    return contentHash(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function readJournal(path: string): BatchJournal | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (
+    record['version'] !== BENCHMARK_BATCH_JOURNAL_VERSION ||
+    typeof record['planHash'] !== 'string' ||
+    (record['state'] !== 'staged' &&
+      record['state'] !== 'committing' &&
+      record['state'] !== 'committed') ||
+    !Array.isArray(record['items'])
+  ) {
+    return null;
+  }
+  const items = record['items'].filter(
+    (item): item is { name: string; contentsHash: string } =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as Record<string, unknown>)['name'] === 'string' &&
+      typeof (item as Record<string, unknown>)['contentsHash'] === 'string',
+  );
+  return {
+    version: BENCHMARK_BATCH_JOURNAL_VERSION,
+    planHash: record['planHash'],
+    kind: record['kind'] === 'adjudication' ? 'adjudication' : 'merge',
+    mode: record['mode'] === 'isolated' ? 'isolated' : 'atomic',
+    state: record['state'],
+    items,
+  };
+}
+
+function reportPlan(kind: string, plan: BatchPlan, malformed: readonly string[]): void {
+  const label = kind === 'adjudication' ? 'adjudication' : 'submission';
+  console.error(
+    `benchmark:case: plan ${plan.planHash} — ${String(plan.acceptedCount)} ${label}(s) accepted, ` +
+      `${String(plan.rejectedCount + malformed.length)} refused (${String(malformed.length)} malformed) (mode: ${plan.mode}).`,
+  );
+  for (const item of plan.items) {
+    const marker = item.accepted ? 'ACCEPTED' : 'REJECTED';
+    console.error(`  ${marker} ${item.caseId}/${item.subject}`);
+    for (const reason of item.reasons) {
+      console.error(`    - ${reason}`);
+    }
+  }
+  for (const name of malformed) {
+    console.error(
+      `  REJECTED malformed ${label} file ${name} (not a well-formed ${label} object; it was never handed to the planner).`,
+    );
+  }
+}
+
+function cleanStaging(staging: string): void {
+  rmSync(staging, { recursive: true, force: true });
+}
+
+/**
+ * Write a planned batch to disk through a staging directory and a journal.
+ *
+ * The order is the whole point: every file is materialised in staging and journalled as `staged` before the
+ * target is touched at all, so an interruption before that point rolls back to an untouched corpus. Once the
+ * journal says `committing`, the remaining files are identified by comparing each target file's hash with the
+ * journal's, so a resumed run finishes the job without rewriting what already landed and cannot mistake a
+ * different plan for the same one.
+ */
+function publishBatch(
+  kind: 'merge' | 'adjudication',
+  plan: BatchPlan,
+  target: string,
+  malformed: readonly string[],
+  options: Options,
+): void {
+  const staging = `${target}.staging`;
+  const journalPath = join(staging, 'journal.json');
+
+  if (options.recover) {
+    const journal = existsSync(journalPath) ? readJournal(journalPath) : null;
+    if (journal === null) {
+      console.error(
+        `benchmark:case: no batch journal to recover at ${journalPath}. Nothing was rolled back or completed.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (journal.planHash !== plan.planHash) {
+      console.error(
+        `benchmark:case: the journalled plan ${journal.planHash} does not match the plan these inputs produce now, ${plan.planHash}. The corpus or submissions changed since the interruption, so recovery stops here rather than publishing a mixture of two batches. Inspect or remove ${staging} and run again.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (journal.state === 'staged') {
+      cleanStaging(staging);
+      console.error(
+        `benchmark:case: interrupted batch rolled back. The target was never touched, and the staging directory has been removed.`,
+      );
+      return;
+    }
+    const staged = new Map(renderStagedCorpus(plan.cases).map((file) => [file.name, file]));
+    let published = 0;
+    for (const item of journal.items) {
+      const file = staged.get(item.name);
+      if (file === undefined) {
+        console.error(
+          `benchmark:case: the journal lists ${item.name}, which these inputs no longer produce. Recovery stopped with the journal in place.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (fileHash(join(target, item.name)) === item.contentsHash) {
+        continue;
+      }
+      publishFile(target, file);
+      published += 1;
+    }
+    writeFileSync(
+      journalPath,
+      `${JSON.stringify(advanceJournal(journal, 'committed').ok ? { ...journal, state: 'committed' } : journal, null, 2)}\n`,
+      'utf8',
+    );
+    cleanStaging(staging);
+    console.error(
+      `benchmark:case: interrupted batch completed — ${String(published)} file(s) finished publishing out of ${String(journal.items.length)}; the staging directory and journal are removed.`,
+    );
+    return;
+  }
+
+  reportPlan(kind, plan, malformed);
+
+  // A malformed file is part of the batch too. Under the atomic default it stops the run like any other
+  // refusal, so "the whole batch" means every input file, not only the ones that parsed cleanly.
+  const refused = plan.rejectedCount + malformed.length;
+
+  if (options.dryRun) {
+    console.error(
+      `benchmark:case: DRY RUN — nothing was written to ${target}, and no journal or staging directory was created.`,
+    );
+    if (refused > 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (refused > 0 && plan.mode === 'atomic') {
+    console.error(
+      `benchmark:case: batch refused; nothing written to ${target}. Under the atomic default a single refused ${
+        kind === 'adjudication' ? 'decision' : 'submission'
+      } stops the whole run, so a corpus is never half-updated. Fix every refusal above, or pass --allow-partial to write the accepted items.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const staged = renderStagedCorpus(plan.cases);
+  mkdirSync(staging, { recursive: true });
+  const journal = createJournal(plan, staged);
+  writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`, 'utf8');
+  for (const file of staged) {
+    writeFileSync(join(staging, file.name), file.contents, 'utf8');
+  }
+  const committing = advanceJournal(journal, 'committing');
+  if (!committing.ok) {
+    cleanStaging(staging);
+    return fail(`internal: ${committing.reason}`);
+  }
+  writeFileSync(journalPath, `${JSON.stringify(committing.journal, null, 2)}\n`, 'utf8');
+
+  mkdirSync(target, { recursive: true });
+  for (const file of staged) {
+    if (fileHash(join(target, file.name)) === file.contentsHash) {
+      continue;
+    }
+    publishFile(target, file);
+  }
+  writeFileSync(
+    journalPath,
+    `${JSON.stringify({ ...committing.journal, state: 'committed' }, null, 2)}\n`,
+    'utf8',
+  );
+  cleanStaging(staging);
+  console.error(
+    `benchmark:case: published ${String(staged.length)} case(s) to ${target}; ` +
+      `${String(plan.changedCaseIds.length)} changed by this batch. A rejected item leaves its case unchanged, ` +
+      'and gold labels are never edited by a merge or an adjudication.',
+  );
+  if (malformed.length > 0) {
+    console.error(
+      `  ${String(malformed.length)} file(s) were malformed and never reached the planner; fix and re-run them.`,
+    );
+  }
+  if (!plan.clean || malformed.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * `roster` reads and never writes. Authorising a reviewer is a deliberate human edit to
+ * `provenance.reviewedBy`; a command that could add one would be the tool deciding who may review, which is
+ * the owner's call, not the harness's.
+ *
+ * It works from the parsed files rather than only the validated corpus, because a case carrying a label from
+ * an undeclared reviewer is refused by the validator — so a validator-only report would be blind to the exact
+ * problem this command exists to surface. Each row states whether the case is scoreable, so nothing is
+ * implied about a case that did not validate.
+ */
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function reviewerNamesFrom(value: unknown): { reviewer: string }[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const names: { reviewer: string }[] = [];
+  for (const entry of value) {
+    if (typeof entry === 'object' && entry !== null) {
+      const reviewer = (entry as Record<string, unknown>)['reviewer'];
+      if (typeof reviewer === 'string') {
+        names.push({ reviewer });
+      }
+    }
+  }
+  return names;
+}
+
+function roster(options: Options): void {
+  const sources = readCorpus(requireCorpus(options));
+  const result = validateBenchmarkCorpus(sources);
+  const scoreableIds = new Set(result.cases.map((entry) => entry.id));
+  if (sources.length === 0) {
+    console.error('benchmark:case: no case file to read; nothing is asserted about the roster.');
+    process.exitCode = 1;
+    return;
+  }
+  let casesWithUndeclared = 0;
+  for (const source of sources) {
+    const record =
+      typeof source.value === 'object' && source.value !== null
+        ? (source.value as Record<string, unknown>)
+        : {};
+    const id =
+      typeof record['id'] === 'string' && record['id'].length > 0
+        ? record['id']
+        : `case#${String(source.index)}`;
+    const provenance =
+      typeof record['provenance'] === 'object' && record['provenance'] !== null
+        ? (record['provenance'] as Record<string, unknown>)
+        : {};
+    const view = {
+      provenance: { reviewedBy: stringList(provenance['reviewedBy']) },
+      reviewerLabels: reviewerNamesFrom(record['reviewerLabels']),
+    };
+    const gaps = rosterGaps(view);
+    const unauthorised = gaps.filter((gap) => gap.kind === 'UNDECLARED');
+    if (unauthorised.length > 0) {
+      casesWithUndeclared += 1;
+    }
+    console.error(
+      `  ${id}: scoreable=${String(scoreableIds.has(id))} ` +
+        `declared=[${view.provenance.reviewedBy.join(', ')}] ` +
+        `labellers=${String(labelledIdentitiesOf(view).length)}`,
+    );
+    for (const gap of unauthorised) {
+      console.error(
+        `    UNDECLARED "${gap.reviewer}" carries ${String(gap.labelCount)} label(s) but is not in provenance.reviewedBy`,
+      );
+    }
+    for (const gap of gaps.filter((entry) => entry.kind === 'DECLARED_UNUSED')) {
+      console.error(
+        `    DECLARED_UNUSED "${gap.reviewer}" is authorised for this case and has recorded no label`,
+      );
+    }
+  }
+  console.error(
+    `benchmark:case: reviewer names are canonical identities and are operator-asserted; they prove no ` +
+      `independence and no authentication. Adding a reviewer means editing provenance.reviewedBy by hand — ` +
+      `this command never does it, and a release verify shows the edit as a content change. ` +
+      `${String(casesWithUndeclared)} case(s) carry undeclared reviewers.`,
+  );
+  if (casesWithUndeclared > 0 || result.issues.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
 function packet(options: Options): void {
   if (options.out === null) {
     fail('packet needs --out <directory> to write blinded packets and submission templates into.');
@@ -371,31 +716,19 @@ function merge(options: Options): void {
       submissions.push(coerced);
     }
   }
-  const outcome = mergeSubmissions(cases, submissions);
-  const target = resolve(options.out);
-  mkdirSync(target, { recursive: true });
-  for (const mergedCase of outcome.mergedCases) {
-    writeFileSync(join(target, `${mergedCase.id}.json`), normaliseCase(mergedCase), 'utf8');
-  }
-  console.error(
-    `benchmark:case: merged ${String(outcome.applied.length)} submission(s); ` +
-      `rejected ${String(outcome.rejected.length)}; wrote ${String(outcome.mergedCases.length)} ` +
-      `case(s) to ${target}. A rejected submission leaves its case unchanged; gold labels are never edited.`,
-  );
-  for (const rejection of outcome.rejected) {
-    console.error(`  REJECTED ${rejection.caseId} / "${rejection.reviewer || '(no reviewer)'}":`);
-    for (const reason of rejection.reasons) {
-      console.error(`    - ${reason}`);
+  const mode: BatchMode = options.allowPartial ? 'isolated' : 'atomic';
+  const plan = planBatchMerge(cases, submissions, mode);
+  if (result.issues.length > 0 && !options.recover) {
+    console.error(
+      `benchmark:case: ${String(result.issues.length)} corpus entr(y/ies) did not validate and ${
+        options.dryRun ? 'would be' : 'are'
+      } excluded from this batch:`,
+    );
+    for (const issue of result.issues.slice(0, 40)) {
+      console.error(`  ${issue.caseId} ${issue.field}: ${issue.message}`);
     }
   }
-  for (const name of malformed) {
-    console.error(
-      `  REJECTED malformed submission file ${name} (not a well-formed annotation object).`,
-    );
-  }
-  if (outcome.rejected.length > 0 || malformed.length > 0 || result.issues.length > 0) {
-    process.exitCode = 1;
-  }
+  publishBatch('merge', plan, resolve(options.out), malformed, options);
 }
 
 function review(options: Options): void {
@@ -523,64 +856,24 @@ function adjudicate(options: Options): void {
       benchmarkCase,
     ]),
   );
-  const current = new Map(byId);
-  const applied: { caseId: string; subject: string }[] = [];
-  const rejected: { caseId: string; subject: string; reasons: readonly string[] }[] = [];
+  const decisions: PendingAdjudication[] = [];
   const malformed: string[] = [];
   for (const entry of readJsonDir(resolve(options.adjudications), 'adjudications')) {
     const coerced = coerceAdjudication(entry.value);
     if (coerced === null) {
       malformed.push(entry.name);
-      continue;
-    }
-    const target = current.get(coerced.caseId);
-    if (target === undefined) {
-      rejected.push({
-        caseId: coerced.caseId,
-        subject: `${coerced.dimension}/${coerced.subjectId}`,
-        reasons: ['No case in the corpus matches this adjudication’s case id.'],
-      });
-      continue;
-    }
-    const outcome = applyAdjudication(target, coerced);
-    if (outcome.ok) {
-      current.set(coerced.caseId, outcome.case);
-      applied.push({
-        caseId: coerced.caseId,
-        subject: `${coerced.dimension}/${coerced.subjectId}`,
-      });
     } else {
-      rejected.push({
-        caseId: coerced.caseId,
-        subject: `${coerced.dimension}/${coerced.subjectId}`,
-        reasons: outcome.reasons,
-      });
+      decisions.push(coerced);
     }
   }
-  const target = resolve(options.out);
-  mkdirSync(target, { recursive: true });
-  for (const benchmarkCase of current.values()) {
-    writeFileSync(join(target, `${benchmarkCase.id}.json`), normaliseCase(benchmarkCase), 'utf8');
-  }
-  console.error(
-    `benchmark:case: applied ${String(applied.length)} adjudication(s); ` +
-      `rejected ${String(rejected.length)}; wrote ${String(current.size)} case(s) to ${target}. ` +
-      'An adjudication is accepted only for a subject actually in unresolved disagreement; gold labels are never edited.',
-  );
-  for (const rejection of rejected) {
-    console.error(`  REJECTED ${rejection.caseId} ${rejection.subject}:`);
-    for (const reason of rejection.reasons) {
-      console.error(`    - ${reason}`);
-    }
-  }
-  for (const name of malformed) {
+  const mode: BatchMode = options.allowPartial ? 'isolated' : 'atomic';
+  const plan = planBatchAdjudication([...byId.values()], decisions, mode);
+  if (result.issues.length > 0 && !options.recover) {
     console.error(
-      `  REJECTED malformed adjudication file ${name} (not a well-formed entry object).`,
+      `benchmark:case: ${String(result.issues.length)} corpus entr(y/ies) did not validate and are excluded from this batch.`,
     );
   }
-  if (rejected.length > 0 || malformed.length > 0 || result.issues.length > 0) {
-    process.exitCode = 1;
-  }
+  publishBatch('adjudication', plan, resolve(options.out), malformed, options);
 }
 
 function main(): void {
@@ -610,6 +903,9 @@ function main(): void {
     case 'audit':
       audit(options);
       break;
+    case 'roster':
+      roster(options);
+      break;
     case 'adjudicate':
       adjudicate(options);
       break;
@@ -623,9 +919,13 @@ function main(): void {
           '  packet     --corpus <dir> --out <dir>\n' +
           '  review     --corpus <dir>\n' +
           '  audit      --corpus <dir>\n' +
+          '  roster     --corpus <dir>                        declared-vs-used reviewers, read only\n' +
           '  adjudicate --corpus <dir> --issue --out <dir>        write the blank bound forms for a human\n' +
           '  adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply decisions that still bind\n' +
-          '  merge      --corpus <dir> --submissions <dir> --out <dir>',
+          '  merge      --corpus <dir> --submissions <dir> --out <dir>\n' +
+          'Batch runs (merge, adjudicate) take --dry-run to report the plan without writing anything,\n' +
+          '--allow-partial to write accepted items when another is refused, and --recover to finish or\n' +
+          'discard an interrupted run from its journal. The default is atomic: one refusal writes nothing.',
       );
       if (options.command !== '' && options.command !== '--help' && options.command !== '-h') {
         fail(`Unknown subcommand "${options.command}".`);
