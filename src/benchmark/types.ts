@@ -37,13 +37,37 @@ export const KNOWN_BENCHMARK_CASE_VERSIONS = [
  */
 export const BENCHMARK_PACKET_VERSION = 'benchmark-packet-v1';
 export const BENCHMARK_SUBMISSION_VERSION = 'benchmark-submission-v1';
+/**
+ * v0.7. Same fields as v1, with a stricter `submittedAt`: a v2 timestamp must be an ISO-8601 date-time
+ * carrying a timezone offset, because a string that is not a instant cannot anchor a review in time.
+ * v1 stays accepted and its recorded value is persisted verbatim, so no submission file written before
+ * v0.7 becomes unreadable.
+ */
+export const BENCHMARK_SUBMISSION_VERSION_V2 = 'benchmark-submission-v2';
 export const BENCHMARK_ADJUDICATION_VERSION = 'benchmark-adjudication-v1';
+/**
+ * v0.7. Adds `disagreementHash`, the binding that says exactly which reviewer split a decision settles,
+ * and a human-supplied `adjudicatedAt`. A v1 entry names no split, so it is read as *unbound*: still
+ * honoured, never presented as verified provenance.
+ */
+export const BENCHMARK_ADJUDICATION_VERSION_V2 = 'benchmark-adjudication-v2';
 export const BENCHMARK_AUDIT_VERSION = 'benchmark-audit-v1';
+/**
+ * v0.7 corpus release artifacts. A release manifest is a *description* of a corpus, never a case, and it
+ * carries no clock, path or machine identity, so the same corpus always produces the same bytes.
+ */
+export const BENCHMARK_RELEASE_MANIFEST_VERSION = 'benchmark-release-manifest-v1';
+/** The journal a staged batch leaves behind, which is the only record of an interrupted write. */
+export const BENCHMARK_BATCH_JOURNAL_VERSION = 'benchmark-batch-journal-v1';
 export const KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS = [
   BENCHMARK_PACKET_VERSION,
   BENCHMARK_SUBMISSION_VERSION,
+  BENCHMARK_SUBMISSION_VERSION_V2,
   BENCHMARK_ADJUDICATION_VERSION,
+  BENCHMARK_ADJUDICATION_VERSION_V2,
   BENCHMARK_AUDIT_VERSION,
+  BENCHMARK_RELEASE_MANIFEST_VERSION,
+  BENCHMARK_BATCH_JOURNAL_VERSION,
 ] as const;
 
 /** The four scored dimensions. There is no overall benchmark score (ADR-003). */
@@ -200,6 +224,11 @@ export interface BenchmarkGoldLabel {
  * to `dimension`, which the validator checks. `reviewer` is an operator-asserted name: the
  * application has no authentication, so this records who the operator says reviewed it and proves
  * nothing about who did.
+ *
+ * The four v0.7 fields are the review provenance that v0.6 checked and then discarded. They are optional
+ * and additive on purpose: a case written before v0.7 has none of them, and that means *not recorded*,
+ * never *recorded as empty* or *verified*. Nothing here authenticates a reviewer — `submittedAt` is
+ * supplied by the human, and `packetHash` binds the judgement to the input the packet froze.
  */
 export interface BenchmarkReviewerLabel {
   readonly reviewer: string;
@@ -207,6 +236,14 @@ export interface BenchmarkReviewerLabel {
   readonly label: string;
   readonly subjectId: string;
   readonly note: string | null;
+  /** The reviewer's own rubric rationale, preserved verbatim rather than dropped on merge. */
+  readonly rationale?: string | null;
+  /** The submission timestamp the reviewer supplied, recorded as supplied or normalised to UTC. */
+  readonly submittedAt?: string | null;
+  /** The hash of the blinded packet the reviewer was shown, so the judgement is tied to one frozen input. */
+  readonly packetHash?: string | null;
+  /** The hash of the submission record this label arrived in. */
+  readonly submissionHash?: string | null;
 }
 
 /**
@@ -216,6 +253,11 @@ export interface BenchmarkReviewerLabel {
  * disagreeing subject in that case, across unrelated dimensions. v2 requires the scope, and requires
  * the settled label when the outcome is `RESOLVED`: an adjudication that decides nothing cannot
  * become a gold label.
+ *
+ * v0.7 adds `disagreementHash`, the exact reviewer-disagreement state the decision was written against,
+ * and `adjudicatedAt`, the human-supplied moment it was filed. A record without a hash is *unbound*: it
+ * still settles as it did in v0.6, and every report says it predates binding rather than crediting it as
+ * verified provenance.
  */
 export interface BenchmarkAdjudication {
   readonly dimension: BenchmarkDimension;
@@ -225,6 +267,10 @@ export interface BenchmarkAdjudication {
   readonly label: string | null;
   readonly reason: string;
   readonly adjudicatedBy: string;
+  /** SHA-256 over the frozen input, the subject, and the reviewer labels that split. Absent on a v0.6 record. */
+  readonly disagreementHash?: string | null;
+  /** Supplied by the human adjudicating; never taken from a clock. */
+  readonly adjudicatedAt?: string | null;
 }
 
 /**
@@ -274,6 +320,31 @@ export interface BenchmarkCase {
   /** v1 only, and only read when it can be attached to exactly one disagreement. */
   readonly adjudication?: BenchmarkLegacyAdjudication | null;
   readonly limitations: readonly string[];
+}
+
+/** One label a reviewer recorded for one subject, in their own separate submission. */
+export interface SubmissionAnnotation {
+  readonly dimension: BenchmarkDimension;
+  readonly subjectId: string;
+  readonly label: string;
+  readonly rationale: string;
+}
+
+/**
+ * A reviewer's separate submission, bound to a packet by its hash.
+ *
+ * This lives with the other contracts because both the review workflow and the batch planner read it, and
+ * a shared contract must not create an import cycle between them. `reviewer` and `submittedAt` are supplied
+ * by the human: the tool has no authentication and no clock, so it refuses a blank one rather than filling
+ * it in.
+ */
+export interface AnnotationSubmission {
+  readonly version: string;
+  readonly caseId: string;
+  readonly packetHash: string;
+  readonly reviewer: string;
+  readonly submittedAt: string;
+  readonly annotations: readonly SubmissionAnnotation[];
 }
 
 export interface BenchmarkCaseIssue {

@@ -12,6 +12,7 @@
  */
 import type { BenchmarkCase, BenchmarkStratum } from './types.ts';
 import { disagreementPairs, validateBenchmarkCase } from './validate.ts';
+import { canonicalise } from './hashing.ts';
 
 /** A scaffold is not a case version; the validator refuses it, which is the point. */
 export const TEMPLATE_VERSION = 'benchmark-case-template';
@@ -49,27 +50,16 @@ export function scaffoldTemplate(stratum: BenchmarkStratum): BenchmarkCase {
   };
 }
 
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sortKeys);
-  }
-  if (typeof value === 'object' && value !== null) {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, inner]) => inner !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, inner]) => [key, sortKeys(inner)]);
-    return Object.fromEntries(entries);
-  }
-  return value;
-}
-
 /**
  * Canonical, deterministic serialisation of one case: keys sorted at every level, no `undefined`
  * keys, two-space indent, trailing newline. Normalising before storing makes a corpus diffable and
  * makes "the same case twice" produce identical bytes, which is what an import/export round-trip needs.
+ *
+ * The sorting is shared with `contentHash` (`hashing.ts`) rather than a second copy, because a case that
+ * serialises one way and hashes another is exactly how two machines would disagree about a release.
  */
 export function normaliseCase(benchmarkCase: BenchmarkCase): string {
-  return `${JSON.stringify(sortKeys(benchmarkCase), null, 2)}\n`;
+  return `${JSON.stringify(canonicalise(benchmarkCase), null, 2)}\n`;
 }
 
 export interface CaseProvenanceSummary {

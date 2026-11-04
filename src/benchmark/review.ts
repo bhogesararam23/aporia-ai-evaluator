@@ -11,27 +11,30 @@
  * These workflow artifacts are new file formats with their own versions; the benchmark *case* contract
  * is unchanged (`benchmark-case-v1`/`v2` still read), so no corpus migration is implied.
  */
-import { createHash } from 'node:crypto';
 import {
   BENCHMARK_ADJUDICATION_VERSION,
   BENCHMARK_AUDIT_VERSION,
   BENCHMARK_PACKET_VERSION,
   BENCHMARK_STRATA,
   BENCHMARK_SUBMISSION_VERSION,
+  BENCHMARK_SUBMISSION_VERSION_V2,
 } from './types.ts';
 import type {
+  AnnotationSubmission,
   BenchmarkAdjudication,
   BenchmarkCase,
   BenchmarkDimension,
   BenchmarkInputPack,
   BenchmarkReviewerLabel,
 } from './types.ts';
+import { contentHash } from './hashing.ts';
 import { benchmarkDimensionLabels } from './validate.ts';
 
 // The canonical version strings live in `types.ts` (the contracts module); these are stable aliases so
 // callers of this module keep a single source of truth for a workflow artifact's version.
 export const REVIEW_PACKET_VERSION = BENCHMARK_PACKET_VERSION;
 export const SUBMISSION_VERSION = BENCHMARK_SUBMISSION_VERSION;
+export const SUBMISSION_VERSION_V2 = BENCHMARK_SUBMISSION_VERSION_V2;
 
 const PACKET_INSTRUCTIONS =
   'Label every subject from the frozen input only. Judge each dimension on its own evidence; a ' +
@@ -55,45 +58,20 @@ export interface ReviewerPacket {
   readonly instructions: string;
 }
 
-/** One label a reviewer recorded for one subject. */
-export interface SubmissionAnnotation {
-  readonly dimension: BenchmarkDimension;
-  readonly subjectId: string;
-  readonly label: string;
-  readonly rationale: string;
-}
+/**
+ * One label a reviewer recorded for one subject, and their submission bound to a packet by its hash.
+ *
+ * Both contracts live in `types.ts` (they are shared with the batch planner), and are re-exported below so
+ * existing importers of this module keep resolving them from here.
+ */
 
-/** A reviewer's separate submission, bound to a packet by its hash. */
-export interface AnnotationSubmission {
-  readonly version: string;
-  readonly caseId: string;
-  readonly packetHash: string;
-  readonly reviewer: string;
-  readonly submittedAt: string;
-  readonly annotations: readonly SubmissionAnnotation[];
-}
-
-/** Recursively sort object keys so a hash depends on content, not on serialisation order. */
-function canonicalise(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalise);
-  }
-  if (typeof value === 'object' && value !== null) {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, inner]) => inner !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, inner]) => [key, canonicalise(inner)]);
-    return Object.fromEntries(entries);
-  }
-  return value;
-}
-
-/** A stable, key-order-independent content hash (SHA-256 hex) of any JSON value. */
-export function contentHash(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(canonicalise(value)), 'utf8')
-    .digest('hex');
-}
+/**
+ * `canonicalise`, `contentHash` and `isContentHash` live in `hashing.ts` so the review workflow, the batch
+ * planner and the release manifest hash values identically. They are re-exported here because every
+ * existing importer of `review.ts` keeps working — one hash function is the whole point.
+ */
+export { canonicalise, contentHash, isContentHash } from './hashing.ts';
+export type { AnnotationSubmission, SubmissionAnnotation } from './types.ts';
 
 /**
  * The subjects a case must be labelled on, derived from its input pack alone.
