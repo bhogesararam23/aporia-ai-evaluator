@@ -12,7 +12,13 @@
  * is unchanged (`benchmark-case-v1`/`v2` still read), so no corpus migration is implied.
  */
 import { createHash } from 'node:crypto';
-import { BENCHMARK_STRATA } from './types.ts';
+import {
+  BENCHMARK_ADJUDICATION_VERSION,
+  BENCHMARK_AUDIT_VERSION,
+  BENCHMARK_PACKET_VERSION,
+  BENCHMARK_STRATA,
+  BENCHMARK_SUBMISSION_VERSION,
+} from './types.ts';
 import type {
   BenchmarkAdjudication,
   BenchmarkCase,
@@ -22,8 +28,10 @@ import type {
 } from './types.ts';
 import { benchmarkDimensionLabels } from './validate.ts';
 
-export const REVIEW_PACKET_VERSION = 'benchmark-packet-v1';
-export const SUBMISSION_VERSION = 'benchmark-submission-v1';
+// The canonical version strings live in `types.ts` (the contracts module); these are stable aliases so
+// callers of this module keep a single source of truth for a workflow artifact's version.
+export const REVIEW_PACKET_VERSION = BENCHMARK_PACKET_VERSION;
+export const SUBMISSION_VERSION = BENCHMARK_SUBMISSION_VERSION;
 
 const PACKET_INSTRUCTIONS =
   'Label every subject from the frozen input only. Judge each dimension on its own evidence; a ' +
@@ -381,7 +389,7 @@ export function disagreementReport(benchmarkCase: BenchmarkCase): DisagreementRe
   return { caseId: benchmarkCase.id, subjects, unanimous, adjudicated, unresolved };
 }
 
-export const ADJUDICATION_TEMPLATE_VERSION = 'benchmark-adjudication-v1';
+export const ADJUDICATION_TEMPLATE_VERSION = BENCHMARK_ADJUDICATION_VERSION;
 
 export interface AdjudicationTemplateEntry {
   readonly dimension: BenchmarkDimension;
@@ -421,7 +429,7 @@ export function adjudicationTemplate(benchmarkCase: BenchmarkCase): Adjudication
   };
 }
 
-export const AUDIT_VERSION = 'benchmark-audit-v1';
+export const AUDIT_VERSION = BENCHMARK_AUDIT_VERSION;
 
 export interface CaseReadiness {
   readonly id: string;

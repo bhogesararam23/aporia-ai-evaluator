@@ -24,6 +24,28 @@ export const KNOWN_BENCHMARK_CASE_VERSIONS = [
   BENCHMARK_CASE_VERSION,
 ] as const;
 
+/**
+ * Review-workflow artifact versions (ADR-026).
+ *
+ * These are the versions of the *offline human-review files* the `benchmark:case` review workflow
+ * produces: a blinded reviewer packet, a reviewer's separate annotation submission, a scoped
+ * adjudication template, and a corpus-readiness audit. They are deliberately distinct from the
+ * benchmark **case** contract above: introducing them never changes how a `benchmark-case-v1`/`v2`
+ * file is read, so no corpus migration is implied and existing benchmark reports stay compatible.
+ * Each artifact carries its own version so a stale or mismatched file is refused rather than silently
+ * accepted — a submission bound to a packet whose input has since changed fails its hash check.
+ */
+export const BENCHMARK_PACKET_VERSION = 'benchmark-packet-v1';
+export const BENCHMARK_SUBMISSION_VERSION = 'benchmark-submission-v1';
+export const BENCHMARK_ADJUDICATION_VERSION = 'benchmark-adjudication-v1';
+export const BENCHMARK_AUDIT_VERSION = 'benchmark-audit-v1';
+export const KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS = [
+  BENCHMARK_PACKET_VERSION,
+  BENCHMARK_SUBMISSION_VERSION,
+  BENCHMARK_ADJUDICATION_VERSION,
+  BENCHMARK_AUDIT_VERSION,
+] as const;
+
 /** The four scored dimensions. There is no overall benchmark score (ADR-003). */
 export const BENCHMARK_DIMENSIONS = [
   'EVIDENCE_SUPPORT',
