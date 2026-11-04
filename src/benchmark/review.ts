@@ -36,6 +36,7 @@ import {
   declaredRoster,
   disagreementStateHash,
   isDeclaredReviewer,
+  labelledReviewerIdentities,
   resolveSettlingAdjudication,
   reviewerIdentity,
   reviewerLabelFromAnnotation,
@@ -716,12 +717,19 @@ export interface CaseReadiness {
   readonly stratum: string;
   readonly authorizedForStorage: boolean;
   readonly reviewedAt: string;
+  /** Distinct canonical reviewer identities that labelled this case, not the number of name spellings. */
   readonly reviewerCount: number;
   readonly incompleteSubjects: number;
   readonly singleReviewerSubjects: number;
   readonly unanimousSubjects: number;
   readonly adjudicatedSubjects: number;
   readonly unresolvedSubjects: number;
+  /** Bound decisions whose disagreement has moved. They are unresolved, however they are recorded. */
+  readonly staleAdjudications: number;
+  /** Legacy decisions with no binding: honoured, and never presented as verified provenance. */
+  readonly unboundAdjudications: number;
+  /** Reviewers who labelled without being declared in provenance.reviewedBy. */
+  readonly undeclaredReviewers: readonly string[];
 }
 
 export interface CorpusAudit {
@@ -734,29 +742,38 @@ export interface CorpusAudit {
     readonly casesBelowTwoReviewers: number;
     readonly incompleteSubjects: number;
     readonly unresolvedSubjects: number;
+    readonly casesWithUndeclaredReviewers: number;
+    readonly staleAdjudications: number;
+    readonly unboundAdjudications: number;
   };
   readonly accuracyClaimable: false;
   readonly accuracyReason: string;
 }
 
 /**
- * Report corpus readiness and provenance honestly. This is a *readiness* audit, not a score: it names
- * missing strata, cases without storage authorisation or a review date, subjects nobody or only one
- * reviewer has judged, and disagreements still unresolved — and it keeps `accuracyClaimable` false,
- * because none of that is a claim that the evaluator is accurate. A thin, honest corpus reads as
- * under-ready; the audit never pads a case to look complete.
+ * Report corpus readiness and provenance honestly. This is a *readiness* audit, not a score: it names missing
+ * strata, cases without storage authorisation or a review date, subjects nobody or only one reviewer has
+ * judged, disagreements still unresolved, reviewers who labelled without being declared, and decisions whose
+ * binding is stale or never existed. It keeps `accuracyClaimable` false, because none of that is a claim that
+ * the evaluator is accurate. A thin, honest corpus reads as under-ready; the audit never pads a case to look
+ * complete, and a legacy unbound decision is reported as unbound rather than counted as verified.
  */
 export function auditCorpus(cases: readonly BenchmarkCase[]): CorpusAudit {
   const present = new Set(cases.map((benchmarkCase) => benchmarkCase.stratum));
   const missingStrata = BENCHMARK_STRATA.filter((stratum) => !present.has(stratum));
   let casesMissingAuthorisation = 0;
   let casesBelowTwoReviewers = 0;
+  let casesWithUndeclaredReviewers = 0;
   let incompleteSubjectsTotal = 0;
   let unresolvedSubjectsTotal = 0;
+  let staleAdjudicationsTotal = 0;
+  let unboundAdjudicationsTotal = 0;
   const caseReports: CaseReadiness[] = cases.map((benchmarkCase) => {
     const report = disagreementReport(benchmarkCase);
-    const reviewerLabels = benchmarkCase.reviewerLabels;
-    const reviewerCount = new Set(reviewerLabels.map((label) => label.reviewer)).size;
+    const reviewerCount = labelledReviewerIdentities(benchmarkCase).length;
+    const undeclaredReviewers = labelledReviewerIdentities(benchmarkCase).filter(
+      (identity) => !isDeclaredReviewer(benchmarkCase, identity),
+    );
     const statusCount = (status: SubjectAgreementStatus): number =>
       report.subjects.filter((subject) => subject.status === status).length;
     const incomplete = statusCount('UNANNOTATED');
@@ -767,8 +784,13 @@ export function auditCorpus(cases: readonly BenchmarkCase[]): CorpusAudit {
     if (reviewerCount < 2) {
       casesBelowTwoReviewers += 1;
     }
+    if (undeclaredReviewers.length > 0) {
+      casesWithUndeclaredReviewers += 1;
+    }
     incompleteSubjectsTotal += incomplete;
     unresolvedSubjectsTotal += statusCount('UNRESOLVED');
+    staleAdjudicationsTotal += report.stale;
+    unboundAdjudicationsTotal += report.unbound;
     return {
       id: benchmarkCase.id,
       stratum: benchmarkCase.stratum,
@@ -780,6 +802,9 @@ export function auditCorpus(cases: readonly BenchmarkCase[]): CorpusAudit {
       unanimousSubjects: statusCount('UNANIMOUS'),
       adjudicatedSubjects: statusCount('ADJUDICATED'),
       unresolvedSubjects: statusCount('UNRESOLVED'),
+      staleAdjudications: report.stale,
+      unboundAdjudications: report.unbound,
+      undeclaredReviewers,
     };
   });
   return {
@@ -792,6 +817,9 @@ export function auditCorpus(cases: readonly BenchmarkCase[]): CorpusAudit {
       casesBelowTwoReviewers,
       incompleteSubjects: incompleteSubjectsTotal,
       unresolvedSubjects: unresolvedSubjectsTotal,
+      casesWithUndeclaredReviewers,
+      staleAdjudications: staleAdjudicationsTotal,
+      unboundAdjudications: unboundAdjudicationsTotal,
     },
     accuracyClaimable: false,
     accuracyReason:

@@ -218,6 +218,16 @@ export interface BenchmarkGoldLabel {
 }
 
 /**
+ * Whether a stored adjudication still binds the disagreement it was written against.
+ *
+ * `MATCHING` settles it. `STALE` does not: the reviewers moved after the decision was filed. `UNBOUND` is a
+ * v0.6 record that never named a split — honoured for compatibility, and reported as predating binding so no
+ * release can present it as verified provenance. Declared here rather than in `provenance.ts` because the
+ * case contract and the scorer both depend on it, and the contracts module must not import a behaviour module.
+ */
+export type AdjudicationBinding = 'MATCHING' | 'STALE' | 'UNBOUND';
+
+/**
  * How one reviewer resolved one subject on one dimension.
  *
  * `label` is the value the reviewer recorded; the vocabulary it must come from is the one belonging
@@ -303,6 +313,10 @@ export interface AnnotationSummary {
   readonly excludedSingleReviewer: number;
   readonly excludedNoGoldLabel: number;
   readonly excludedAdjudicatedWithoutLabel: number;
+  /** Subjects left unresolved because the decision binding them has gone stale (additive in v0.7). */
+  readonly excludedStaleAdjudication: number;
+  /** Subjects settled only by a legacy record that carries no binding (additive in v0.7). */
+  readonly excludedUnboundAdjudication: number;
   readonly note: string;
 }
 
@@ -446,4 +460,11 @@ export interface AgreementRow {
   readonly adjudicatedLabel: string | null;
   /** The case's gold label for the same subject, when one exists. */
   readonly goldLabel: string | null;
+  /**
+   * How the settling decision relates to the current disagreement (additive in v0.7).
+   *
+   * `status` deliberately keeps its existing values so a reader that switches on them does not break: a stale
+   * decision shows as `UNRESOLVED` here and explains itself through this field.
+   */
+  readonly adjudicationBinding?: AdjudicationBinding | null;
 }

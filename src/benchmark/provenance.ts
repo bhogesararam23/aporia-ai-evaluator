@@ -104,7 +104,8 @@ export function isDeclaredReviewer(benchmarkCase: BenchmarkCase, reviewerKey: st
  *   binding: honoured, never presented as verified provenance.
  * `null` — nothing has been adjudicated for this subject.
  */
-export type AdjudicationBinding = 'MATCHING' | 'STALE' | 'UNBOUND';
+export type { AdjudicationBinding } from './types.ts';
+import type { AdjudicationBinding } from './types.ts';
 
 export interface SettlingAdjudication {
   readonly adjudication: BenchmarkAdjudication | undefined;

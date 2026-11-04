@@ -9,6 +9,7 @@
  * `null` macro-F1 with a stated reason rather than a number that would look like a result.
  */
 import type {
+  AdjudicationBinding,
   AgreementRow,
   AnnotationSummary,
   BenchmarkAdjudication,
@@ -20,6 +21,8 @@ import type {
   RegressionResultRow,
 } from './types.ts';
 import { BENCHMARK_DIMENSION_LABELS } from './types.ts';
+import { compareStrings, resolveSettlingAdjudication, reviewerIdentity } from './provenance.ts';
+import { buildReviewerPacket } from './review.ts';
 
 export interface ScoredPair {
   readonly caseId: string;
@@ -223,36 +226,28 @@ function componentOf(dimension: BenchmarkDimension): string {
 /**
  * The adjudication that settles one (dimension, subject) pair.
  *
- * A v2 case scopes each adjudication explicitly. A v1 case carries one unscoped record, which is
- * honoured only when the case disagrees on exactly one subject — otherwise a single decision would
- * settle disputes it never named.
+ * From ADR-027 this is a thin call into the shared resolver in `provenance.ts`, because the disagreement
+ * report and the scorer must not disagree about whether a subject is settled. A v1 case's unscoped record is
+ * honoured only when the case disagrees on exactly one subject — otherwise a single decision would settle
+ * disputes it never named — and such a record is reported as unbound rather than as verified provenance.
  */
 function adjudicationFor(
   benchmarkCase: BenchmarkCase,
+  packetHash: string,
   dimension: BenchmarkDimension,
   subjectId: string,
   disagreementCount: number,
-): BenchmarkAdjudication | undefined {
-  const scoped = benchmarkCase.adjudications?.find(
-    (entry) => entry.dimension === dimension && entry.subjectId === subjectId,
-  );
-  if (scoped !== undefined) {
-    return scoped;
-  }
-  const legacy = benchmarkCase.adjudication;
-  if (legacy === undefined || legacy === null || disagreementCount !== 1) {
-    return undefined;
-  }
-  return {
+): {
+  readonly adjudication: BenchmarkAdjudication | undefined;
+  readonly binding: AdjudicationBinding | null;
+} {
+  return resolveSettlingAdjudication(
+    benchmarkCase,
+    packetHash,
     dimension,
     subjectId,
-    outcome: legacy.outcome,
-    // A v1 record names no settled label, so a resolved v1 adjudication cannot become a gold label;
-    // the pair is reported as resolved-without-a-value and stays out of any accuracy summary.
-    label: null,
-    reason: legacy.reason,
-    adjudicatedBy: legacy.adjudicatedBy,
-  };
+    disagreementCount,
+  );
 }
 
 /**
@@ -269,11 +264,12 @@ function adjudicationFor(
 export function agreementRows(cases: readonly BenchmarkCase[]): AgreementRow[] {
   const rows: AgreementRow[] = [];
   for (const benchmarkCase of cases) {
+    const packetHash = buildReviewerPacket(benchmarkCase).packetHash;
     const grouped = new Map<string, { reviewers: string[]; labels: string[] }>();
     for (const label of benchmarkCase.reviewerLabels ?? []) {
       const key = `${label.dimension}:${label.subjectId}`;
       const entry = grouped.get(key) ?? { reviewers: [], labels: [] };
-      entry.reviewers.push(label.reviewer);
+      entry.reviewers.push(reviewerIdentity(label.reviewer));
       entry.labels.push(label.label);
       grouped.set(key, entry);
     }
@@ -290,17 +286,22 @@ export function agreementRows(cases: readonly BenchmarkCase[]): AgreementRow[] {
       if (dimension === undefined || subjectId === undefined) {
         continue;
       }
-      const distinctReviewers = [...new Set(entry.reviewers)];
-      const distinctLabels = [...new Set(entry.labels)].sort();
+      const distinctReviewers = [...new Set(entry.reviewers)].sort(compareStrings);
+      const distinctLabels = [...new Set(entry.labels)].sort(compareStrings);
       const unanimous = distinctLabels.length === 1;
-      const adjudication = unanimous
-        ? undefined
+      const settling = unanimous
+        ? { adjudication: undefined, binding: null }
         : adjudicationFor(
             benchmarkCase,
+            packetHash,
             dimension as BenchmarkDimension,
             subjectId,
             disagreementCount,
           );
+      // A stale binding settles nothing: the split the decision named is gone, so the pair stays unresolved
+      // and is counted in the open rather than quietly credited as agreement.
+      const settles = settling.binding === 'MATCHING' || settling.binding === 'UNBOUND';
+      const adjudication = settles ? settling.adjudication : undefined;
       let status: AgreementRow['status'];
       if (distinctReviewers.length < 2) {
         // One reviewer is one opinion. Calling it agreement is how a solo note becomes a consensus.
@@ -318,13 +319,14 @@ export function agreementRows(cases: readonly BenchmarkCase[]): AgreementRow[] {
         caseId: benchmarkCase.id,
         dimension: dimension as BenchmarkDimension,
         subjectId,
-        reviewers: distinctReviewers.sort(),
+        reviewers: distinctReviewers,
         labels: entry.labels,
         unanimous,
         status,
         adjudicatedLabel:
           status === 'RESOLVED_BY_ADJUDICATION' ? (adjudication?.label ?? null) : null,
         goldLabel: gold.get(key) ?? null,
+        adjudicationBinding: settling.binding,
       });
     }
   }
@@ -389,6 +391,8 @@ export function annotationSummaries(
     const adjudicatedNoLabel = scoped.filter(
       (row) => row.status === 'RESOLVED_BY_ADJUDICATION' && row.adjudicatedLabel === null,
     ).length;
+    const staleBinding = scoped.filter((row) => row.adjudicationBinding === 'STALE').length;
+    const unboundBinding = scoped.filter((row) => row.adjudicationBinding === 'UNBOUND').length;
     const scorable = withGold.filter(
       (row) =>
         row.status === 'UNANIMOUS' ||
@@ -410,7 +414,9 @@ export function annotationSummaries(
       excludedSingleReviewer: singleReviewer,
       excludedNoGoldLabel: scoped.length - withGold.length,
       excludedAdjudicatedWithoutLabel: adjudicatedNoLabel,
-      note: 'Human annotation agreement over subjects with a defensible settled value. Not a software measure and not evaluator accuracy: reviewer identity is operator-asserted, and an excluded subject is counted here rather than dropped.',
+      excludedStaleAdjudication: staleBinding,
+      excludedUnboundAdjudication: unboundBinding,
+      note: 'Human annotation agreement over subjects with a defensible settled value. Not a software measure and not evaluator accuracy: reviewer identity is operator-asserted, an excluded subject is counted here rather than dropped, and a subject whose decision binding has gone stale is not scorable at all.',
     };
   });
 }

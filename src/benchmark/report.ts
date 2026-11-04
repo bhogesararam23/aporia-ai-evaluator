@@ -75,6 +75,10 @@ export interface AnnotationSummary {
   readonly excludedUnresolved: number;
   readonly excludedAmbiguous: number;
   readonly excludedSingleReviewer: number;
+  /** v0.7 additive: subjects whose settling decision no longer binds the current disagreement. */
+  readonly excludedStaleAdjudication: number;
+  /** v0.7 additive: subjects settled only by a legacy decision that carries no binding. */
+  readonly excludedUnboundAdjudication: number;
   readonly note: string;
 }
 
