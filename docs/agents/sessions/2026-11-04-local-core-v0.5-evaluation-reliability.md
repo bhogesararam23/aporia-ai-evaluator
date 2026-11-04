@@ -72,21 +72,34 @@ behaviour. Form submission was never affected (fields post by `name`), which is 
 had not caught it. Verified: `npm run check` 717/717 green and `npm run verify:workflow` 25/25 on the
 final tree.
 
-Durability, concurrency, failure injection, migration and backup/restore already have measured tests from
-v0.4 (`write-atomicity`, `audit-atomicity`, `migrations`, `backup-restore`); no additional gap was
-asserted without a failing test to back it.
+## 5b. Objective 3 — reliability audit (no new defect; coverage added)
 
-## 6. Objective 2 — benchmark curation workflows (not started)
+Audited the concurrency, failure, report-consistency, file-import, backup/restore and data-integrity
+paths. The bulk observation import is **all-or-nothing**: the route parses and validates every row
+before writing, then wraps the multi-row write in one `withTransaction`; `addObservation` calls
+`requireOpen` so a write into a non-open run raises a typed `AppError` the route turns into a clean
+422, and the existing "import is atomic" integration test already proves a rejected import persists
+nothing. No new defect was found, so none was fabricated. What *was* uncovered — the parser's
+adversarial branches (non-JSON, non-array, >200, non-object rows, over-cap/mis-shaped citations and
+assessments, assessments on a non-completed observation, all-issues-at-once) — is now covered by
+`tests/unit/import-observations.test.ts`. Backup/restore, migrations, write/audit atomicity and
+report/retest parity retain their v0.4 measured tests; this milestone did not duplicate them.
 
-Not begun. Must not fabricate reviewers, gold cases or accuracy; the harness still refuses an accuracy
-claim over an empty/synthetic corpus.
+## 6. Objective 1 (cont.) — benchmark curation workflows: DONE
+
+The local curation tooling shipped (commits 22–24): `scaffold` (a non-scoreable template the validator
+refuses, so the tool cannot fabricate a gold case), `validate`, `normalise` (a reproducible
+import/export round-trip), and `provenance` (reviewer labels, disagreements and scoped adjudications
+reported as the operator's own assertions). `accuracyClaimable` stays false and no reviewer, gold case
+or accuracy figure is invented.
 
 ## 7. Commit ledger
 
-The branch is **24 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`;
-plus this ledger-update commit). Test count re-measured by glob: **731 tests — 406 unit, 325
+The branch is **26 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`;
+plus this ledger-update commit). Test count re-measured by glob: **739 tests — 414 unit, 325
 integration** (session-start baseline was 701). Every pushed checkpoint was preceded by a green
 `npm run check`.
+
 
 | # | Commit | Area | Summary |
 |---|---|---|---|
@@ -114,6 +127,8 @@ integration** (session-start baseline was 701). Every pushed checkpoint was prec
 | 22 | `258a078` | feat(benchmark) | case-authoring module: scaffold (non-scoreable), normalise, provenance |
 | 23 | `23587b7` | feat(benchmark) | `benchmark:case` CLI (scaffold/validate/normalise/provenance) + tests |
 | 24 | `733de83` | docs(benchmark) | curation-workflow docs + the command in the testing guide |
+| 25 | `a6dc3c8` | test(reliability) | adversarial coverage for the bulk-import parser (no defect; import is atomic) |
+| 26 | (this) | docs(session) | reliability-audit finding, benchmark-curation status, ledger |
 
 Checkpoints pushed: #1 `fcdd9da` (CI `41807701771` ✓), #2 `737eeff` (CI `41814916079` ✓),
 #3 `395df5d` (CI `41815709425` ✓), #4 `1d66771` (CI ✓ — a11y id-scope fix; this push also reconciled

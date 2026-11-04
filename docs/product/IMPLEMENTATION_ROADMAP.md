@@ -1,7 +1,27 @@
 # Implementation Roadmap
 
 - Status: Proposed sequencing, not a delivery commitment
-- Date: 2026-11-02
+- Date: 2026-11-04
+
+## Implementation note — 2026-11-04 (v0.5)
+
+Local core v0.5 continued on the merged v0.4 line and stayed a correctness/coverage milestone, not a
+new capability phase. It **finished the evidence-identity work (ADR-025)**: `evidence-aggregation-v2`
+now counts corroboration by underlying source, collapsing two records that share a normalised
+canonical URI and excluding records marked `RELATED`; `evidence-aggregation-v1` is byte-identical and
+remains the default, with the ADR still Proposed — flipping it is an owner decision. The **benchmark
+pipeline became explicitly version-aware**, scoring each proposition under both `v1` and `v2` and
+reporting the corroborating-source count and the v1/v2 disagreement beside the verdict, and a local
+case-curation CLI (`npm run benchmark:case`: scaffold/validate/normalise/provenance) lets a reviewer
+prepare real cases — a scaffold is deliberately refused by the validator, so the tool cannot fabricate
+a scoreable case. An **accessibility defect** (duplicate field ids where the same form is rendered per
+record) was found by the audit and fixed with a deterministic per-form id scope, now enforced by the
+shared checker. **CI widened** to run `npm run check` *and* the live 25-step workflow across Windows,
+Linux and macOS on Node 24 — the cross-platform workflow evidence v0.4 did not have. The reliability
+audit found the bulk import already all-or-nothing and guarded; it added adversarial parser coverage
+rather than a defect. Phase 2 publication, Phase 3's reviewed gold set, and Phases 4–6 remain
+unimplemented, and Phase 3 stays open in the way that matters: no dataset ships, so no accuracy
+figure is established. See the [v0.5 session report](../agents/sessions/2026-11-04-local-core-v0.5-evaluation-reliability.md).
 
 ## Implementation note — 2026-11-02
 
