@@ -95,10 +95,9 @@ or accuracy figure is invented.
 
 ## 7. Commit ledger
 
-The branch is **26 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`;
-plus this ledger-update commit). Test count re-measured by glob: **739 tests — 414 unit, 325
-integration** (session-start baseline was 701). Every pushed checkpoint was preceded by a green
-`npm run check`.
+The branch is **28 commits ahead of `main`** after this commit (`git rev-list --count origin/main..HEAD`
+is authoritative). Test count re-measured by glob: **739 tests — 414 unit, 325 integration**
+(session-start baseline was 701). Every pushed checkpoint was preceded by a green `npm run check`.
 
 
 | # | Commit | Area | Summary |
@@ -127,8 +126,10 @@ integration** (session-start baseline was 701). Every pushed checkpoint was prec
 | 22 | `258a078` | feat(benchmark) | case-authoring module: scaffold (non-scoreable), normalise, provenance |
 | 23 | `23587b7` | feat(benchmark) | `benchmark:case` CLI (scaffold/validate/normalise/provenance) + tests |
 | 24 | `733de83` | docs(benchmark) | curation-workflow docs + the command in the testing guide |
-| 25 | `a6dc3c8` | test(reliability) | adversarial coverage for the bulk-import parser (no defect; import is atomic) |
-| 26 | (this) | docs(session) | reliability-audit finding, benchmark-curation status, ledger |
+| 25 | `1652085` | docs(session) | record the benchmark authoring CLI and checkpoint 6 |
+| 26 | `a6dc3c8` | test(reliability) | adversarial coverage for the bulk-import parser (import already atomic) |
+| 27 | `fb36838` | docs | reliability-audit finding, benchmark curation, roadmap entry |
+| 28 | (this) | docs | correct the ledger SHA/count mapping against `git rev-list` |
 
 Checkpoints pushed: #1 `fcdd9da` (CI `41807701771` ✓), #2 `737eeff` (CI `41814916079` ✓),
 #3 `395df5d` (CI `41815709425` ✓), #4 `1d66771` (CI ✓ — a11y id-scope fix; this push also reconciled
