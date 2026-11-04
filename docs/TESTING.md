@@ -38,7 +38,13 @@ temporary directory rather than only an in-memory database:
 ```bash
 npm run verify:workflow   # boots the server on a free loopback port against a fresh temp data dir
 npm run benchmark -- --corpus <dir>   # scores a corpus of reviewed cases you supply
+npm run benchmark:case -- scaffold --stratum <S> | validate --corpus <dir> | normalise ... | provenance ...
 ```
+
+`benchmark:case` supports local corpus authoring without fabricating anything: `scaffold` writes a
+non-scoreable template (refused by `validate`), `normalise` canonicalises valid cases for a
+reproducible import/export, and `provenance` reports reviewer labels, disagreements and scoped
+adjudications as the operator's own assertions.
 
 `verify:workflow` drives §6's 24-step sequence by submitting the forms the running application served:
 it reads each form's action, method, field names, select choices and default values from the returned

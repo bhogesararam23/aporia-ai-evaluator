@@ -107,6 +107,25 @@ A `v2` divergence from a gold label is **analysis, not a failing regression**: t
 stays tied to the product's default rule, and the report never promotes `v2` over `v1`. This mirrors
 how the application treats the two rules — both computable, one in force.
 
+### 3.3 Local curation workflows
+
+`npm run benchmark:case` supports the human work of building a corpus without ever letting the tool
+fabricate one:
+
+- **scaffold** — emit a skeleton for a chosen stratum. It is deliberately *not* a valid case: it
+  carries a `benchmark-case-template` version and no gold labels, so `validate` refuses it and it
+  cannot enter a scored corpus. Structure is provided; content must come from a real review.
+- **validate** — report structural and semantic problems in a corpus directory; exit non-zero on any.
+- **normalise** — canonicalise each valid case (sorted keys, deterministic) into an output directory;
+  invalid entries are refused, never exported. Re-running is byte-stable, so an import/export
+  round-trip is reproducible.
+- **provenance** — per-case summary of the reviewer labels, disagreements and how many a scoped
+  adjudication settles. Reviewer names are operator-asserted; the summary states this and asserts no
+  accuracy.
+
+None of these reaches the network or the application database. They are authoring aids, not a source
+of gold cases.
+
 ## 4. Evaluator performance measures
 
 For categorical verdicts, measure per-class precision/recall, confusion matrices, macro-F1 where appropriate, and calibration only when meaningful probabilities are emitted. Track false-positive SUPPORT and false-negative CONTRADICT closely. For attribution, measure wrong identity, wrong role, and false sole-credit assignments separately. For citations, assess whether the cited content actually supports the answer claim.
