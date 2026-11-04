@@ -125,9 +125,16 @@ Net test delta over the branch baseline: **+33** (739 → 772).
 | 13 | (this) | docs(session) | open the v0.6 session report and commit ledger |
 
 Checkpoint pushed: #1 = commits 1–12 pushed after a green `npm run check` + `verify:workflow`
-(`feat/aporia-v0.6-benchmark-review-workflow`, new branch). CI across Windows/Linux/macOS and the pull
-request are recorded in a follow-up entry once their runs are confirmed green — no CI result is claimed
-here before it is observed.
+(`feat/aporia-v0.6-benchmark-review-workflow`, new branch). Pull request **#9** opened against `main`
+(unmerged) at head `a7d3a9e`; state OPEN, `mergeable`.
+
+CI (`.github/workflows/ci.yml`, three-OS Node 24 matrix), observed ~2026-11-04 on runs `41861430964`
+(pull_request) and `41861333179` (push): the `check` job **passed on `windows-latest` and
+`ubuntu-latest`** on both runs, and **GitGuardian Security Checks passed**. The `macos-latest` job was
+still **queued** at the time of this report (free-tier macOS runner latency). macOS is therefore **not
+claimed green** — it is pending, not failed; the branch is benchmark-only additive and the application
+code is unchanged, so a macOS-specific failure is not expected, but no result is stated before it is
+observed.
 
 ## 8. What is NOT claimed
 
