@@ -1,8 +1,8 @@
 # Testing and Verification Guide
 
-- Status: Local checks passing; the full local workflow is verified against the running application
-- Date: 2026-11-02
-- Runtime used: Node.js v24.13.1 on Windows x64; npm 11.8.0
+- Status: Local checks passing; the full local workflow is verified against the running application, and both checks and the workflow now run in CI across Windows, Linux and macOS
+- Date: 2026-11-04
+- Runtime used: Node.js v24.13.1; npm 11.8.0. Automated results below were measured on Windows x64; `.github/workflows/ci.yml` runs `npm run check` and `npm run verify:workflow` on a Node 24 Windows/Linux/macOS matrix.
 - Test runner: `node --test` with native TypeScript type stripping
 
 ## 1. Prerequisites
@@ -56,7 +56,8 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 |---|---|---|
 | Unit: core vocabulary and lifecycle | `tests/unit/vocabulary.test.ts`, `lifecycle.test.ts` | Controlled labels, descriptions, allowed transitions |
 | Unit: validation and inputs | `validation.test.ts`, `inputs.test.ts` | Unsafe URLs, dates, text limits, enums, reviewer fields, cross-field rules |
-| Unit: evidence rule | `evidence.test.ts` | Every precedence branch, duplicate-source caveats, human/rule disagreement |
+| Unit: evidence rule | `evidence.test.ts` | Every precedence branch, duplicate-source caveats, human/rule disagreement — all under the `evidence-aggregation-v1` default |
+| Unit: corroboration by underlying source (ADR-025) | `source-identity.test.ts`, `evidence-aggregation-v2.test.ts` | Conservative canonical-URI normalisation (scheme/host case, default port, `www.`, fragment, tracking params, trailing slash, path case) and its source-id fallback; `evidence-aggregation-v2` collapsing `RELATED` copies and two records of one canonical URI to a single corroborating source; `UNKNOWN` keeping its caveat; status precedence unchanged; `v1` output byte-identical; `apparentCorroboratingSourceCount` naming the `v1` figure |
 | Unit: metrics v1–v4 | `metrics.test.ts`, `claim-metrics.test.ts`, `claim-eligibility.test.ts` | Observation-level denominators, exclusions, nulls, latest assessments, no composite score, determinism, intent-group coverage, repeated intents, untested groups, partial assessment; statement-level eligibility per relevance, voided/unrelated/refusal/abstention/omission exclusions, label-relevance conflicts, citation mappings that stop counting when the citation is withdrawn, and the separate review-progress counts |
 | Unit: website parsing | `website.test.ts` | Metadata, JSON-LD, noindex, visible-text mismatch, size/encoding limits, determinism, active-content inertness |
 | Unit: report snapshots and exports | `reporting-snapshot.test.ts`, `reporting-csv.test.ts` | Reproducible snapshots, comparisons, unknown states, CSV quoting/formula injection, JSON round-trip |
@@ -85,21 +86,25 @@ Most tests use in-memory SQLite and temporary data directories. No test writes t
 
 ## 4. Results at the time of this document
 
-Measured on 2026-11-02 in this checkout (`feat/aporia-local-core-v0.4-evaluator-integrity`), Node
-v24.13.1, npm 11.8.0:
+Measured on 2026-11-04 in this checkout (`feat/aporia-local-core-v0.5-evaluation-reliability`), Node
+v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix confirms all three OSes):
 
 - `npm ci`: pass.
 - `npm run typecheck`: pass.
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **691 tests, 691 passing, 0 failing** — 372 under `tests/unit`, 319 under
+- `npm test`: **713 tests, 713 passing, 0 failing** — 393 under `tests/unit`, 320 under
   `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 691/691 result.
+- `npm run check`: exit 0 with the same 713/713 result.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
-  `0.4.0`. The run entered every record by hand through the served forms; nothing was seeded, and no
+  `0.4.0` (the v0.5 work is additive; the release version is not bumped while ADR-025 stays Proposed).
+  The run entered every record by hand through the served forms; nothing was seeded, and no
   provider or network call was made.
+- CI (`.github/workflows/ci.yml`): `npm run check` and `npm run verify:workflow` each run on Windows,
+  Linux and macOS runners on Node 24. Confirmed green on v0.5 run `41807701771` — all six jobs passed,
+  including the 25-step live workflow on every platform.
 - Backup, verification, restore into a separate temporary directory, restart on the restored data, and
   a read-back of the restored statements, both reports, and the finding with its recorded comparison
   all completed inside that same run (steps 22–24).
