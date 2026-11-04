@@ -149,3 +149,42 @@ page's own refusal message. Run it after any change to a form, a route, a metric
 It binds a port and writes temporary directories, so it is run locally rather than in CI.
 
 The automated suite and the manual browser verification are described in [Testing](../TESTING.md).
+
+## 9. Benchmark offline human-review workflow
+
+`npm run benchmark:case` runs the whole review cycle over local JSON files — no server, no database, no
+network, no clock. It never invents a label, reviewer, timestamp, permission or gold answer. Read
+[the rubric](../evaluator/BENCHMARK_ANNOTATION_RUBRIC.md) first. A round looks like this:
+
+```bash
+# 1. Freeze a blinded packet + a blank submission template per valid case.
+npm run benchmark:case -- packet --corpus ./corpus --out ./packets
+#    -> packets/<id>.packet.json (input + subjects only, with a stable packetHash)
+#    -> packets/<id>.submission.json (reviewer/timestamp/labels left empty)
+
+# 2. A reviewer fills a submission: their own name, their own finish time, one label + rationale per
+#    subject. Nothing is pre-filled; hand it back as JSON.
+
+# 3. Import submissions safely. A stale packetHash, a wrong case, a duplicate reviewer, an unknown
+#    subject, an out-of-vocabulary label or a blank rationale is refused and leaves that case untouched.
+npm run benchmark:case -- merge --corpus ./corpus --submissions ./returned --out ./corpus-merged
+#    exits non-zero if anything was refused; gold `expected` is never edited.
+
+# 4. See where reviewers actually agree or split (a split stays UNRESOLVED; nothing is averaged).
+npm run benchmark:case -- review --corpus ./corpus-merged
+
+# 5. Where a subject genuinely split, a person records a scoped adjudication and it is applied only to
+#    that disputed subject. A RESOLVED outcome must name an in-vocabulary label; a GENUINELY_AMBIGUOUS
+#    one must carry none.
+npm run benchmark:case -- adjudicate --corpus ./corpus-merged --adjudications ./adjudications --out ./corpus-final
+
+# 6. Audit corpus readiness and provenance. This reports coverage, authorisation and agreement state —
+#    never accuracy; it always prints accuracyClaimable=false.
+npm run benchmark:case -- audit --corpus ./corpus-final
+```
+
+Treat `./corpus`, `./packets` and `./returned` with the same care as the database: they may contain
+sensitive claims and evidence excerpts and are operator-managed local files. These are workflow *artifact*
+versions; the `benchmark-case-v1`/`v2` contract and the report are unchanged, so no corpus migration is
+implied. Reviewer names and timestamps are operator-asserted and prove no independent review or
+authentication. See [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md).
