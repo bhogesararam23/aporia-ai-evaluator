@@ -17,6 +17,8 @@ import {
   type BenchmarkDimension,
   type BenchmarkStratum,
 } from './types.ts';
+import { reviewerIdentity } from './provenance.ts';
+import { isContentHash } from './hashing.ts';
 
 /**
  * Bounds a hostile or careless corpus file can be forced to respect at load time.
@@ -473,7 +475,11 @@ function validateProvenance(report: Report, provenance: unknown): Set<string> {
   if (reviewers.length === 0) {
     report.push('provenance.reviewedBy', 'At least one named reviewer is required.');
   }
-  if (new Set(reviewers).size !== reviewers.length) {
+  // Compared canonically: `Dana` and `dana ` are one person listed twice, not an authorisation record for
+  // two reviewers. `mergeSubmission` also stores canonical identities, so this is the only way a case the
+  // tool itself produced can validate against its own roster.
+  const canonicalReviewers = reviewers.map(reviewerIdentity);
+  if (new Set(canonicalReviewers).size !== canonicalReviewers.length) {
     report.push('provenance.reviewedBy', 'A reviewer is listed more than once.');
   }
   report.text('provenance.reviewedAt', provenance['reviewedAt'], 40);
@@ -514,7 +520,7 @@ function validateProvenance(report: Report, provenance: unknown): Set<string> {
     BENCHMARK_LIMITS.maxNoteLength,
     BENCHMARK_LIMITS.maxUnverified,
   );
-  return new Set(reviewers);
+  return new Set(canonicalReviewers);
 }
 
 function validateExpected(
@@ -590,7 +596,11 @@ function validateReviewerLabels(
     const where = at('reviewerLabels', entry['reviewer'], index);
     report.text(`${where}.reviewer`, entry['reviewer'], 200);
     const reviewer = entry['reviewer'];
-    if (typeof reviewer === 'string' && reviewer.length > 0 && !namedReviewers.has(reviewer)) {
+    if (
+      typeof reviewer === 'string' &&
+      reviewerIdentity(reviewer).length > 0 &&
+      !namedReviewers.has(reviewerIdentity(reviewer))
+    ) {
       report.push(
         `${where}.reviewer`,
         `"${reviewer}" is not listed in provenance.reviewedBy. A label is credited to a named reviewer of this case; the application has no authentication, so the name is operator-asserted and must still come from the declared set.`,
@@ -627,6 +637,26 @@ function validateReviewerLabels(
     }
     if (entry['note'] !== null && entry['note'] !== undefined) {
       report.text(`${where}.note`, entry['note'], BENCHMARK_LIMITS.maxNoteLength);
+    }
+    // v0.7 review provenance. Each field is checked only when it is present, so a case written before v0.7
+    // reports no new issue: an absent field means *not recorded*, which is a different fact from a recorded
+    // empty or malformed one.
+    if (entry['rationale'] !== null && entry['rationale'] !== undefined) {
+      report.text(`${where}.rationale`, entry['rationale'], 4000);
+    }
+    if (entry['submittedAt'] !== null && entry['submittedAt'] !== undefined) {
+      // Not required to be an instant: a v1 submission stored the value exactly as the reviewer wrote it,
+      // and rejecting it now would make an older merged case unreadable.
+      report.text(`${where}.submittedAt`, entry['submittedAt'], 60);
+    }
+    for (const hashField of ['packetHash', 'submissionHash'] as const) {
+      const value = entry[hashField];
+      if (value !== null && value !== undefined && !isContentHash(value)) {
+        report.push(
+          `${where}.${hashField}`,
+          `Must be a 64-character lowercase SHA-256 digest. A malformed ${hashField} silently defeats the staleness check it exists to support.`,
+        );
+      }
     }
   }
 }
@@ -746,11 +776,23 @@ function validateAdjudications(
     report.text(`${where}.reason`, entry['reason'], 4000);
     const adjudicatedBy = entry['adjudicatedBy'];
     report.text(`${where}.adjudicatedBy`, adjudicatedBy, 200);
-    if (typeof adjudicatedBy === 'string' && !namedReviewers.has(adjudicatedBy)) {
+    if (typeof adjudicatedBy === 'string' && !namedReviewers.has(reviewerIdentity(adjudicatedBy))) {
       report.push(
         `${where}.adjudicatedBy`,
         `"${adjudicatedBy}" is not listed in provenance.reviewedBy.`,
       );
+    }
+    // v0.7 binding. Absent means a v0.6 record: readable, honoured, and reported as unbound by the review
+    // workflow rather than rejected here.
+    const bindingHash = entry['disagreementHash'];
+    if (bindingHash !== null && bindingHash !== undefined && !isContentHash(bindingHash)) {
+      report.push(
+        `${where}.disagreementHash`,
+        'Must be a 64-character lowercase SHA-256 digest of the disagreement this decision settled. A malformed binding can never match, so the subject would read as permanently stale.',
+      );
+    }
+    if (entry['adjudicatedAt'] !== null && entry['adjudicatedAt'] !== undefined) {
+      report.text(`${where}.adjudicatedAt`, entry['adjudicatedAt'], 60);
     }
     const label = entry['label'];
     if (outcome === 'RESOLVED') {
