@@ -17,7 +17,9 @@ function fixtureCase(): BenchmarkCase {
     provenance: {
       origin: 'Synthetic fixture.',
       authorizedForStorage: true,
-      reviewedBy: ['dana'],
+      // v0.7 enforces the declared roster at merge, so the submitting reviewer must be declared here.
+      // The undeclared-reviewer refusal is covered in benchmark-review-merge-provenance.test.ts.
+      reviewedBy: ['dana', 'sam'],
       reviewedAt: '2026-11-05',
       unverified: [],
       limitation: 'Fixture only.',

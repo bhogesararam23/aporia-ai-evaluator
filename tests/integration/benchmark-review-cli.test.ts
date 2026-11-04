@@ -90,6 +90,13 @@ interface SubmissionShape {
   annotations: { dimension: string; subjectId: string; label: string; rationale: string }[];
 }
 
+/**
+ * Fill the CLI-issued template as a reviewer would.
+ *
+ * Templates are `benchmark-submission-v2` from v0.7, so `submittedAt` must be a real instant rather than a
+ * bare date. A v1 submission file with a date-only timestamp is still accepted, and that path is pinned in
+ * the v0.6 compatibility integration test.
+ */
 function fillSubmission(
   packetDir: string,
   id: string,
@@ -159,7 +166,13 @@ test('merge applies a valid submission and refuses a stale one, leaving gold unt
     writeFileSync(
       join(submissions.path, 'dana.json'),
       JSON.stringify(
-        fillSubmission(packets.path, 'case-m', 'dana', '2026-11-05', 'SUPPORTED_WITHIN_SCOPE'),
+        fillSubmission(
+          packets.path,
+          'case-m',
+          'dana',
+          '2026-11-05T09:00:00Z',
+          'SUPPORTED_WITHIN_SCOPE',
+        ),
       ),
       'utf8',
     );
@@ -188,7 +201,7 @@ test('merge applies a valid submission and refuses a stale one, leaving gold unt
       packets.path,
       'case-m',
       'sam',
-      '2026-11-05',
+      '2026-11-05T09:00:00Z',
       'SUPPORTED_WITHIN_SCOPE',
     );
     stale.packetHash = 'deadbeef';
@@ -242,7 +255,7 @@ test('merge refuses a duplicate reviewer within a single import run', async () =
       packets.path,
       'case-d',
       'dana',
-      '2026-11-05',
+      '2026-11-05T09:00:00Z',
       'SUPPORTED_WITHIN_SCOPE',
     );
     writeFileSync(join(submissions.path, 'dana-1.json'), JSON.stringify(dana), 'utf8');

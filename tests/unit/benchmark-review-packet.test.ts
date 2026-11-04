@@ -5,7 +5,7 @@ import {
   buildSubmissionTemplate,
   contentHash,
   REVIEW_PACKET_VERSION,
-  SUBMISSION_VERSION,
+  SUBMISSION_VERSION_V2,
 } from '../../src/benchmark/review.ts';
 import { BENCHMARK_CASE_VERSION, type BenchmarkCase } from '../../src/benchmark/types.ts';
 
@@ -128,7 +128,9 @@ test('the packet hash binds the frozen input and changes when the input changes'
 test('a submission template mirrors the packet subjects with nothing pre-filled', () => {
   const packet = buildReviewerPacket(fixtureCase());
   const template = buildSubmissionTemplate(packet);
-  assert.equal(template.version, SUBMISSION_VERSION);
+  // v0.7 issues v2 templates, which require the reviewer to supply a real instant. A v1 file a reviewer
+  // already filled in is still accepted on merge; that path is pinned in the compatibility suite.
+  assert.equal(template.version, SUBMISSION_VERSION_V2);
   assert.equal(template.caseId, packet.caseId);
   assert.equal(template.packetHash, packet.packetHash);
   assert.equal(

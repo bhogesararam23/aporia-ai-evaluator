@@ -29,6 +29,14 @@ import type {
 } from './types.ts';
 import { contentHash } from './hashing.ts';
 import { benchmarkDimensionLabels } from './validate.ts';
+import { isoDateTime } from '../core/validation.ts';
+import {
+  declaredRoster,
+  reviewerIdentity,
+  reviewerLabelFromAnnotation,
+  submissionHash,
+  type LabelProvenance,
+} from './provenance.ts';
 
 // The canonical version strings live in `types.ts` (the contracts module); these are stable aliases so
 // callers of this module keep a single source of truth for a workflow artifact's version.
@@ -116,10 +124,14 @@ export function buildReviewerPacket(benchmarkCase: BenchmarkCase): ReviewerPacke
 /**
  * A submission skeleton for one packet: one empty annotation per subject. Nothing is pre-filled — the
  * reviewer supplies the label, rationale, their own identity and their own timestamp.
+ *
+ * New templates are v2, so work issued from now on is bound to a real instant. A v1 submission file a reviewer
+ * already filled in is still accepted on merge, which is why the version travels with the artifact rather
+ * than being inferred.
  */
 export function buildSubmissionTemplate(packet: ReviewerPacket): AnnotationSubmission {
   return {
-    version: SUBMISSION_VERSION,
+    version: SUBMISSION_VERSION_V2,
     caseId: packet.caseId,
     packetHash: packet.packetHash,
     reviewer: '',
@@ -140,11 +152,19 @@ export type MergeResult =
 /**
  * Safely merge one reviewer submission into a case, appending to its reviewer labels.
  *
- * It refuses rather than repairs: a submission bound to a different (now-stale) input hash, aimed at
- * another case, from a reviewer who already submitted, containing a subject this case has no gold for,
- * an out-of-vocabulary label, a blank rationale, or a missing reviewer or timestamp is rejected in
- * full and the case is returned untouched. A successful merge never edits the gold `expected` array,
- * never removes an existing reviewer's label, and never invents a label, reviewer, or timestamp.
+ * It refuses rather than repairs: a submission on an unsupported version, aimed at another case, bound to a
+ * now-stale input hash, from a reviewer the case does not declare, duplicating a reviewer who already
+ * submitted (however they spelled the name), containing a subject this case has no gold for, an
+ * out-of-vocabulary label, a blank rationale, or a missing reviewer or timestamp is rejected in full and the
+ * case is returned untouched. Every reason is reported at once, so a defective file is fixed in one pass.
+ *
+ * What it keeps (ADR-027): the reviewer's rationale, the timestamp they supplied, the packet hash the
+ * judgement was bound to and the hash of the submission record it arrived in. v0.6 demanded the first two,
+ * checked the third, and stored none.
+ *
+ * What it never does: edit the gold `expected` array, delete an existing reviewer's label, widen
+ * `provenance.reviewedBy`, invent a reviewer, label or timestamp, or read a clock. Authorising a reviewer is
+ * a human edit to the case, and an empty roster therefore authorises nobody.
  */
 export function mergeSubmission(
   benchmarkCase: BenchmarkCase,
@@ -152,8 +172,12 @@ export function mergeSubmission(
   alreadyMergedReviewers: readonly string[] = [],
 ): MergeResult {
   const reasons: string[] = [];
-  if (submission.version !== SUBMISSION_VERSION) {
-    reasons.push(`Unsupported submission version "${submission.version}".`);
+  const versionSupported =
+    submission.version === SUBMISSION_VERSION || submission.version === SUBMISSION_VERSION_V2;
+  if (!versionSupported) {
+    reasons.push(
+      `Unsupported submission version "${submission.version}". Accepted: ${SUBMISSION_VERSION}, ${SUBMISSION_VERSION_V2}.`,
+    );
   }
   if (submission.caseId !== benchmarkCase.id) {
     reasons.push(
@@ -166,21 +190,52 @@ export function mergeSubmission(
       'Stale submission: its packet hash does not match the case input, which changed since the packet was issued.',
     );
   }
-  const reviewer = submission.reviewer.trim();
-  if (reviewer === '') {
+
+  // Reviewer identity is canonical, so one person cannot submit twice by changing capitalisation and be
+  // counted as a second reviewer agreeing with themselves.
+  const reviewerKey = reviewerIdentity(submission.reviewer);
+  if (reviewerKey === '') {
     reasons.push('A submission must carry a reviewer label; the tool will not invent one.');
+  } else {
+    const roster = declaredRoster(benchmarkCase);
+    if (roster.length === 0) {
+      reasons.push(
+        'No reviewer is declared in provenance.reviewedBy for this case, so nobody is authorised to submit. Declaring a reviewer is a human decision this tool will not make.',
+      );
+    } else if (!roster.includes(reviewerKey)) {
+      reasons.push(
+        `Reviewer "${submission.reviewer.trim()}" is not in the declared roster (provenance.reviewedBy: ${roster.join(', ')}). A merge never authorises a reviewer; add the name to the case deliberately, which a release verify will then show as a change.`,
+      );
+    }
   }
-  if (submission.submittedAt.trim() === '') {
+
+  const suppliedTimestamp = submission.submittedAt.trim();
+  let submittedAt = '';
+  if (suppliedTimestamp === '') {
     reasons.push(
       'A submission must carry a reviewer-supplied timestamp; the tool will not invent one.',
     );
+  } else if (submission.version === SUBMISSION_VERSION_V2) {
+    // v2 only: a value that is not an instant cannot anchor a review in time. v1 stays as recorded, so a
+    // submission file written before v0.7 still merges.
+    const checked = isoDateTime(suppliedTimestamp, 'submission.submittedAt');
+    if (checked.ok) {
+      submittedAt = checked.value;
+    } else {
+      reasons.push(
+        checked.issues[0]?.message ?? 'The submission timestamp is not a valid instant.',
+      );
+    }
+  } else {
+    submittedAt = suppliedTimestamp;
   }
-  const priorReviewers = new Set([
-    ...benchmarkCase.reviewerLabels.map((label) => label.reviewer),
-    ...alreadyMergedReviewers.map((name) => name.trim()),
+
+  const priorKeys = new Set([
+    ...benchmarkCase.reviewerLabels.map((label) => reviewerIdentity(label.reviewer)),
+    ...alreadyMergedReviewers.map(reviewerIdentity),
   ]);
-  if (reviewer !== '' && priorReviewers.has(reviewer)) {
-    reasons.push(`Duplicate submission: reviewer "${reviewer}" has already labelled this case.`);
+  if (reviewerKey !== '' && priorKeys.has(reviewerKey)) {
+    reasons.push(`Duplicate submission: reviewer "${reviewerKey}" has already labelled this case.`);
   }
   if (submission.annotations.length === 0) {
     reasons.push('The submission records no annotations.');
@@ -207,7 +262,9 @@ export function mergeSubmission(
       );
     }
     if (annotation.rationale.trim() === '') {
-      reasons.push(`Annotation ${String(index)} has no rationale.`);
+      reasons.push(
+        `Annotation ${String(index)} has no rationale. The rubric requires one, and an unexplained gold label cannot be reviewed later.`,
+      );
     }
   });
   for (const subject of packet.subjects) {
@@ -219,13 +276,15 @@ export function mergeSubmission(
   if (reasons.length > 0) {
     return { ok: false, reasons };
   }
-  const appended: BenchmarkReviewerLabel[] = submission.annotations.map((annotation) => ({
-    reviewer,
-    dimension: annotation.dimension,
-    label: annotation.label,
-    subjectId: annotation.subjectId,
-    note: null,
-  }));
+  const provenance: LabelProvenance = {
+    reviewerKey,
+    submittedAt,
+    packetHash: packet.packetHash,
+    submissionHash: submissionHash(submission),
+  };
+  const appended: BenchmarkReviewerLabel[] = submission.annotations.map((annotation) =>
+    reviewerLabelFromAnnotation(annotation, provenance),
+  );
   return {
     ok: true,
     case: { ...benchmarkCase, reviewerLabels: [...benchmarkCase.reviewerLabels, ...appended] },
