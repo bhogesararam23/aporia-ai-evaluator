@@ -63,14 +63,14 @@ cannot bind a loopback port would fail the job rather than pass vacuously; none 
 Two new structural accessibility guards were added to the shared page-walking checks and pass on every
 visited page: every `<a href>` has an accessible name, and no element uses a positive `tabindex`.
 
-The audit surfaced one **real, unfixed defect**: duplicate `id` attributes where the same form is
-rendered once per record (run detail, statement workspace) — the shared field helpers emit a static
-`field-<name>` id for every instance, so a page can repeat `field-reviewer` etc. up to 11 times and every
-`<label for>` / `aria-describedby` but the first resolves to the wrong control. Form submission is
-unaffected (fields post by `name`), so the functional suite never caught it. Fixing it needs a per-form
-id scope threaded through the repeated-form renderers; it is recorded in
-`docs/KNOWN_LIMITATIONS.md §7` and scheduled as a focused follow-up rather than asserted by the shared
-check (which would fail today).
+The audit surfaced one **real defect, now fixed**: duplicate `id` attributes where the same form is
+rendered once per record. Field components gained an optional per-form `scope` (a deterministic,
+DOM-safe `field-<scope>-<name>`); every repeated-form renderer (statement workspace, claim page, run
+detail, finding detail) passes one; and the shared accessibility checker now enforces unique ids and
+resolvable `label[for]` references across all walked pages. `tests/unit/dom-a11y.test.ts` pins the
+behaviour. Form submission was never affected (fields post by `name`), which is why the functional suite
+had not caught it. Verified: `npm run check` 717/717 green and `npm run verify:workflow` 25/25 on the
+final tree.
 
 Durability, concurrency, failure injection, migration and backup/restore already have measured tests from
 v0.4 (`write-atomicity`, `audit-atomicity`, `migrations`, `backup-restore`); no additional gap was
@@ -83,8 +83,8 @@ claim over an empty/synthetic corpus.
 
 ## 7. Commit ledger
 
-Every pushed checkpoint was preceded by a green `npm run check`. Local count re-measured by glob: **713
-tests — 393 unit, 320 integration** (baseline at session start was 701).
+Every pushed checkpoint was preceded by a green `npm run check`. Count re-measured by glob after the
+accessibility fix: **717 tests — 397 unit, 320 integration** (session-start baseline was 701).
 
 | # | Commit | Area | Summary |
 |---|---|---|---|
@@ -97,10 +97,21 @@ tests — 393 unit, 320 integration** (baseline at session start was 701).
 | 7 | `737eeff` | docs(testing) | re-measure 713 (393/320); record three-OS CI |
 | 8 | `098971e` | test(a11y) | link accessible-name + no-positive-tabindex guards (pass) |
 | 9 | `fe1a92a` | docs(limitations) | record the duplicate field-id accessibility defect from the audit |
+| 10 | `f46b71e` | feat(a11y) | optional per-form id scope in shared field components |
+| 11 | `1fb3337` | fix(a11y) | scope statement-workspace form ids |
+| 12 | `d793b53` | fix(a11y) | scope claim-page evidence/assessment/supersede ids |
+| 13 | `e64c482` | fix(a11y) | scope run-detail assessment + void form ids |
+| 14 | `5bf1ccf` | fix(a11y) | scope finding transition/amendment note ids |
+| 15 | `413cdb4` | test(a11y) | enforce unique ids + resolvable label refs in the checker |
+| 16 | `afe0cfd` | test(a11y) | regression coverage for repeated forms + rejected submissions |
 
-Checkpoints pushed: #1 = commits 1–4 (`fcdd9da`), #2 = commits 5–7 (`737eeff`), #3 = commits 8–9.
-Pull request **#8** opened (unmerged), scoped honestly: Objectives 1, 3, 5 and partial 4 done; Objectives 2
-and the remainder of 4 in progress.
+Checkpoints pushed: #1 = commits 1–4 (`fcdd9da`, CI `41807701771`), #2 = commits 5–7 (`737eeff`, CI
+`41814916079`), #3 = commits 8–9 (in `41815709425`). PR #8 head had lagged at `737eeff` (7 commits)
+while the branch remote was already at `395df5d` (10); a fresh push advances the PR head to the current
+tip. This checkpoint (#4) adds the accessibility id-scope fix (commits 10–16) and these ledger updates.
+
+Pull request **#8** (unmerged): Objectives 1, 3, 5 and 4(a11y) done and verified; Objective 2 and the
+Objective-4 reliability/browser-manual remainder are in progress.
 
 ## 8. What is NOT claimed
 
