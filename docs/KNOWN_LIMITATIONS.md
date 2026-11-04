@@ -1,7 +1,7 @@
 # Known Limitations and Out-of-Scope Behavior
 
-- Status: Current as of local core v0.4
-- Date: 2026-11-02
+- Status: Current as of local core v0.7
+- Date: 2026-11-05
 
 This document prevents the implementation from being mistaken for the complete product or a production-ready system. It should be updated whenever a milestone closes one of these gaps.
 
@@ -30,6 +30,7 @@ This document prevents the implementation from being mistaken for the complete p
 - Metrics cannot be generalized to all AI systems, regions, languages, or future provider behavior. Provider output is an observation under one recorded configuration.
 - The `metrics-v4` eligibility correction is a correctness fix, not validation evidence. Refusals, abstentions, ambiguities, unrelated remarks, reviewer descriptions of omissions and voided records no longer enter factual denominators, so a rate means what it claims; that still says nothing about whether reviewers classified the underlying statements well. Nothing in this repository has measured agreement between reviewers, and no accuracy figure is established or claimed.
 - The v0.6 offline review workflow (ADR-026: `benchmark:case packet/merge/review/audit/adjudicate`) gives a real review reproducible, blinded mechanics, but it is a tool, not a result. No packet has been issued to a live reviewer and no gold corpus ships. The workflow keeps `accuracyClaimable: false` by construction; it never fabricates a reviewer, timestamp, permission or label, never turns an unresolved disagreement into gold (a `RESOLVED` adjudication is accepted only for a subject that actually split, and a `GENUINELY_AMBIGUOUS` one may carry no label), and reviewer independence is still unverifiable because the local app has no authentication. The content hash proves only that a submission matches the frozen input the packet was built from — not that a second human independently produced it.
+- The v0.7 changes (ADR-027) make a review attributable and a corpus releasable; they do not make it valid. A merged label now keeps the reviewer's own rationale, their supplied timestamp and the packet hash it was bound to, so "who decided what, when, against which frozen input" is recoverable — but every one of those values is still human-supplied, the roster in `provenance.reviewedBy` is a statement the operator makes rather than an identity the system verifies, and canonicalising a name only prevents one person being counted twice by respelling it. No real reviewer, review, timestamp, label or authorisation has been produced by this repository.
 
 ## 4. Identity, attribution, and trust limits
 
@@ -123,5 +124,17 @@ Do not use it to:
 - claim universal truth or AI-quality scores;
 - publish accusations or sensitive personal data without review and authorization;
 - substitute for legal, scientific, identity, or security verification.
+
+## 11. Review provenance, adjudication binding and corpus release limits
+
+- **A hash is not authenticity.** Case, packet, submission and release digests are canonical SHA-256 over recorded content. They detect that a file changed. They cannot show a reviewer was a real second person, that material is genuine, or that nothing was fabricated before it was hashed — a manifest over invented labels is a faithful digest of invented labels.
+- **Readiness is not accuracy.** Release gates cover validity, duplicate ids, storage authorisation, review dates, roster conformity, stale decisions, annotation coverage, reviewer counts and unresolved disagreements. All of them passing means the corpus is internally consistent and reviewed as declared. `accuracyClaimable` is the literal `false` in every manifest, audit and report, and no gate, coverage figure or agreement rate changes it.
+- **An unbound legacy adjudication is honoured, not verified.** A decision recorded before bindings existed still settles its subject so older cases keep working, and `allAdjudicationsBound` fails (non-blocking) while any such record stands, so a release cannot be described as provenance-verified without re-adjudicating it.
+- **A stale binding settles nothing.** When reviewers move after a decision is filed, that decision is reported `STALE` and the subject stays unresolved. The tool cannot tell whether the move was a reviewer legitimately reconsidering or an edit that should not have happened; it only detects that the recorded split is no longer the one the decision named.
+- **A release is not a publication or a registry.** It is a local JSON manifest. Nothing is signed, timestamped, published, or externally attested; anyone with the files can recompute them, and anyone with write access can rewrite the corpus before the next freeze.
+- **Atomic batches protect the corpus, not the reviewer.** Staging plus a journal makes an interrupted import recoverable and prevents a partial apply, but it does not verify that a submission is honest; a refusal is a content and provenance check, not an authenticity check.
+- **The default changed.** Batch writes are atomic from v0.7, so a previously working script that relied on partial application now exits non-zero and writes nothing; `--allow-partial` restores it explicitly.
+- **Digest compatibility break, in practice empty.** Ordering that reaches a hash is now by code unit rather than locale collation, so v0.6-computed packet and case hashes differ from v0.7 ones and a packet issued before the change must be re-issued. No such packet exists, because no review has been run.
+- **The release layer has never frozen real material.** Its fixtures are synthetic; `benchmark:release` has not been run against a corpus of genuine reviewed cases, because none exists yet.
 
 See [Implementation Status](IMPLEMENTATION_STATUS.md) for the requirement matrix and [Testing](TESTING.md) for what was actually run.
