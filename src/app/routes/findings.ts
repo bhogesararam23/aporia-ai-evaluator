@@ -444,6 +444,7 @@ function transitionPanel(finding: FindingRecord, projectId: string, state: FormS
                 ${comparisonCitationField(finding, state.values, state.issues)}
                 ${textareaField({
                   name: 'note',
+                  scope: 'transition',
                   label: 'What changed and why',
                   value: valueOf(state.values, 'note'),
                   issues: state.issues,
@@ -737,6 +738,7 @@ function detailFields(finding: FindingRecord, projectId: string, state: FormStat
         })}
         ${textareaField({
           name: 'note',
+          scope: 'details',
           label: 'Why this amendment is being made',
           value: valueOf(state.values, 'note'),
           issues: state.issues,
