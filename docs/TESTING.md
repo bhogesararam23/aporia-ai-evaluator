@@ -38,13 +38,21 @@ temporary directory rather than only an in-memory database:
 ```bash
 npm run verify:workflow   # boots the server on a free loopback port against a fresh temp data dir
 npm run benchmark -- --corpus <dir>   # scores a corpus of reviewed cases you supply
-npm run benchmark:case -- scaffold --stratum <S> | validate --corpus <dir> | normalise ... | provenance ...
+npm run benchmark:case -- scaffold --stratum <S> | validate --corpus <dir> | normalise ... | provenance ... | packet ... | merge ... | review ... | audit ...
 ```
 
 `benchmark:case` supports local corpus authoring without fabricating anything: `scaffold` writes a
 non-scoreable template (refused by `validate`), `normalise` canonicalises valid cases for a
 reproducible import/export, and `provenance` reports reviewer labels, disagreements and scoped
 adjudications as the operator's own assertions.
+
+Since v0.6 the same command runs the offline human-review workflow (ADR-026): `packet` writes a blinded
+reviewer packet (no gold, no prior annotations, no evaluator output) plus a blank submission template per
+case, bound to a stable content hash; `merge` imports filled submissions into `reviewerLabels` and refuses
+stale, duplicate, mismatched, out-of-vocabulary or blank-rationale input (non-zero exit, case untouched,
+`expected` never edited); `review` reports per-subject agreement leaving a split unresolved; and `audit`
+reports corpus readiness and provenance with `accuracyClaimable: false`. All are pure local file tooling —
+no network, no database, no clock; reviewer names and timestamps stay operator-asserted.
 
 `verify:workflow` drives §6's 24-step sequence by submitting the forms the running application served:
 it reads each form's action, method, field names, select choices and default values from the returned
@@ -86,6 +94,7 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 | Integration: query-count and write-atomicity measurement | `query-counts.test.ts`, `write-atomicity.test.ts`, `audit-atomicity.test.ts` | Measured statement counts that must not grow with the number of records, and every multi-record write path rolling back as one unit when a later step or the audit append fails |
 | Unit: report compatibility | `report-compatibility.test.ts`, `reporting-snapshot.test.ts` | `metrics-v1` to `v4` and `report-template-v1` to `v4` snapshots rendering the figures they were stored with, absent blocks shown as not recorded rather than zero, and the review-progress wording following the version that produced the snapshot |
 | Unit and integration: benchmark contract | `benchmark-validate.test.ts`, `benchmark-source-identity.test.ts`, `benchmark-cli.test.ts` | Nested field-by-field corpus validation, evidence versus underlying-source identity, reviewer disagreement staying unresolved rather than becoming a manufactured consensus, adjudication scoping, and a harness that refuses to present an accuracy claim from synthetic or insufficient material |
+| Unit and integration: benchmark review workflow (v0.6) | `benchmark-review-packet.test.ts`, `benchmark-review-merge.test.ts`, `benchmark-review-disagreement.test.ts`, `benchmark-review-audit.test.ts`, `benchmark-review-cli.test.ts` | Blinded packets that leak no gold/annotation/output and a stable content hash that detects a stale input; all-or-nothing submission merge refusing stale/duplicate/mismatched/unknown-subject/out-of-vocabulary/blank cases without touching `expected`; per-subject agreement with a split left unresolved; corpus readiness/provenance audit with `accuracyClaimable: false`; and the `packet`/`merge`/`review`/`audit` CLI end to end |
 | Architecture and policy | `boundaries.test.ts`, `docs-links.test.ts`, `no-network.test.ts` | Layer boundaries, relative documentation links, no external network/provider client code |
 
 Most tests use in-memory SQLite and temporary data directories. No test writes to the production `data/` directory. Test fixtures are isolated from the shipped application; the application starts with no seeded projects, claims, runs, or reports.

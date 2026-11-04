@@ -1,8 +1,8 @@
 # Benchmark Annotation Rubric
 
-- Status: Current for `benchmark-case-v1`
-- Date: 2026-11-01
-- Related: [Benchmarking and Validation](BENCHMARKING_AND_VALIDATION.md), [Implemented Metrics v3](IMPLEMENTED_METRICS_V3.md), [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md)
+- Status: Current for `benchmark-case-v1` and `benchmark-case-v2`, and for the v0.6 offline review workflow (ADR-026)
+- Date: 2026-11-04
+- Related: [Benchmarking and Validation](BENCHMARKING_AND_VALIDATION.md), [Implemented Metrics v3](IMPLEMENTED_METRICS_V3.md), [ADR-020](../agents/adrs/ADR-020-offline-benchmark-harness.md), [ADR-026](../agents/adrs/ADR-026-benchmark-review-workflow.md)
 
 This rubric tells a human reviewer how to assign the gold labels a benchmark case carries. It exists
 because a benchmark is only as good as the discipline behind its labels, and because Aporia's own
@@ -171,3 +171,35 @@ useful than a bigger unaccountable one.
 If a corpus has no cases, or is missing a required stratum, the harness reports that and exits
 non-zero. Do not generate filler cases to make it pass. Synthetic cases belong in automated tests and
 must never be written into a corpus directory or described as gold labels.
+
+## 9. Running the review with the offline workflow (v0.6, ADR-026)
+
+The `npm run benchmark:case` workflow gives the discipline above reproducible mechanics so a review is
+blinded, separate, and safely merged. It is local file tooling only — no network, no database, no clock.
+
+1. **Issue a blinded packet.** `packet --corpus <dir> --out <dir>` writes, per case, a
+   `benchmark-packet-v1` file (the frozen input, the subject list, and this rubric's guidance) and a blank
+   `benchmark-submission-v1` template. The packet deliberately omits the gold `expected` labels, any
+   existing annotations, the stratum, provenance, and anything the evaluator produced, so your judgement is
+   not anchored by them. The packet's `packetHash` binds the submission to exactly that frozen input.
+2. **Label from the input only.** Fill the submission template: one label and rationale per subject, plus
+   your own name and the timestamp you actually finished. The tool never fills these in for you, and it
+   never asserts your identity or independence — the name is operator-asserted.
+3. **Merge safely.** `merge --corpus <dir> --submissions <dir> --out <dir>` appends your labels to the
+   case's `reviewerLabels`. It refuses — leaving the case untouched — a submission whose packet hash is
+   stale (the input changed), aimed at a different case, duplicated for the same reviewer, carrying a
+   subject this case does not have, a label outside the dimension's vocabulary, a blank rationale, or a
+   missing reviewer/timestamp. It never edits the gold `expected` array and never removes another reviewer's
+   label. A rejected run exits non-zero so you notice nothing was imported.
+4. **Report disagreement without resolving it.** `review --corpus <dir>` classifies each subject as
+   unannotated, single-reviewer (not agreement), unanimous, adjudicated, or **unresolved**. A split stays
+   unresolved; nothing here picks a side for you.
+5. **Adjudicate as a human.** Where reviewers genuinely split, a person files a scoped adjudication naming
+   the exact dimension and subject and stating the outcome and reason — or records that the case is
+   genuinely ambiguous. An unresolved disagreement must never become a gold label by default.
+6. **Audit readiness, not accuracy.** `audit --corpus <dir>` reports missing strata, cases without storage
+   authorisation or a review date, subjects fewer than two reviewers judged, and unresolved disagreements.
+   It always reports `accuracyClaimable: false` — readiness to review is not a claim that the evaluator is
+   accurate, which would require a genuinely reviewed, authorised corpus and validity checks this build
+   does not have.
+
