@@ -1,8 +1,9 @@
-# Implementation Status — Local Core v0.4
+# Implementation Status — Local Core
 
 - Status: Implemented and verified against the running application; owner acceptance and release remain pending
-- Date: 2026-11-02
-- Branch: `feat/aporia-local-core-v0.4-evaluator-integrity`
+- Date: 2026-11-04
+- Branch: `feat/aporia-v0.6-benchmark-review-workflow`
+- Milestones: v0.1–v0.5 are merged to `main` (v0.4 `43ce438`, evidence-corroboration fix PR #7, v0.5 `d941171`); v0.6 — the offline benchmark human-review workflow (ADR-026) — is in progress on this feature branch with a pull request pending, so it is **not merged and not owner-accepted**
 - Scope: local-first evidence evaluation without provider, cloud, crawler, or publishing integrations
 
 This matrix records what is actually implemented and verified in this repository. “Validated” means the named local check ran successfully; it does not mean an external review, production deployment, or provider validation occurred. The existing documents remain the requirements source of truth.
@@ -83,6 +84,27 @@ This matrix records what is actually implemented and verified in this repository
 | Whole-workflow verification against the running app | Implemented / Validated | `npm run verify:workflow` drives §6's 24 steps through the served forms against a fresh temporary data directory, then backs up, verifies, restores elsewhere, restarts and reads everything back | 25 entries passed, 0 failed, 0 not-run on 2026-11-02 (Windows x64, Node v24.13.1); not run in CI |
 | Metric and template version registry | Implemented / Validated | `metrics-v1`…`v4`, `report-template-v1`…`v4`, `comparison-rule-v1`/`v2`, `benchmark-case-v1`/`v2` are declared in one place, and stored snapshots render what they were written with | `tests/unit/report-compatibility.test.ts`, `tests/integration/upgrade-v03-to-v04.test.ts` |
 
+### v0.5 additions (merged to `main` at `d941171`)
+
+| Capability | Status | Implementation | Verification |
+|---|---|---|---|
+| Version-aware benchmark regression | Implemented / Validated | `src/benchmark/scoring.ts` scores every frozen proposition under **both** `evidence-aggregation-v1` and `-v2`, reporting each verdict plus the corroborating-source count; a case file may carry an optional `canonicalUri` that `v2` uses to collapse two records of one source | `tests/unit/benchmark-evidence-rules.test.ts`, `tests/unit/benchmark-source-identity.test.ts` |
+| Local benchmark case-authoring CLI | Implemented / Validated | `src/benchmark/authoring.ts` + `scripts/benchmark-case.ts` (`npm run benchmark:case`) scaffold a non-scoreable template, validate, canonically normalise (byte-stable round-trip), and summarise provenance; a scaffold is refused by `validate` so it cannot enter a scored corpus | `tests/unit/benchmark-authoring.test.ts`, `tests/integration/benchmark-case-cli.test.ts` |
+| Accessibility: unique per-form control ids | Implemented / Validated | Shared field components take an optional per-form `scope`, and every repeated renderer on the claim, run, finding and answer-claim pages scopes its ids and label `for` references; a shared check enforces unique ids and resolvable label references | `tests/unit/dom-a11y.test.ts`, `tests/integration/accessibility-v04-states.test.ts` |
+| Three-platform CI matrix | Implemented | GitHub Actions runs `npm run check` and the live `verify:workflow` on Node 24 across Windows, Linux and macOS | CI run green across the three runners (verified via `gh` at the v0.5 checkpoint) |
+| Bulk-import parser adversarial coverage | Implemented / Validated | The observation-import parser is exercised against malformed / hostile payloads; the import path was confirmed already atomic (no defect to fix) | `tests/integration/*import*` parser cases |
+
+### v0.6 additions (this branch, ADR-026, PR pending)
+
+| Capability | Status | Implementation | Verification |
+|---|---|---|---|
+| Blinded reviewer packets with stable content hash | Implemented / Validated (not merged) | `src/benchmark/review.ts` `contentHash` (key-order-independent SHA-256) and `buildReviewerPacket` emit the frozen input + subjects derived from the input only, omitting gold, annotations, adjudications, stratum, provenance and evaluator output; the `packetHash` detects a changed input | `tests/unit/benchmark-review-packet.test.ts` |
+| Separate reviewer submissions | Implemented / Validated (not merged) | `buildSubmissionTemplate` yields one blank annotation per subject with empty reviewer/timestamp; the reviewer supplies label, rationale, identity and time — nothing is pre-filled or invented | `tests/unit/benchmark-review-packet.test.ts` |
+| All-or-nothing safe merge | Implemented / Validated (not merged) | `mergeSubmission`/`mergeSubmissions` refuse stale hash, wrong case, duplicate reviewer, unknown/repeated subject, out-of-vocabulary label, blank rationale/reviewer/timestamp — leaving the case untouched — and never edit `expected` | `tests/unit/benchmark-review-merge.test.ts` |
+| Per-subject disagreement report and scoped adjudication template | Implemented / Validated (not merged) | `disagreementReport` classifies UNANNOTATED/SINGLE_REVIEWER/UNANIMOUS/ADJUDICATED/UNRESOLVED and never manufactures a consensus; `adjudicationTemplate` lists only unresolved subjects, blank | `tests/unit/benchmark-review-disagreement.test.ts` |
+| Corpus readiness and provenance audit | Implemented / Validated (not merged) | `auditCorpus` reports missing strata, missing authorisation/review date, thin review and unresolved disagreement with `accuracyClaimable: false` | `tests/unit/benchmark-review-audit.test.ts` |
+| Review-workflow CLI subcommands | Implemented / Validated (not merged) | `npm run benchmark:case -- packet / merge / review / audit` run the workflow over local JSON files; new *artifact* versions in `types.ts`, case contract and report unchanged | `tests/integration/benchmark-review-cli.test.ts` |
+
 ## 2. Product requirement mapping
 
 | Requirement | Status | Notes |
@@ -158,6 +180,7 @@ The broader Product Requirements acceptance criterion that includes “run at le
 | ADR-023 claim eligibility and metrics-v4 | Implemented, **Proposed** — awaiting owner review | Four-layer enforcement plus the separate review-progress counts | `tests/unit/claim-eligibility.test.ts`, `tests/integration/report-retest-parity.test.ts` |
 | ADR-024 retest provenance and comparability | Implemented, **Proposed** — awaiting owner review | Durable focus metric and rule version, comparison recomputed in the write transaction, status bound to the cited comparison by trigger | `tests/integration/upgrade-v03-to-v04.test.ts`, `scripts/local-workflow.ts` steps 18–19 |
 | ADR-025 corroboration by underlying source | **Proposed** — `evidence-aggregation-v2` implemented and tested, **not the default** | The rule lives behind the versioned `deriveEvidenceStatus(relationships, ruleVersion)` entry point: a `RELATED` supporting record never adds a source and two records sharing one normalised canonical URI collapse to one underlying source; the status precedence is unchanged and the `v1` figure is disclosed via `apparentCorroboratingSourceCount`. The canonical URI is threaded through the live read path, the achievements query and the report mapper. `EVIDENCE_RULE_VERSION` stays `v1`, so no live report or stored snapshot changes until the owner accepts the ADR and flips the one-line default | `tests/unit/source-identity.test.ts`, `tests/unit/evidence-aggregation-v2.test.ts` (fail against `v1`), `tests/integration/repositories-evidence.test.ts` (DB-to-core) |
+| ADR-026 benchmark review workflow | Implemented on the v0.6 branch, **Proposed** — awaiting owner review; not yet merged | Blinded reviewer packets bound to a stable content hash, separate submissions, all-or-nothing merge that refuses stale/duplicate/mismatched/out-of-vocabulary input without editing gold, per-subject disagreement that never manufactures consensus, and a corpus readiness audit that keeps `accuracyClaimable: false`. New *artifact* versions only — the `benchmark-case-v1`/`v2` contract and `benchmark-report` are unchanged, so no corpus migration and no default change | `tests/unit/benchmark-review-*.test.ts`, `tests/integration/benchmark-review-cli.test.ts` |
 
 The ADRs remain **Proposed** in the index pending owner review; implementation does not equal owner acceptance.
 
@@ -173,8 +196,8 @@ The ADRs remain **Proposed** in the index pending owner review; implementation d
 
 ## 7. Next steps
 
-1. Owner review and acceptance or modification of ADRs 008–024. ADR-018 through ADR-022 are still **Proposed**, and v0.4 did not change that; implementation is not approval.
-2. Recruit real reviewed benchmark cases with at least two independent annotators, then record observed disagreement and adjudication. Until that exists no accuracy figure can be stated, and the harness will keep saying so.
+1. Owner review and acceptance or modification of ADRs 008–026. ADR-018 through ADR-024 and the new ADR-026 are still **Proposed**, and v0.4–v0.6 did not change that; implementation is not approval.
+2. Use the v0.6 review workflow (ADR-026) to recruit real reviewed benchmark cases: issue blinded packets, collect at least two independent operator-asserted reviewers per high-impact subject, merge the submissions, and record observed disagreement and human adjudication. Until that material exists no accuracy figure can be stated, and the harness and the audit will both keep saying so.
 3. Owner decision on ADR-025: `evidence-aggregation-v2` is implemented and tested behind the versioned entry point, but `evidence-aggregation-v1` remains the default, so material recorded under two identifiers, or as `RELATED`, still counts twice in live reports until the owner accepts the ADR and flips `EVIDENCE_RULE_VERSION`.
 4. Add screen-reader, mobile and cross-browser testing, and run `verify:workflow` on macOS and Linux. None of it has been executed here.
 5. Implement retention/deletion policy and backup guidance beyond the local copy procedure.
