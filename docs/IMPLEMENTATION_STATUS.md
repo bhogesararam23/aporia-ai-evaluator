@@ -157,7 +157,7 @@ The broader Product Requirements acceptance criterion that includes “run at le
 | ADR-022 benchmark module layer | Implemented | Boundary enforcement covers `src/benchmark`. **Status remains Proposed** | `tests/unit/boundaries.test.ts` |
 | ADR-023 claim eligibility and metrics-v4 | Implemented, **Proposed** — awaiting owner review | Four-layer enforcement plus the separate review-progress counts | `tests/unit/claim-eligibility.test.ts`, `tests/integration/report-retest-parity.test.ts` |
 | ADR-024 retest provenance and comparability | Implemented, **Proposed** — awaiting owner review | Durable focus metric and rule version, comparison recomputed in the write transaction, status bound to the cited comparison by trigger | `tests/integration/upgrade-v03-to-v04.test.ts`, `scripts/local-workflow.ts` steps 18–19 |
-| ADR-025 corroboration by underlying source | **Not implemented** — recorded as a proposal only | `evidence-aggregation-v1` still counts distinct `sourceId`, so two `RELATED` copies of one underlying source corroborate twice; the corrected rule needs its own version and owner decision | No test asserts the v2 behaviour. `tests/unit/benchmark-source-identity.test.ts` documents the gap from the benchmark side and names it as uncorrected |
+| ADR-025 corroboration by underlying source | **Proposed** — `evidence-aggregation-v2` implemented and tested, **not the default** | The rule lives behind the versioned `deriveEvidenceStatus(relationships, ruleVersion)` entry point: a `RELATED` supporting record no longer adds a corroborating source, the status precedence is unchanged, and the `v1` figure is disclosed via `apparentCorroboratingSourceCount`. `EVIDENCE_RULE_VERSION` stays `v1`, so no live report or stored snapshot changes until the owner accepts the ADR and flips the one-line default | `tests/unit/evidence-aggregation-v2.test.ts` (fails against `v1`); `tests/unit/benchmark-source-identity.test.ts` |
 
 The ADRs remain **Proposed** in the index pending owner review; implementation does not equal owner acceptance.
 
@@ -175,7 +175,7 @@ The ADRs remain **Proposed** in the index pending owner review; implementation d
 
 1. Owner review and acceptance or modification of ADRs 008–024. ADR-018 through ADR-022 are still **Proposed**, and v0.4 did not change that; implementation is not approval.
 2. Recruit real reviewed benchmark cases with at least two independent annotators, then record observed disagreement and adjudication. Until that exists no accuracy figure can be stated, and the harness will keep saying so.
-3. Decide the `evidence-aggregation-v1` corroboration question with its own ADR and version: material recorded under two identifiers, or as `RELATED`, currently counts twice.
+3. Owner decision on ADR-025: `evidence-aggregation-v2` is implemented and tested behind the versioned entry point, but `evidence-aggregation-v1` remains the default, so material recorded under two identifiers, or as `RELATED`, still counts twice in live reports until the owner accepts the ADR and flips `EVIDENCE_RULE_VERSION`.
 4. Add screen-reader, mobile and cross-browser testing, and run `verify:workflow` on macOS and Linux. None of it has been executed here.
 5. Implement retention/deletion policy and backup guidance beyond the local copy procedure.
 6. If provider or remote website work is authorized, add capability declarations, terms review, SSRF/network isolation, and live validation under new ADRs.
