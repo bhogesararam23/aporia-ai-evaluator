@@ -18,6 +18,12 @@ export interface EvidenceRelationshipRecord {
   readonly sourceId: string;
   readonly sourceType: SourceType;
   readonly independence: SourceIndependence;
+  /**
+   * The source's canonical URI, when the reviewer recorded one. `evidence-aggregation-v2` uses it to
+   * recognise two source records that are the same underlying material (ADR-025 §1 rule 1); `v1` and
+   * every existing construction ignore it, so it is optional.
+   */
+  readonly canonicalUri?: string | null;
 }
 
 export type EvidenceRelationCounts = Record<EvidenceRelation, number>;
@@ -54,6 +60,84 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
+/**
+ * Query parameters that carry distribution or campaign tracking rather than the identity of the
+ * document. They are dropped before comparing canonical URIs, because the same story reached through
+ * different tracking links is one underlying source. Only well-known tracking keys are removed, so a
+ * meaningful query string is never normalised away.
+ */
+const TRACKING_QUERY_KEYS = new Set([
+  'fbclid',
+  'gclid',
+  'dclid',
+  'msclkid',
+  'yclid',
+  'igshid',
+  'mc_cid',
+  'mc_eid',
+  'vero_id',
+  '_bto',
+  '_hsenc',
+  '_hsmi',
+  's_kwcid',
+  'ef_id',
+  'eprefix',
+]);
+
+/** Whether a normalised URL uses the default port for its scheme, so `:80`/`:443` is dropped. */
+function isDefaultPort(protocol: string, port: string): boolean {
+  if (port === '') {
+    return true;
+  }
+  return (protocol === 'http:' && port === '80') || (protocol === 'https:' && port === '443');
+}
+
+/**
+ * A conservative identity for the underlying source a record came from (ADR-025 §1 rule 1).
+ *
+ * Two records merge only when a full canonical URI can be parsed and normalised to the same string:
+ * scheme and host lower-cased, default port and a leading `www.` dropped, fragment and tracking query
+ * parameters removed, remaining query parameters sorted, and a trailing path slash stripped. The path
+ * itself keeps its case. If the canonical URI is missing or unparseable the identity falls back to the
+ * record's own `sourceId`, so nothing is merged on a guess. Pure and deterministic: it never reaches the
+ * network and cannot vary by locale.
+ */
+export function underlyingSourceIdentity(input: {
+  readonly sourceId: string;
+  readonly canonicalUri?: string | null;
+}): string {
+  const raw = (input.canonicalUri ?? '').trim();
+  if (raw === '') {
+    return `id:${input.sourceId}`;
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return `id:${input.sourceId}`;
+  }
+  const protocol = url.protocol.toLowerCase();
+  let host = url.hostname.toLowerCase();
+  if (host.startsWith('www.')) {
+    host = host.slice(4);
+  }
+  const hostPart = isDefaultPort(protocol, url.port) ? host : `${host}:${url.port}`;
+  let pathname = url.pathname;
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    pathname = pathname.replace(/\/+$/, '');
+  }
+  const kept: string[] = [];
+  for (const [key, value] of url.searchParams.entries()) {
+    if (/^utm_/i.test(key) || TRACKING_QUERY_KEYS.has(key.toLowerCase())) {
+      continue;
+    }
+    kept.push(`${key}=${value}`);
+  }
+  kept.sort();
+  const query = kept.length === 0 ? '' : `?${kept.join('&')}`;
+  return `uri:${protocol}//${hostPart}${pathname}${query}`;
+}
+
 export function deriveEvidenceStatus(
   relationships: readonly EvidenceRelationshipRecord[],
   ruleVersion: string = EVIDENCE_RULE_VERSION,
@@ -66,10 +150,10 @@ export function deriveEvidenceStatus(
   }
   const isV2 = ruleVersion === EVIDENCE_RULE_VERSION_V2;
   const counts = emptyCounts();
-  // v1 counts every distinct supporting sourceId; v2 counts only those the reviewer did not mark
-  // RELATED, because a related or syndicated copy of material the reviewer already holds cannot
-  // independently corroborate it. `allSupportingSources` is kept for both rules so the disclosure
-  // note and the v1-vs-v2 divergence can name how many sources a v1 report would have shown.
+  // v1 counts every distinct supporting sourceId. v2 counts corroboration by underlying source: it
+  // groups supporting records that share a canonical URI (or fall back to their own source id), and
+  // never lets a record marked RELATED add a source. `allSupportingSources` stays source-id based so the
+  // v1 figure, the duplicate disclosure and the v1-vs-v2 divergence can all name what a v1 report showed.
   const allSupportingSources = new Set<string>();
   const independentSupportingSources = new Set<string>();
   const allSources = new Set<string>();
@@ -81,7 +165,9 @@ export function deriveEvidenceStatus(
     if (relationship.relation === 'SUPPORTS') {
       allSupportingSources.add(relationship.sourceId);
       if (relationship.independence !== 'RELATED') {
-        independentSupportingSources.add(relationship.sourceId);
+        independentSupportingSources.add(
+          isV2 ? underlyingSourceIdentity(relationship) : relationship.sourceId,
+        );
       }
     }
   }
@@ -184,15 +270,15 @@ export function deriveEvidenceStatus(
         `Corroboration is counted by underlying source: ${plural(
           allSupportingSources.size,
           'distinct source',
-        )} would count as corroboration under the previous rule, but ${plural(
+        )} a previous rule would count becomes ${plural(
           independentSupportingSources.size,
           'independent source',
-        )} remain once material recorded as related or syndicated is excluded.`,
+        )} once related or syndicated records and copies that share one underlying source (the same canonical URI) are collapsed.`,
       );
     }
     if (isV2 && independentSupportingSources.size === 0 && allSupportingSources.size > 0) {
       notes.push(
-        'No independent corroboration is recorded: every supporting source was marked related or syndicated, so the support rests on material the reviewer does not treat as independent.',
+        'No independent corroboration is recorded: every supporting source was related, syndicated, or a copy of one underlying source, so the support rests on material the reviewer does not treat as independent.',
       );
     }
   }

@@ -306,8 +306,19 @@ test('the report carries the reproducibility and honesty statements the mileston
     const result = await cli(['--corpus', temp.path, '--out', output, '--allow-partial-strata']);
     assert.equal(result.code, 0, result.stderr);
     const report = parseReport(readFileSync(output, 'utf8'));
-    assert.equal(report.version, 'benchmark-report-v1');
+    assert.equal(report.version, 'benchmark-report-v2');
     assert.equal(report.caseFormat, BENCHMARK_CASE_VERSION);
+    // The pipeline is version-aware: every proposition is scored under both evidence rules, and the
+    // corroboration figure is reported alongside the verdict so a rule change is visible.
+    assert.ok(Array.isArray(report.regression.evidenceRules));
+    assert.equal(typeof report.regression.ruleStatusDisagreements, 'number');
+    assert.equal(typeof report.regression.corroborationCollapses, 'number');
+    assert.ok(
+      report.regression.evidenceRules.some(
+        (row: { ruleVersion: string }) => row.ruleVersion === 'evidence-aggregation-v2',
+      ),
+      'the report carries evidence-aggregation-v2 rows as well as v1',
+    );
     assert.equal(typeof report.methodologyVersion, 'string');
     assert.equal(typeof report.metricsVersion, 'string');
     assert.equal(typeof report.evidenceRuleVersion, 'string');

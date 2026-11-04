@@ -18,8 +18,8 @@ function issueFor(issues: readonly ValidationIssue[], field: string): string | n
 
 function describedBy(id: string, help: string | null, error: string | null): Html {
   // The identifiers passed here must be the ones the help and error paragraphs are actually rendered
-  // with, which are derived from the control id (`field-<name>`), not from the bare field name. An
-  // aria-describedby that names a non-existent element leaves a screen reader with nothing to
+  // with, which are derived from the control id (`field-<scope>-<name>`), not from the bare field name.
+  // An aria-describedby that names a non-existent element leaves a screen reader with nothing to
   // announce, so a validation message or a definition would be silently lost.
   const ids = [help === null ? null : `${id}-help`, error === null ? null : `${id}-error`].filter(
     (value): value is string => value !== null,
@@ -27,8 +27,29 @@ function describedBy(id: string, help: string | null, error: string | null): Htm
   return ids.length === 0 ? html`` : html` aria-describedby="${ids.join(' ')}"`;
 }
 
+/**
+ * A DOM-safe fragment for an id scope.
+ *
+ * Repeated forms on one page (a void form per citation, a statement workspace with a form per
+ * statement) used to emit the same `field-<name>` id every time, so all but the first `<label for>` and
+ * `aria-describedby` reference resolved to the wrong control. Passing a per-form `scope` — usually the
+ * record's own id — makes each instance's ids unique. Non id-safe characters collapse to `-` so the
+ * output is a valid, deterministic HTML id.
+ */
+function scopeFragment(scope: string): string {
+  return scope.replace(/[^A-Za-z0-9_-]+/g, '-');
+}
+
+function fieldId(scope: string | undefined, name: string): string {
+  return scope === undefined || scope === ''
+    ? `field-${name}`
+    : `field-${scopeFragment(scope)}-${name}`;
+}
+
 export interface TextFieldOptions {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   value?: string;
   issues?: readonly ValidationIssue[];
@@ -42,7 +63,7 @@ export interface TextFieldOptions {
 
 export function textField(options: TextFieldOptions): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
       <label for="${id}"
@@ -68,6 +89,8 @@ export function textField(options: TextFieldOptions): Html {
 
 export interface TextareaFieldOptions {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   value?: string;
   issues?: readonly ValidationIssue[];
@@ -79,7 +102,7 @@ export interface TextareaFieldOptions {
 
 export function textareaField(options: TextareaFieldOptions): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
       <label for="${id}"
@@ -108,6 +131,8 @@ export interface SelectOption {
 
 export interface SelectFieldOptions {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   value?: string;
   options: readonly SelectOption[];
@@ -119,7 +144,7 @@ export interface SelectFieldOptions {
 
 export function selectField(options: SelectFieldOptions): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
       <label for="${id}"
@@ -155,6 +180,8 @@ export function selectField(options: SelectFieldOptions): Html {
 
 export interface CheckboxFieldOptions {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   checked?: boolean;
   issues?: readonly ValidationIssue[];
@@ -163,7 +190,7 @@ export interface CheckboxFieldOptions {
 
 export function checkboxField(options: CheckboxFieldOptions): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   return html`
     <div class="field field-checkbox${error === null ? '' : ' field-invalid'}">
       <label class="checkbox-label" for="${id}">
@@ -186,6 +213,8 @@ export function checkboxField(options: CheckboxFieldOptions): Html {
 
 export function dateTimeField(options: {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   value?: string;
   issues?: readonly ValidationIssue[];
@@ -193,7 +222,7 @@ export function dateTimeField(options: {
   help?: string;
 }): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   const helpText = options.help ?? 'Entered in this computer’s local time; stored as UTC.';
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
@@ -217,13 +246,15 @@ export function dateTimeField(options: {
 
 export function dateField(options: {
   name: string;
+  /** A per-form discriminator so repeated forms on one page get unique control ids. */
+  scope?: string;
   label: string;
   value?: string;
   issues?: readonly ValidationIssue[];
   help?: string;
 }): Html {
   const error = issueFor(options.issues ?? [], options.name);
-  const id = `field-${options.name}`;
+  const id = fieldId(options.scope, options.name);
   return html`
     <div class="field${error === null ? '' : ' field-invalid'}">
       <label for="${id}">${options.label}</label>

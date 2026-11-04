@@ -333,6 +333,7 @@ function assessmentForm(
   issues: readonly ValidationIssue[],
 ): Html {
   const labels = ASSESSMENT_LABELS_BY_DIMENSION[dimension];
+  const scope = `${observationId}-${dimension}`;
   return html`
     <details>
       <summary>${ASSESSMENT_DIMENSION_LABELS[dimension]}</summary>
@@ -345,6 +346,7 @@ function assessmentForm(
         <input type="hidden" name="dimension" value="${dimension}" />
         ${selectField({
           name: 'label',
+          scope,
           label: 'Assessment label',
           value: valueOf(values, 'label'),
           issues,
@@ -359,6 +361,7 @@ function assessmentForm(
           dimension === 'ATTRIBUTION'
             ? selectField({
                 name: 'attributionRole',
+                scope,
                 label: 'Role assessed (optional)',
                 value: valueOf(values, 'attributionRole'),
                 issues,
@@ -372,6 +375,7 @@ function assessmentForm(
         }
         ${textareaField({
           name: 'rationale',
+          scope,
           label: 'Assessment rationale',
           value: valueOf(values, 'rationale'),
           issues,
@@ -381,6 +385,7 @@ function assessmentForm(
         })}
         ${textField({
           name: 'reviewer',
+          scope,
           label: 'Reviewer',
           value: valueOf(values, 'reviewer', context.deps.config.operator),
           issues,
@@ -442,8 +447,8 @@ function citationList(
                         action="/projects/${projectId}/runs/${runId}/observations/${observation.id}/citations/${citation.id}/void"
                       >
                         ${csrfField(context.csrfToken)}
-                        ${textareaField({ name: 'reason', label: 'Void reason', value: '', required: true, rows: 2, maxLength: 1000 })}
-                        ${textField({ name: 'reviewer', label: 'Reviewer', value: context.deps.config.operator, required: true, maxLength: 80 })}
+                        ${textareaField({ name: 'reason', scope: citation.id, label: 'Void reason', value: '', required: true, rows: 2, maxLength: 1000 })}
+                        ${textField({ name: 'reviewer', scope: citation.id, label: 'Reviewer', value: context.deps.config.operator, required: true, maxLength: 80 })}
                         <div class="form-actions">${submitButton('Void citation', 'danger')}</div>
                       </form>
                     </details>
@@ -604,6 +609,7 @@ function observationBlock(
                   ${csrfField(context.csrfToken)}
                   ${textareaField({
                     name: 'reason',
+                    scope: observation.id,
                     label: 'Void reason',
                     value: '',
                     required: true,
@@ -612,6 +618,7 @@ function observationBlock(
                   })}
                   ${textField({
                     name: 'reviewer',
+                    scope: observation.id,
                     label: 'Reviewer',
                     value: context.deps.config.operator,
                     required: true,

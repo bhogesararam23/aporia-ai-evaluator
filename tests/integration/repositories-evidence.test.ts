@@ -21,6 +21,8 @@ import {
 } from '../../src/persistence/repositories/claims.ts';
 import { createProject } from '../../src/persistence/repositories/projects.ts';
 import type { WriteContext } from '../../src/persistence/repositories/context.ts';
+import { deriveEvidenceStatus } from '../../src/core/evidence.ts';
+import { EVIDENCE_RULE_VERSION_V2 } from '../../src/core/versions.ts';
 import { createTestDatabase, TEST_TIME } from '../helpers/db.ts';
 
 const CONTEXT: WriteContext = { actor: 'Ram', at: TEST_TIME };
@@ -296,6 +298,52 @@ test('assessments require a claim under review', () => {
         ),
       /under review/,
     );
+  } finally {
+    closeDatabase(db);
+  }
+});
+
+test('the DB-to-core path collapses two source records sharing one canonical URI under v2', () => {
+  const db = createTestDatabase();
+  try {
+    const { projectId, propositionId } = setupClaim(db);
+    // Two separately recorded sources whose canonical URIs normalise to the same underlying document.
+    const first = createSource(db, projectId, SOURCE, CONTEXT);
+    const second = createSource(
+      db,
+      projectId,
+      {
+        ...SOURCE,
+        title: 'Mirrored release archive',
+        canonicalUri: 'https://WWW.example.com:443/release/#ref',
+        sourceType: 'SECONDARY_REPORT',
+      },
+      CONTEXT,
+    );
+    recordEvidence(db, projectId, first.id, propositionId, EVIDENCE, CONTEXT);
+    recordEvidence(
+      db,
+      projectId,
+      second.id,
+      propositionId,
+      { ...EVIDENCE, excerpt: 'Feature F is live.' },
+      CONTEXT,
+    );
+
+    const active = activeRelationshipsForProposition(db, projectId, propositionId);
+    // The read path now carries the canonical URI so the rule can recognise shared underlying sources.
+    assert.ok(active.every((record) => typeof record.canonicalUri === 'string'));
+    assert.equal(active.length, 2);
+
+    const v1 = deriveEvidenceStatus(active);
+    const v2 = deriveEvidenceStatus(active, EVIDENCE_RULE_VERSION_V2);
+    // v1 (the default) still sees two source ids; v2 sees one underlying source and does not
+    // over-count corroboration. The application default is unchanged.
+    assert.equal(v1.supportingSourceCount, 2);
+    assert.equal(v1.ruleVersion, 'evidence-aggregation-v1');
+    assert.equal(v2.supportingSourceCount, 1);
+    assert.equal(v2.apparentCorroboratingSourceCount, 2);
+    assert.equal(v2.status, 'SUPPORTED_WITHIN_SCOPE');
   } finally {
     closeDatabase(db);
   }

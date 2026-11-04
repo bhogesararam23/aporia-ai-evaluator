@@ -81,12 +81,26 @@ verdict until the owner accepts it:
 3. **Done.** `deriveEvidenceStatus(relationships, ruleVersion)` is the versioned entry point. A stored
    snapshot recorded under either rule can be re-derived under the rule that produced it, and an
    unrecognised version is refused rather than silently falling back.
-4. **Done.** `tests/unit/evidence-aggregation-v2.test.ts` has the cases that fail against `v1`: a
-   `RELATED` record does not add a corroborating source; two copies of one underlying source count once;
-   `UNKNOWN` independence keeps its caveat and the benefit of the doubt is not assumed; the status
-   precedence is unchanged; and the `apparentCorroboratingSourceCount` field names the `v1` figure so a
-   reader sees the two rules disagree.
-5. **Done.** The change is migration-free — no column, no stored row — because the rule version travels
+4. **Done — §1 rule 1 (shared underlying source).** `underlyingSourceIdentity` in `src/core/evidence.ts`
+   gives a conservative identity for the source behind a record: a full `canonicalUri` is normalised
+   (scheme and host lower-cased, default port and a leading `www.` dropped, fragment and tracking query
+   parameters removed, remaining parameters sorted, a trailing path slash stripped, path case preserved),
+   and a missing or unparseable URI falls back to the record's own `sourceId` so nothing merges on a
+   guess. Under `v2` supporting records are grouped by that identity, so two source records that reach
+   the same document collapse to one corroborating source; `v1` still counts distinct `sourceId`s. The
+   identity is available to the whole path — `activeRelationshipsForProposition`, the achievements
+   evidence query and the report snapshot mapper now carry the source `canonicalUri` into
+   `EvidenceRelationshipRecord`. An explicitly recorded shared underlying source beyond `canonicalUri`
+   (a dedicated source-identity column) is deliberately not invented here; it would need its own schema
+   change and ADR.
+5. **Done — §1 rule 2 and §3.** `tests/unit/evidence-aggregation-v2.test.ts`,
+   `tests/unit/source-identity.test.ts` and `tests/integration/repositories-evidence.test.ts` hold the
+   cases that fail against `v1`: a `RELATED` record never adds a source; two records sharing one
+   canonical URI corroborate once; genuinely distinct URIs stay separate; a `null`/unparseable URI falls
+   back to the source id; `UNKNOWN` independence keeps its caveat without the benefit of the doubt; the
+   status precedence is unchanged; the `apparentCorroboratingSourceCount` field names the `v1` figure so
+   a reader sees where the two rules disagree; and the DB-to-core read path delivers the collapse.
+6. **Done.** The change is migration-free — no column, no stored row — because the rule version travels
    in the snapshot, so the backup manifest is unaffected.
 
 ## Explicitly out of scope

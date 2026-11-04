@@ -53,6 +53,7 @@ function activeRelationship(
     sourceId: row.source.id,
     sourceType: row.source.sourceType,
     independence: row.source.independence,
+    canonicalUri: row.source.canonicalUri,
   };
 }
 

@@ -108,7 +108,65 @@ export function accessibilityViolations(html: string): string[] {
       violations.push('button without accessible name');
     }
   }
+  // A link is navigable by keyboard and read out by name; an anchor with no text and no label is a
+  // silent dead drop for a screen-reader or keyboard user, the same class of defect as an unnamed
+  // button. Apply the same rule to every <a href>.
+  for (const link of all.filter((element) => element.tagName === 'a')) {
+    const attributes = attrs(link);
+    if (!attributes.has('href')) continue;
+    const name =
+      textOf(link).trim() ||
+      (attributes.get('aria-label') ?? '').trim() ||
+      (attributes.get('aria-labelledby') ?? '').trim() ||
+      (attributes.get('title') ?? '').trim();
+    if (name.length === 0) violations.push('link without accessible name');
+  }
+  // A positive tabindex rewires the natural focus order and is a keyboard-navigation anti-pattern WCAG
+  // discourages. Programmatic focus targets use tabindex="-1", which stays allowed.
+  for (const element of all) {
+    const value = attrs(element).get('tabindex');
+    if (value !== undefined && Number.parseInt(value, 10) > 0) {
+      violations.push(`positive tabindex on <${element.tagName}> (disrupts keyboard order)`);
+    }
+  }
+  // Duplicate ids break every reference mechanism at once: a <label for>, an aria-describedby or an
+  // anchor fragment resolves to one arbitrary element, so a second control sharing the id silently
+  // loses its label or help text. ids must be unique within a page.
+  const idCounts = new Map<string, number>();
+  for (const element of all) {
+    const id = attrs(element).get('id');
+    if (id !== undefined) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  }
+  for (const [id, count] of idCounts) {
+    if (count > 1) {
+      violations.push(`duplicate id #${id} used ${String(count)} times`);
+    }
+  }
+  // A labelled control's <label for> target must be an existing element; a dangling reference is the
+  // silent-loss defect these guards exist to catch, and is only detectable once ids are unique.
+  const existingIds = new Set(idCounts.keys());
+  for (const label of all.filter((element) => element.tagName === 'label')) {
+    const forId = attrs(label).get('for');
+    if (forId !== undefined && !existingIds.has(forId)) {
+      violations.push(`label[for] points at missing #${forId}`);
+    }
+  }
   return violations;
+}
+
+/** The concatenated text content of a subtree, used to decide whether a control has an accessible name. */
+function textOf(element: Element): string {
+  const stack: Node[] = [element];
+  let text = '';
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined) continue;
+    if (node.nodeName === '#text' && 'value' in node) text += node.value;
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) stack.push(child);
+    }
+  }
+  return text;
 }
 
 /**

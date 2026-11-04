@@ -19,12 +19,14 @@ import {
   type SourceType,
 } from '../core/vocabulary.ts';
 import { deriveEvidenceStatus, type EvidenceRelationshipRecord } from '../core/evidence.ts';
+import { EVIDENCE_RULE_VERSION, EVIDENCE_RULE_VERSION_V2 } from '../core/versions.ts';
 import { computeRunMetrics, type ObservationInput, type QueryInput } from '../core/metrics.ts';
 import { permittedPropositionRelations } from '../core/claimEligibility.ts';
 import type {
   BenchmarkCase,
   BenchmarkDimension,
   BenchmarkEvidenceRecord,
+  EvidenceRuleRow,
   RegressionResultRow,
 } from './types.ts';
 
@@ -91,6 +93,7 @@ export function toRelationships(
       sourceId: evidence.sourceId ?? evidence.id,
       sourceType: evidence.sourceType as SourceType,
       independence: evidence.independence as SourceIndependence,
+      canonicalUri: evidence.canonicalUri ?? null,
     });
   }
   return { relationships, unusable };
@@ -113,6 +116,47 @@ export function produceDeterministicLabels(benchmarkCase: BenchmarkCase): Map<st
     );
   }
   return produced;
+}
+
+/**
+ * Score each proposition's evidence under both evidence-aggregation rules, separately.
+ *
+ * This is the version-aware half of the harness: for every proposition it runs the frozen evidence
+ * through `evidence-aggregation-v1` and `evidence-aggregation-v2` and records the produced verdict
+ * **and** the corroborating-source count for each. Where the case carries an EVIDENCE_SUPPORT gold
+ * label for that proposition, `statusMatched` says whether each rule reproduced it; a v1/v2
+ * disagreement, or a differing corroboration count, is then visible as itself rather than hidden
+ * behind a single number. It changes no product behaviour: the application's default rule is still
+ * whatever `EVIDENCE_RULE_VERSION` says, and `v2` remains the ADR-025 proposal.
+ */
+export function evidenceRuleRegressions(cases: readonly BenchmarkCase[]): EvidenceRuleRow[] {
+  const rows: EvidenceRuleRow[] = [];
+  for (const benchmarkCase of cases) {
+    for (const proposition of benchmarkCase.input.propositions) {
+      const mapped = toRelationships(benchmarkCase, proposition.id);
+      if (mapped === null || mapped.relationships.length === 0) {
+        continue;
+      }
+      const gold = benchmarkCase.expected.find(
+        (expected) =>
+          expected.dimension === 'EVIDENCE_SUPPORT' && expected.subjectId === proposition.id,
+      )?.label;
+      for (const ruleVersion of [EVIDENCE_RULE_VERSION, EVIDENCE_RULE_VERSION_V2]) {
+        const derived = deriveEvidenceStatus(mapped.relationships, ruleVersion);
+        rows.push({
+          caseId: benchmarkCase.id,
+          propositionId: proposition.id,
+          ruleVersion,
+          expected: gold ?? null,
+          produced: derived.status,
+          statusMatched: gold === undefined ? false : derived.status === gold,
+          supportingSourceCount: derived.supportingSourceCount,
+          apparentCorroboratingSourceCount: derived.apparentCorroboratingSourceCount ?? null,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 /**

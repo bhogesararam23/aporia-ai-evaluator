@@ -188,6 +188,7 @@ function evidenceFields(
         ${csrfField(context.csrfToken)}
         ${selectField({
           name: 'sourceId',
+          scope: propositionId,
           label: 'Source',
           value: valueOf(values, 'sourceId'),
           issues,
@@ -200,6 +201,7 @@ function evidenceFields(
         })}
         ${textField({
           name: 'locator',
+          scope: propositionId,
           label: 'Locator',
           value: valueOf(values, 'locator'),
           issues,
@@ -209,6 +211,7 @@ function evidenceFields(
         })}
         ${textareaField({
           name: 'excerpt',
+          scope: propositionId,
           label: 'Excerpt or artifact description',
           value: valueOf(values, 'excerpt'),
           issues,
@@ -219,6 +222,7 @@ function evidenceFields(
         })}
         ${selectField({
           name: 'extractionMethod',
+          scope: propositionId,
           label: 'Extraction method',
           value: valueOf(values, 'extractionMethod', 'PASTED_TEXT'),
           issues,
@@ -230,6 +234,7 @@ function evidenceFields(
         })}
         ${dateTimeField({
           name: 'extractedAt',
+          scope: propositionId,
           label: 'Extracted at',
           value: valueOf(values, 'extractedAt', dateTimeLocalValue(context.now)),
           issues,
@@ -237,6 +242,7 @@ function evidenceFields(
         })}
         ${selectField({
           name: 'relation',
+          scope: propositionId,
           label: 'Relationship to this proposition',
           value: valueOf(values, 'relation', 'SUPPORTS'),
           issues,
@@ -248,6 +254,7 @@ function evidenceFields(
         })}
         ${textareaField({
           name: 'rationale',
+          scope: propositionId,
           label: 'Reviewer rationale',
           value: valueOf(values, 'rationale'),
           issues,
@@ -258,6 +265,7 @@ function evidenceFields(
         })}
         ${textField({
           name: 'reviewer',
+          scope: propositionId,
           label: 'Reviewer',
           value: valueOf(values, 'reviewer', context.deps.config.operator),
           issues,
@@ -293,6 +301,7 @@ function assessmentFields(
         </p>
         ${selectField({
           name: 'label',
+          scope: `${propositionId}-assess`,
           label: 'Reviewed status',
           value: valueOf(values, 'label'),
           issues,
@@ -305,6 +314,7 @@ function assessmentFields(
         })}
         ${textareaField({
           name: 'rationale',
+          scope: `${propositionId}-assess`,
           label: 'Assessment rationale',
           value: valueOf(values, 'rationale'),
           issues,
@@ -314,6 +324,7 @@ function assessmentFields(
         })}
         ${textField({
           name: 'reviewer',
+          scope: `${propositionId}-assess`,
           label: 'Reviewer',
           value: valueOf(values, 'reviewer', context.deps.config.operator),
           issues,
@@ -377,6 +388,7 @@ function evidenceDisplay(
                         ${csrfField(context.csrfToken)}
                         ${selectField({
                           name: 'relation',
+                          scope: row.relationship.id,
                           label: 'New relationship',
                           value: valueOf(values, 'relation', row.relationship.relation),
                           issues,
@@ -388,6 +400,7 @@ function evidenceDisplay(
                         })}
                         ${textareaField({
                           name: 'rationale',
+                          scope: row.relationship.id,
                           label: 'Correction rationale',
                           value: valueOf(values, 'rationale'),
                           issues,
@@ -397,6 +410,7 @@ function evidenceDisplay(
                         })}
                         ${textField({
                           name: 'reviewer',
+                          scope: row.relationship.id,
                           label: 'Reviewer',
                           value: valueOf(values, 'reviewer', context.deps.config.operator),
                           issues,

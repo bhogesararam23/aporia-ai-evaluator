@@ -299,6 +299,17 @@ function validateEvidence(
         'Required on a v2 case. Without an underlying source identity, two excerpts from one source look like two independent sources.',
       );
     }
+    // canonicalUri is an optional, additive field (ADR-025 §1 rule 1): when present it must be a
+    // real http(s) URL, because `evidence-aggregation-v2` collapses records that share it into one
+    // underlying source. Absent or null is fine and is how older files read.
+    if (entry['canonicalUri'] !== undefined && entry['canonicalUri'] !== null) {
+      const url = httpUrl(entry['canonicalUri'], `${where}.canonicalUri`);
+      if (!url.ok) {
+        for (const issue of url.issues) {
+          report.push(issue.field, issue.message);
+        }
+      }
+    }
   }
 }
 
