@@ -12,7 +12,13 @@
  * is unchanged (`benchmark-case-v1`/`v2` still read), so no corpus migration is implied.
  */
 import { createHash } from 'node:crypto';
-import type { BenchmarkCase, BenchmarkDimension, BenchmarkInputPack } from './types.ts';
+import type {
+  BenchmarkCase,
+  BenchmarkDimension,
+  BenchmarkInputPack,
+  BenchmarkReviewerLabel,
+} from './types.ts';
+import { benchmarkDimensionLabels } from './validate.ts';
 
 export const REVIEW_PACKET_VERSION = 'benchmark-packet-v1';
 export const SUBMISSION_VERSION = 'benchmark-submission-v1';
@@ -137,4 +143,159 @@ export function buildSubmissionTemplate(packet: ReviewerPacket): AnnotationSubmi
       rationale: '',
     })),
   };
+}
+
+export type MergeResult =
+  | { readonly ok: true; readonly case: BenchmarkCase }
+  | { readonly ok: false; readonly reasons: readonly string[] };
+
+/**
+ * Safely merge one reviewer submission into a case, appending to its reviewer labels.
+ *
+ * It refuses rather than repairs: a submission bound to a different (now-stale) input hash, aimed at
+ * another case, from a reviewer who already submitted, containing a subject this case has no gold for,
+ * an out-of-vocabulary label, a blank rationale, or a missing reviewer or timestamp is rejected in
+ * full and the case is returned untouched. A successful merge never edits the gold `expected` array,
+ * never removes an existing reviewer's label, and never invents a label, reviewer, or timestamp.
+ */
+export function mergeSubmission(
+  benchmarkCase: BenchmarkCase,
+  submission: AnnotationSubmission,
+  alreadyMergedReviewers: readonly string[] = [],
+): MergeResult {
+  const reasons: string[] = [];
+  if (submission.version !== SUBMISSION_VERSION) {
+    reasons.push(`Unsupported submission version "${submission.version}".`);
+  }
+  if (submission.caseId !== benchmarkCase.id) {
+    reasons.push(
+      `Submission is for case "${submission.caseId}", which does not match this case "${benchmarkCase.id}".`,
+    );
+  }
+  const packet = buildReviewerPacket(benchmarkCase);
+  if (submission.packetHash !== packet.packetHash) {
+    reasons.push(
+      'Stale submission: its packet hash does not match the case input, which changed since the packet was issued.',
+    );
+  }
+  const reviewer = submission.reviewer.trim();
+  if (reviewer === '') {
+    reasons.push('A submission must carry a reviewer label; the tool will not invent one.');
+  }
+  if (submission.submittedAt.trim() === '') {
+    reasons.push(
+      'A submission must carry a reviewer-supplied timestamp; the tool will not invent one.',
+    );
+  }
+  const priorReviewers = new Set([
+    ...benchmarkCase.reviewerLabels.map((label) => label.reviewer),
+    ...alreadyMergedReviewers.map((name) => name.trim()),
+  ]);
+  if (reviewer !== '' && priorReviewers.has(reviewer)) {
+    reasons.push(`Duplicate submission: reviewer "${reviewer}" has already labelled this case.`);
+  }
+  if (submission.annotations.length === 0) {
+    reasons.push('The submission records no annotations.');
+  }
+
+  const subjectKeys = new Set(
+    packet.subjects.map((subject) => `${subject.dimension}/${subject.subjectId}`),
+  );
+  const annotatedKeys = new Set<string>();
+  submission.annotations.forEach((annotation, index) => {
+    const key = `${annotation.dimension}/${annotation.subjectId}`;
+    if (!subjectKeys.has(key)) {
+      reasons.push(
+        `Annotation ${String(index)} targets "${key}", which is not a subject of this case.`,
+      );
+    }
+    if (annotatedKeys.has(key)) {
+      reasons.push(`Annotation ${String(index)} repeats the subject "${key}".`);
+    }
+    annotatedKeys.add(key);
+    if (!benchmarkDimensionLabels(annotation.dimension).includes(annotation.label)) {
+      reasons.push(
+        `Annotation ${String(index)} label "${annotation.label}" is not valid for ${annotation.dimension}.`,
+      );
+    }
+    if (annotation.rationale.trim() === '') {
+      reasons.push(`Annotation ${String(index)} has no rationale.`);
+    }
+  });
+  for (const subject of packet.subjects) {
+    if (!annotatedKeys.has(`${subject.dimension}/${subject.subjectId}`)) {
+      reasons.push(`Subject "${subject.dimension}/${subject.subjectId}" was not annotated.`);
+    }
+  }
+
+  if (reasons.length > 0) {
+    return { ok: false, reasons };
+  }
+  const appended: BenchmarkReviewerLabel[] = submission.annotations.map((annotation) => ({
+    reviewer,
+    dimension: annotation.dimension,
+    label: annotation.label,
+    subjectId: annotation.subjectId,
+    note: null,
+  }));
+  return {
+    ok: true,
+    case: { ...benchmarkCase, reviewerLabels: [...benchmarkCase.reviewerLabels, ...appended] },
+  };
+}
+
+export interface MergeOutcome {
+  readonly mergedCases: readonly BenchmarkCase[];
+  readonly applied: readonly { readonly caseId: string; readonly reviewer: string }[];
+  readonly rejected: readonly {
+    readonly caseId: string;
+    readonly reviewer: string;
+    readonly reasons: readonly string[];
+  }[];
+}
+
+/**
+ * Merge a batch of submissions into a set of cases, tracking per-case reviewers already applied in the
+ * batch so a second submission from the same reviewer in the same run is rejected as a duplicate. A
+ * submission whose case is not in the set is rejected (mismatched case). Order is deterministic.
+ */
+export function mergeSubmissions(
+  cases: readonly BenchmarkCase[],
+  submissions: readonly AnnotationSubmission[],
+): MergeOutcome {
+  const byId = new Map(cases.map((benchmarkCase) => [benchmarkCase.id, benchmarkCase]));
+  const mergedReviewers = new Map<string, string[]>();
+  const mergedById = new Map<string, BenchmarkCase>(byId);
+  const applied: { caseId: string; reviewer: string }[] = [];
+  const rejected: { caseId: string; reviewer: string; reasons: readonly string[] }[] = [];
+  for (const submission of submissions) {
+    const benchmarkCase = byId.get(submission.caseId);
+    if (benchmarkCase === undefined) {
+      rejected.push({
+        caseId: submission.caseId,
+        reviewer: submission.reviewer,
+        reasons: ['No case in the corpus matches this submission’s case id.'],
+      });
+      continue;
+    }
+    const current = mergedById.get(submission.caseId) as BenchmarkCase;
+    const already = mergedReviewers.get(submission.caseId) ?? [];
+    const result = mergeSubmission(current, submission, already);
+    if (result.ok) {
+      mergedById.set(submission.caseId, result.case);
+      mergedReviewers.set(submission.caseId, [...already, submission.reviewer.trim()]);
+      applied.push({ caseId: submission.caseId, reviewer: submission.reviewer.trim() });
+    } else {
+      rejected.push({
+        caseId: submission.caseId,
+        reviewer: submission.reviewer,
+        reasons: result.reasons,
+      });
+    }
+  }
+  // Emit in the original case order for determinism.
+  const mergedCases = cases
+    .map((benchmarkCase) => mergedById.get(benchmarkCase.id))
+    .filter((value): value is BenchmarkCase => value !== undefined);
+  return { mergedCases, applied, rejected };
 }
