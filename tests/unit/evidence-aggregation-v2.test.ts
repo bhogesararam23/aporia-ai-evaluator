@@ -194,3 +194,70 @@ test('an unrecognised rule version is refused rather than silently falling back'
     /rule version/i,
   );
 });
+
+/** A supporting record that also carries the canonical URI its source was retrieved from. */
+function supportingWithCanonical(
+  id: string,
+  sourceId: string,
+  canonicalUri: string | null,
+  independence: SourceIndependence = 'INDEPENDENT',
+): EvidenceRelationshipRecord {
+  return {
+    id,
+    relation: 'SUPPORTS',
+    sourceId,
+    sourceType: 'INDEPENDENT_SOURCE',
+    independence,
+    canonicalUri,
+  };
+}
+
+test('v2 collapses two source records that share one canonical URI into a single corroborating source', () => {
+  const shared = [
+    supportingWithCanonical('r1', 'src_a', 'https://example.com/original-report'),
+    supportingWithCanonical('r2', 'src_b', 'https://example.com/original-report'),
+  ];
+  const v1 = deriveEvidenceStatus(shared, 'evidence-aggregation-v1');
+  const v2 = deriveEvidenceStatus(shared, EVIDENCE_RULE_VERSION_V2);
+  // v1 sees two different source ids and counts two; v2 sees one underlying source.
+  assert.equal(v1.supportingSourceCount, 2);
+  assert.equal(v2.supportingSourceCount, 1);
+  assert.equal(v2.apparentCorroboratingSourceCount, 2);
+  assert.equal(v2.status, 'SUPPORTED_WITHIN_SCOPE');
+  assert.ok(
+    v2.notes.some((note) => /same underlying source|canonical/i.test(note)),
+    'the shared-canonical collapse must be disclosed',
+  );
+});
+
+test('v2 keeps genuinely distinct canonical URIs as separate corroborating sources', () => {
+  const distinct = [
+    supportingWithCanonical('r1', 'src_a', 'https://a.example/report'),
+    supportingWithCanonical('r2', 'src_b', 'https://b.example/report'),
+  ];
+  const v2 = deriveEvidenceStatus(distinct, EVIDENCE_RULE_VERSION_V2);
+  assert.equal(v2.supportingSourceCount, 2);
+  assert.equal(v2.apparentCorroboratingSourceCount, undefined);
+});
+
+test('v2 with no canonical URI on either record behaves exactly as the source-id rule', () => {
+  const noUri = [
+    supportingWithCanonical('r1', 'src_a', null),
+    supportingWithCanonical('r2', 'src_c', null),
+    supportingWithCanonical('r3', 'src_b', null, 'RELATED'),
+  ];
+  const v2 = deriveEvidenceStatus(noUri, EVIDENCE_RULE_VERSION_V2);
+  // Two independent ids remain two; the related third (a distinct id) adds nothing.
+  assert.equal(v2.supportingSourceCount, 2);
+  assert.equal(v2.apparentCorroboratingSourceCount, 3);
+});
+
+test('v2 collapses a shared canonical URI across mixed independence without double-counting', () => {
+  const mixed = [
+    supportingWithCanonical('r1', 'src_a', 'https://example.com/story'),
+    supportingWithCanonical('r2', 'src_b', 'https://example.com/story', 'RELATED'),
+  ];
+  const v2 = deriveEvidenceStatus(mixed, EVIDENCE_RULE_VERSION_V2);
+  // One underlying source, and one of its records is related; corroboration is a single source.
+  assert.equal(v2.supportingSourceCount, 1);
+});
