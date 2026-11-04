@@ -295,14 +295,15 @@ function addStatementForm(target: Target, state: FormState): Html {
 function reviseStatementForm(claim: AnswerClaimRecord, target: Target, state: FormState): Html {
   const { issues, values } = state;
   const revision = claim.currentRevision;
-  const action = `${claimPath(claim, target)}/revise`;
+  const key = `revise-${claim.id}`;
   return html`
-    <form method="post" action="${action}">
+    <form method="post" action="${claimPath(claim, target)}/revise">
       ${csrfField(target.csrf)}
       ${textareaField({
         name: 'quoteText',
+        scope: key,
         label: 'Corrected statement text',
-        value: valueOf(values, `revise-${claim.id}-quoteText`, revision?.quoteText ?? ''),
+        value: valueOf(values, `${key}-quoteText`, revision?.quoteText ?? ''),
         issues,
         required: true,
         rows: 3,
@@ -311,35 +312,35 @@ function reviseStatementForm(claim: AnswerClaimRecord, target: Target, state: Fo
       })}
       ${selectField({
         name: 'offsetBasis',
+        scope: key,
         label: 'How reliably can the corrected text be located?',
-        value: valueOf(
-          values,
-          `revise-${claim.id}-offsetBasis`,
-          revision?.offsetBasis ?? 'EXACT_MATCH',
-        ),
+        value: valueOf(values, `${key}-offsetBasis`, revision?.offsetBasis ?? 'EXACT_MATCH'),
         issues,
         required: true,
         options: optionsFor(ANSWER_OFFSET_BASES, ANSWER_OFFSET_BASIS_LABELS),
       })}
       ${selectField({
         name: 'relevance',
+        scope: key,
         label: 'Relationship to what we are evaluating',
-        value: valueOf(values, `revise-${claim.id}-relevance`, revision?.relevance ?? 'ADDRESSES'),
+        value: valueOf(values, `${key}-relevance`, revision?.relevance ?? 'ADDRESSES'),
         issues,
         required: true,
         options: optionsFor(CLAIM_RELEVANCES, CLAIM_RELEVANCE_LABELS),
       })}
       ${textField({
         name: 'paraphrase',
+        scope: key,
         label: 'Your reading of it (optional)',
-        value: valueOf(values, `revise-${claim.id}-paraphrase`, revision?.paraphrase ?? ''),
+        value: valueOf(values, `${key}-paraphrase`, revision?.paraphrase ?? ''),
         issues,
         maxLength: 2000,
       })}
       ${textField({
         name: 'note',
+        scope: key,
         label: 'Note (optional)',
-        value: valueOf(values, `revise-${claim.id}-note`, revision?.note ?? ''),
+        value: valueOf(values, `${key}-note`, revision?.note ?? ''),
         issues,
         maxLength: 2000,
       })}
@@ -372,6 +373,7 @@ function propositionLinkForm(
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'propositionId',
+        scope: key,
         label: 'Target proposition',
         value: valueOf(values, `${key}-propositionId`),
         issues,
@@ -385,6 +387,7 @@ function propositionLinkForm(
       })}
       ${selectField({
         name: 'relation',
+        scope: key,
         label: 'Relationship',
         value: valueOf(values, `${key}-relation`, 'SUPPORTS_TARGET'),
         issues,
@@ -394,6 +397,7 @@ function propositionLinkForm(
       })}
       ${textareaField({
         name: 'rationale',
+        scope: key,
         label: 'Why this relationship',
         value: valueOf(values, `${key}-rationale`),
         issues,
@@ -404,6 +408,7 @@ function propositionLinkForm(
       })}
       ${textField({
         name: 'reviewer',
+        scope: key,
         label: 'Reviewer label',
         value: valueOf(values, `${key}-reviewer`, reviewerDefault()),
         issues,
@@ -449,6 +454,7 @@ function citationLinkForm(
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'citationId',
+        scope: key,
         label: 'Citation from this answer',
         value: valueOf(values, `${key}-citationId`),
         issues,
@@ -462,6 +468,7 @@ function citationLinkForm(
       })}
       ${selectField({
         name: 'support',
+        scope: key,
         label: 'Does the cited material support this statement?',
         value: valueOf(values, `${key}-support`, 'SUPPORTS'),
         issues,
@@ -471,6 +478,7 @@ function citationLinkForm(
       })}
       ${textareaField({
         name: 'rationale',
+        scope: key,
         label: 'What you compared and what you found',
         value: valueOf(values, `${key}-rationale`),
         issues,
@@ -480,6 +488,7 @@ function citationLinkForm(
       })}
       ${textField({
         name: 'reviewer',
+        scope: key,
         label: 'Reviewer label',
         value: valueOf(values, `${key}-reviewer`),
         issues,
@@ -499,6 +508,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       ${csrfField(target.csrf)}
       ${selectField({
         name: 'dimension',
+        scope: key,
         label: 'Which assessment are you recording?',
         value: valueOf(values, `${key}-dimension`, 'FIDELITY'),
         issues,
@@ -511,6 +521,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${selectField({
         name: 'fidelityLabel',
+        scope: key,
         label: 'Fidelity outcome',
         value: valueOf(values, `${key}-fidelityLabel`, 'ACCURATE'),
         issues,
@@ -520,6 +531,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${selectField({
         name: 'attributionLabel',
+        scope: key,
         label: 'Attribution outcome',
         value: valueOf(values, `${key}-attributionLabel`, 'NOT_ADDRESSED'),
         issues,
@@ -529,6 +541,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${textField({
         name: 'attributionSubject',
+        scope: key,
         label: 'Who the answer credited (attribution only)',
         value: valueOf(values, `${key}-attributionSubject`),
         issues,
@@ -536,6 +549,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${textField({
         name: 'attributionRole',
+        scope: key,
         label: 'Which role the answer claimed (attribution only)',
         value: valueOf(values, `${key}-attributionRole`),
         issues,
@@ -543,6 +557,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${textareaField({
         name: 'rationale',
+        scope: key,
         label: 'Why',
         value: valueOf(values, `${key}-rationale`),
         issues,
@@ -552,6 +567,7 @@ function assessmentForm(claim: AnswerClaimRecord, target: Target, state: FormSta
       })}
       ${textField({
         name: 'reviewer',
+        scope: key,
         label: 'Reviewer label',
         value: valueOf(values, `${key}-reviewer`),
         issues,
@@ -571,6 +587,7 @@ function voidStatementForm(claim: AnswerClaimRecord, target: Target, state: Form
       ${csrfField(target.csrf)}
       ${textareaField({
         name: 'reason',
+        scope: key,
         label: 'Why is this statement record voided?',
         value: valueOf(values, `${key}-reason`),
         issues,
@@ -613,6 +630,7 @@ function linkRow(
               <input type="hidden" name="propositionId" value="${link.propositionId}" />
               ${selectField({
                 name: 'relation',
+                scope: key,
                 label: 'Record a corrected relationship',
                 value: valueOf(state.values, `${key}-relation`, link.relation),
                 issues: state.issues,
@@ -621,6 +639,7 @@ function linkRow(
               })}
               ${textareaField({
                 name: 'rationale',
+                scope: key,
                 label: 'Why the correction',
                 value: valueOf(state.values, `${key}-rationale`),
                 issues: state.issues,
@@ -630,6 +649,7 @@ function linkRow(
               })}
               ${textField({
                 name: 'reviewer',
+                scope: key,
                 label: 'Reviewer label',
                 value: valueOf(state.values, `${key}-reviewer`),
                 issues: state.issues,
@@ -676,6 +696,7 @@ function citationRow(
               <input type="hidden" name="citationId" value="${link.citationId}" />
               ${selectField({
                 name: 'support',
+                scope: key,
                 label: 'Record a corrected support assessment',
                 value: valueOf(state.values, `${key}-support`, link.support),
                 issues: state.issues,
@@ -684,6 +705,7 @@ function citationRow(
               })}
               ${textareaField({
                 name: 'rationale',
+                scope: key,
                 label: 'Why the correction',
                 value: valueOf(state.values, `${key}-rationale`),
                 issues: state.issues,
@@ -693,6 +715,7 @@ function citationRow(
               })}
               ${textField({
                 name: 'reviewer',
+                scope: key,
                 label: 'Reviewer label',
                 value: valueOf(state.values, `${key}-reviewer`),
                 issues: state.issues,
