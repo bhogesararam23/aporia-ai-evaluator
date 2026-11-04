@@ -83,9 +83,10 @@ claim over an empty/synthetic corpus.
 
 ## 7. Commit ledger
 
-The branch is **20 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`).
-Test count re-measured by glob after this work: **721 tests — 401 unit, 320 integration** (session-start
-baseline was 701). Every pushed checkpoint was preceded by a green `npm run check`.
+The branch is **24 commits ahead of `main`** (authoritative: `git rev-list --count origin/main..HEAD`;
+plus this ledger-update commit). Test count re-measured by glob: **731 tests — 406 unit, 325
+integration** (session-start baseline was 701). Every pushed checkpoint was preceded by a green
+`npm run check`.
 
 | # | Commit | Area | Summary |
 |---|---|---|---|
@@ -109,16 +110,19 @@ baseline was 701). Every pushed checkpoint was preceded by a green `npm run chec
 | 18 | `1d66771` | docs | record the id-scope fix complete; update limitations and ledger |
 | 19 | `d104d5a` | feat(benchmark) | version-aware v1/v2 evidence scoring + canonical URI + corroboration counts |
 | 20 | `0a59298` | docs(benchmark) | document the version-aware regression and canonical identity |
+| 21 | `898451b` | docs(session) | regenerate the ledger from git; record checkpoint 5 |
+| 22 | `258a078` | feat(benchmark) | case-authoring module: scaffold (non-scoreable), normalise, provenance |
+| 23 | `23587b7` | feat(benchmark) | `benchmark:case` CLI (scaffold/validate/normalise/provenance) + tests |
+| 24 | `733de83` | docs(benchmark) | curation-workflow docs + the command in the testing guide |
 
 Checkpoints pushed: #1 `fcdd9da` (CI `41807701771` ✓), #2 `737eeff` (CI `41814916079` ✓),
-#3 `395df5d` (CI `41815709425` ✓), #4 `1d66771` (CI ✓ — the a11y id-scope fix; this push also
-reconciled PR #8's stale head from 7 commits to the branch tip). Checkpoint #5 = `d104d5a`+`0a59298`
-(the benchmark version-aware pipeline).
+#3 `395df5d` (CI `41815709425` ✓), #4 `1d66771` (CI ✓ — a11y id-scope fix; this push also reconciled
+PR #8's stale head from 7 commits to the branch tip). #5 `0a59298`/`898451b` (CI `41824398664` ✓ — the
+version-aware benchmark pipeline). #6 = commits 22–24 + this ledger update (benchmark authoring CLI).
 
-Pull request **#8** (unmerged): Objectives 1 (evidence identity + benchmark version-aware pipeline), 3
-and 5, and the Objective-4 accessibility defect are done and verified; the benchmark authoring /
-import-export / annotation-provenance CLI, Objective-2, and the Objective-3 reliability audit and the
-manual browser/screen-reader checks remain.
+Pull request **#8** (unmerged): Objectives 1 (evidence identity, version-aware benchmark pipeline, and
+the local case-authoring/provenance CLI), 3, 5 and the Objective-4 accessibility defect are done and
+verified; the Objective-3 reliability audit and the manual browser/screen-reader checks remain.
 
 
 ## 8. What is NOT claimed
