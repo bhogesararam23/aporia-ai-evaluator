@@ -237,3 +237,11 @@ accuracy claim is made anywhere in this milestone.
 Recorded here as a dated appendage, per the operating protocol's rule against overwriting session history.
 See §9 for the commit ledger, the PR URL and the per-job CI results, all observed through `gh` on
 2026-11-05.
+
+**Final verification.** CI run `41932246903` at commit `9b9a6e0` **completed with all six jobs green**: `check` on windows-latest (1m56s),
+macos-latest (1m50s) and ubuntu-latest (1m34s); `live workflow` on macos-latest (1m10s), windows-latest (1m1s)
+and ubuntu-latest (54s). The matching push run `41932238756` was also green. Local `npm run check` at the same
+head: exit 0, 956/956. The only later commits are this report's own finalisation, which touches no code; the
+authoritative commit total is `git rev-list --count 2b1ecab..HEAD`, recorded in the pull request.
+
+Nothing in this milestone is merged or owner-accepted, and no accuracy claim is made anywhere in it.
