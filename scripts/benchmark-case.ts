@@ -33,7 +33,7 @@ import {
   normaliseCase,
   scaffoldTemplate,
 } from '../src/benchmark/authoring.ts';
-import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
+import { validateBenchmarkCase, validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
 import {
   auditCorpus,
   adjudicationTemplate,
@@ -574,7 +574,6 @@ function reviewerNamesFrom(value: unknown): { reviewer: string }[] {
 function roster(options: Options): void {
   const sources = readCorpus(requireCorpus(options));
   const result = validateBenchmarkCorpus(sources);
-  const scoreableIds = new Set(result.cases.map((entry) => entry.id));
   if (sources.length === 0) {
     console.error('benchmark:case: no case file to read; nothing is asserted about the roster.');
     process.exitCode = 1;
@@ -603,8 +602,11 @@ function roster(options: Options): void {
     if (unauthorised.length > 0) {
       casesWithUndeclared += 1;
     }
+    // Scoreability is decided per source value, not per id: two files carrying one id would otherwise make
+    // an unreviewable file look scoreable because a valid namesake exists.
+    const scoreable = validateBenchmarkCase(source.value, source.index).length === 0;
     console.error(
-      `  ${id}: scoreable=${String(scoreableIds.has(id))} ` +
+      `  ${id}: scoreable=${String(scoreable)} ` +
         `declared=[${view.provenance.reviewedBy.join(', ')}] ` +
         `labellers=${String(labelledIdentitiesOf(view).length)}`,
     );
