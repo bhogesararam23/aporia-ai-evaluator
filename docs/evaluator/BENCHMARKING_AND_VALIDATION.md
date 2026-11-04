@@ -15,7 +15,7 @@ a benchmark becomes decoration.
 | 2. Strata | 16 required strata, enforced by `src/benchmark/validate.ts`; a corpus missing one fails the run unless `--allow-partial-strata`, and the absence is printed either way | Any real case material. There is no gold corpus in this repository. |
 | 3. Gold labels | Case contract `benchmark-case-v2`: provenance and authorisation, named reviewers, per-dimension gold labels with rationale and subject, reviewer labels retained separately, scoped adjudications | Independent review. The application has no authentication, so reviewer identity is operator-asserted. Two names agreeing is not proof two people reviewed. |
 | 4. Performance measures | Per-class precision/recall, confusion matrices, macro-F1 with an explicit reason when withheld, per-dimension and per-label reporting, no composite score | Confidence intervals, calibration, class-balance reporting. Sample sizes in any plausible local corpus are too small to justify either. |
-| 5. Ablation | Deterministic regression of `evidence-aggregation-v1` plus metric-formula checks over a frozen input pack. Duplicate-source counting is expressible and tested since v2 | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
+| 5. Ablation | Version-aware deterministic regression of `evidence-aggregation-v1` **and** `-v2` (verdict plus corroborating-source count) over a frozen input pack, plus metric-formula checks. Duplicate-source counting and canonical-URI collapse are expressible and tested since v2. | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
 | 6. Leakage | Not applicable to an offline corpus of reviewer-recorded cases | Development/validation/held-out splits and time splits. Meaningless until a real corpus exists. |
 | 7. Provider integration | — | Everything. There are no providers, no adapters, and no network access in this build. |
 | 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata | Any release gate that depends on measured results. |
@@ -87,6 +87,25 @@ The rules that follow from that split:
 Reviewer identifiers remain operator-asserted strings. Local core has no authentication, so agreement
 between two labels is not proof of independent review, and no number in a benchmark report establishes
 it.
+
+### 3.2 The deterministic regression is version-aware
+
+The only automatic judgement in the product is `evidence-aggregation`. Because `evidence-aggregation-v2`
+(ADR-025) is still a proposal and the application default remains `v1`, the harness scores every
+proposition's frozen evidence under **both** rules and reports them side by side rather than picking
+one:
+
+- for each rule, the produced verdict and the **corroborating-source count** (`supportingSourceCount`),
+  so a reader can see a rule change move the corroboration figure even where the verdict label is
+  unchanged;
+- `ruleStatusDisagreements` — propositions where the two rules give different verdicts — and
+  `corroborationCollapses` — where `v2` counts fewer underlying sources than `v1`;
+- a canonical source identity: an evidence record may carry an optional `canonicalUri` (older `v1`/`v2`
+  files simply omit it), which `v2` uses to collapse two records of one document reached differently.
+
+A `v2` divergence from a gold label is **analysis, not a failing regression**: the report's pass/fail
+stays tied to the product's default rule, and the report never promotes `v2` over `v1`. This mirrors
+how the application treats the two rules — both computable, one in force.
 
 ## 4. Evaluator performance measures
 
