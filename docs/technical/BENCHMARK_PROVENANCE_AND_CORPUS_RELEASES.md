@@ -96,10 +96,14 @@ the exact failure the two-reviewer rule exists to prevent.
 ### 3.2 Adjudication state binding
 
 `disagreementHash` = `contentHash` over `{packetHash, dimension, subjectId, entries: sorted
-[{reviewerIdentity, label}], settlingCount}`, where `entries` is every reviewer label recorded for this exact
-subject and `settlingCount` is how many adjudications the case already carries for it. It therefore covers
-the frozen input, the exact split, who said what, and how many decisions were already filed — so applying
-one adjudication changes the state hash and a second adjudication against the same recorded state cannot pass.
+[{reviewerIdentity, label}]}`, where `entries` is every reviewer label recorded for this exact subject. It
+therefore covers the frozen input, the exact split, and who said what.
+
+How many adjudications already exist is deliberately **not** part of the hash. It was specified as covered in
+the first draft of this design, and the binding tests disproved it: including it would make a decision stale
+the instant it was filed, so no bound adjudication could ever settle the split it was written for. Filing a
+second decision on the same split is already prevented by the first one moving the subject out of
+`UNRESOLVED`, which `applyAdjudication` requires.
 
 Resolution rule, implemented **once** in `src/benchmark/provenance.ts` and consumed by both
 `review.disagreementReport` and `scoring.agreementRows` (today they resolve independently, which would
