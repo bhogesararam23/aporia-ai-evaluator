@@ -68,6 +68,19 @@ export function contentHash(value: unknown): string {
 const CONTENT_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 /**
+ * SHA-256 of exact text, as read.
+ *
+ * `contentHash` answers "is this the same content, however it happened to be serialised?". This answers the
+ * different question a run receipt needs: "are these the same bytes?" — so a manifest or a report file that
+ * was edited after the fact is caught even when its content still parses. Both are integrity checks over
+ * recorded material, and neither authenticates a reviewer, proves material is genuine, or supports an
+ * accuracy claim.
+ */
+export function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/**
  * Whether a value nests deeper than `limit`, checked without building anything.
  *
  * Lets a validator refuse an over-deep document cheaply, before hashing or serialisation, and with a stated
