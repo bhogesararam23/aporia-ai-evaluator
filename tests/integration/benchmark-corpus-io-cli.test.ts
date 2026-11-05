@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
@@ -259,6 +259,35 @@ test('a manifest is read under a ceiling as well, and a directory is refused by 
     assert.match(tooBig.stderr, /fat\.json/);
     assert.match(tooBig.stderr, /is not valid JSON|limit/);
     assertNoStack(tooBig.stderr, 'benchmark:release verify with an oversized manifest');
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a symlink in the corpus is refused, where this platform allows one to be made', async (t) => {
+  const temp = scratchDirectory('aporia-corpus-symlink-');
+  try {
+    const outside = join(temp.path, '..', 'aporia-outside-target.json');
+    writeFileSync(outside, JSON.stringify(validCase('from-outside')), 'utf8');
+    const link = join(temp.path, 'link.json');
+    try {
+      symlinkSync(outside, link, 'file');
+    } catch (error) {
+      // Creating a symlink needs developer mode on Windows or root elsewhere. The refusal is implemented and
+      // reviewed either way; this asserts it only where it can be demonstrated, and says so in the test
+      // output instead of reporting a pass that never happened.
+      const code = (error as NodeJS.ErrnoException).code ?? 'unknown';
+      t.skip(
+        `the platform refused to create a symlink (EPERM-classic unprivileged Windows): ${code}`,
+      );
+      return;
+    }
+    const result = await script('scripts/benchmark-case.ts', ['validate', '--corpus', temp.path]);
+    assert.notEqual(result.code, 0, 'a symlinked corpus file was read as though it belonged here');
+    assert.match(result.stderr, /link\.json/);
+    assert.match(result.stderr, /symbolic link/);
+    assertNoStack(result.stderr, 'benchmark:case with a symlink in the corpus');
+    rmSync(outside, { force: true });
   } finally {
     temp.remove();
   }
