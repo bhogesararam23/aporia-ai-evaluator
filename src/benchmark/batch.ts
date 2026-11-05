@@ -22,6 +22,7 @@ import { contentHash } from './hashing.ts';
 import { normaliseCase } from './authoring.ts';
 import { mergeSubmission, type PendingAdjudication, applyAdjudication } from './review.ts';
 import { reviewerIdentity } from './provenance.ts';
+import { safeArtifactName } from './naming.ts';
 
 export type BatchMode = 'atomic' | 'isolated';
 export type BatchKind = 'merge' | 'adjudication';
@@ -239,18 +240,45 @@ export interface StagedFile {
 }
 
 /**
+ * A case whose id cannot be a file name.
+ *
+ * Thrown rather than returned because there is no correct alternative: renaming `a/b` to something safe would
+ * publish a case under a name no release manifest lists, so a later verification would compare digests that
+ * describe files nobody asked for. The batch refuses and says which id is at fault.
+ */
+export class UnsafeCaseNameError extends Error {
+  readonly caseId: string;
+  readonly reason: string;
+
+  constructor(caseId: string, reason: string) {
+    super(
+      `Case ${JSON.stringify(caseId)} cannot be published as a file name: ${reason}. ` +
+        'Give it an identifier that is usable as a name; this tool will not rename it silently.',
+    );
+    this.name = 'UnsafeCaseNameError';
+    this.caseId = caseId;
+    this.reason = reason;
+  }
+}
+
+/**
  * Render a case set as the exact files a batch writes.
  *
- * Names are bare and sorted — a path separator in a staged name would let a case id escape the output
- * directory. Contents are canonical JSON with LF endings, so the same corpus produces the same bytes on
- * Windows, Linux and macOS and a resumed run can recognise a file it already wrote.
+ * Names are enforced bare — see `UnsafeCaseNameError` — because a path separator in a staged name would let a
+ * case id escape the output directory, and this function's own comment has claimed that guarantee since v0.7
+ * without ever checking it. Contents are canonical JSON with LF endings, so the same corpus produces the same
+ * bytes on Windows, Linux and macOS and a resumed run can recognise a file it already wrote.
  */
 export function renderStagedCorpus(cases: readonly BenchmarkCase[]): StagedFile[] {
   return cases
     .map((benchmarkCase) => {
       const contents = normaliseCase(benchmarkCase);
+      const name = safeArtifactName(benchmarkCase.id);
+      if (!name.ok) {
+        throw new UnsafeCaseNameError(benchmarkCase.id, name.reason);
+      }
       return {
-        name: `${benchmarkCase.id}.json`,
+        name: name.name,
         contents,
         contentsHash: contentHash(contents),
       };

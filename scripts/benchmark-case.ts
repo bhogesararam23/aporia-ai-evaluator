@@ -58,6 +58,7 @@ import {
   planBatchAdjudication,
   planBatchMerge,
   renderStagedCorpus,
+  UnsafeCaseNameError,
   type BatchJournal,
   type BatchMode,
   type BatchPlan,
@@ -174,13 +175,27 @@ function validate(options: Options): void {
     return;
   }
   console.error(`benchmark:case: ${String(result.issues.length)} problem(s) across the corpus.`);
-  for (const issue of result.issues.slice(0, 60)) {
+  printIssues(result.issues);
+  process.exitCode = 1;
+}
+
+/**
+ * Print the corpus problems a command refused on.
+ *
+ * A refusal that does not say which entry and which field is not actionable: the operator would have to bisect
+ * the corpus by hand to find the one case the validator disliked. Every command that excludes invalid material
+ * uses this, so "refused N entries" is always accompanied by why each one was refused.
+ */
+function printIssues(
+  issues: readonly { caseId: string; field: string; message: string }[],
+  limit = 60,
+): void {
+  for (const issue of issues.slice(0, limit)) {
     console.error(`  ${issue.caseId} ${issue.field}: ${issue.message}`);
   }
-  if (result.issues.length > 60) {
-    console.error(`  ...and ${String(result.issues.length - 60)} more.`);
+  if (issues.length > limit) {
+    console.error(`  ...and ${String(issues.length - limit)} more.`);
   }
-  process.exitCode = 1;
 }
 
 function normalise(options: Options): void {
@@ -198,6 +213,7 @@ function normalise(options: Options): void {
       `refused ${String(result.issues.length)} invalid entries (imported files that do not validate are never exported).`,
   );
   if (result.issues.length > 0) {
+    printIssues(result.issues);
     process.exitCode = 1;
   }
 }
@@ -416,6 +432,25 @@ function cleanStaging(staging: string): void {
 }
 
 /**
+ * Render the plan, or print a refusal naming the id at fault.
+ *
+ * `renderStagedCorpus` throws for a case id that cannot be a file name. A CLI that dies with a stack trace on
+ * hostile input is the failure ADR-026 says must become a printed refusal, and the same message has to reach
+ * the operator on the recovery path as on the fresh one — otherwise resuming an interrupted batch is the one
+ * route that still crashes.
+ */
+function stagedOrRefuse(cases: readonly BenchmarkCase[]): StagedFile[] {
+  try {
+    return renderStagedCorpus(cases);
+  } catch (error) {
+    if (error instanceof UnsafeCaseNameError) {
+      return fail(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
  * Write a planned batch to disk through a staging directory and a journal.
  *
  * The order is the whole point: every file is materialised in staging and journalled as `staged` before the
@@ -457,7 +492,7 @@ function publishBatch(
       );
       return;
     }
-    const staged = new Map(renderStagedCorpus(plan.cases).map((file) => [file.name, file]));
+    const staged = new Map(stagedOrRefuse(plan.cases).map((file) => [file.name, file]));
     let published = 0;
     for (const item of journal.items) {
       const file = staged.get(item.name);
@@ -512,7 +547,7 @@ function publishBatch(
     return;
   }
 
-  const staged = renderStagedCorpus(plan.cases);
+  const staged = stagedOrRefuse(plan.cases);
   mkdirSync(staging, { recursive: true });
   const journal = createJournal(plan, staged);
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`, 'utf8');

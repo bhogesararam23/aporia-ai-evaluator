@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
@@ -259,6 +259,36 @@ test('a manifest is read under a ceiling as well, and a directory is refused by 
     assert.match(tooBig.stderr, /fat\.json/);
     assert.match(tooBig.stderr, /is not valid JSON|limit/);
     assertNoStack(tooBig.stderr, 'benchmark:release verify with an oversized manifest');
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a case whose id would escape the output directory is excluded, not written', async () => {
+  // The reproduced v0.7 defect end to end: this id used to validate cleanly and `normalise` used to exit zero
+  // while writing several directories above --out. Now the case is refused where it is read, the rest of the
+  // corpus is still published, and the scratch directory contains exactly what the operator pointed at.
+  const temp = scratchDirectory('aporia-escape-');
+  try {
+    const corpus = join(temp.path, 'corpus');
+    mkdirSync(corpus, { recursive: true });
+    writeFileSync(join(corpus, 'a.json'), JSON.stringify(validCase('../../escaped')), 'utf8');
+    writeFileSync(join(corpus, 'b.json'), JSON.stringify(validCase('good-case')), 'utf8');
+    const out = join(temp.path, 'out');
+    const result = await script('scripts/benchmark-case.ts', [
+      'normalise',
+      '--corpus',
+      corpus,
+      '--out',
+      out,
+    ]);
+    assert.notEqual(result.code, 0, 'an escaping case id was accepted as valid');
+    assert.match(result.stderr, /file name/);
+    assert.match(result.stderr, /escaped/);
+    assert.ok(existsSync(join(out, 'good-case.json')), 'the valid case must still publish');
+    assert.ok(!existsSync(join(out, 'escaped.json')));
+    assert.deepEqual(readdirSync(temp.path).sort(), ['corpus', 'out']);
+    assertNoStack(result.stderr, 'benchmark:case normalise with an escaping id');
   } finally {
     temp.remove();
   }
