@@ -13,6 +13,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [v0.3 Requirements Traceability](product/V03_REQUIREMENTS_TRACEABILITY.md) — audited requirement-to-code-to-test matrix for the claim-level milestone.
 - [v0.4 Requirements Traceability](product/V04_REQUIREMENTS_TRACEABILITY.md) — each v0.4 obligation in evaluator semantics, citation lifecycle, benchmark integrity, retest provenance, persistence and boundaries, mapped to the code that satisfies it and the check that would fail without it.
 - [v0.7 Requirements Traceability](product/V07_REQUIREMENTS_TRACEABILITY.md) — every v0.7 obligation in review provenance, reviewer roster and identity, adjudication binding, batch semantics, corpus releases and compatibility, mapped to its implementation and the test that pins it.
+- [v0.8 Requirements Traceability](product/V08_REQUIREMENTS_TRACEABILITY.md) — every v0.8 obligation in bounded corpus ingestion, release-bound execution, the run record, replay verification, artifact publication, compatibility and governance, mapped to its implementation and the check that would fail without it.
 - [Product Governance and Boundaries](business/PRODUCT_GOVERNANCE_AND_BOUNDARIES.md) — product promises and separation from evaluator verdicts.
 
 ## Technical design
@@ -22,6 +23,7 @@ This set defines the intended product, evaluation methodology, trust model, safe
 - [Local HTTP Route Map](technical/HTTP_ROUTE_MAP.md) — implemented pages, actions, scoping, and error behavior.
 - [Module Boundaries](technical/MODULE_BOUNDARIES.md) — enforceable dependency directions, package rules, and future CI requirements.
 - [Benchmark Review Provenance and Corpus Releases](technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md) — the v0.7 design: what the merged v0.6 workflow discarded or mis-accepted, how provenance, roster enforcement, disagreement binding, atomic batch publishing and deterministic release manifests replace it, and what a hash and a readiness gate each do not prove.
+- [Release-Bound Benchmark Execution and Corpus I/O Hardening](technical/BENCHMARK_EXECUTION_BINDING_AND_CORPUS_IO_HARDENING.md) — the v0.8 design: the seven defects reproduced against merged v0.7, one bounded corpus and artifact read, execution that verifies a frozen release before scoring, the `benchmark-run-record-v1` receipt and its replay verification, atomic refuse-by-default publication, and why `benchmark-report-v2` was left byte-frozen with the binding carried by the receipt instead.
 - [Data Model](technical/DATA_MODEL.md) — entities, relationships, lifecycle, provenance, retention, and versioning.
 - [API and Job Contracts](technical/API_AND_JOB_CONTRACTS.md) — normalized request/response, job state, idempotency, and error semantics.
 - [Provider Adapters](technical/PROVIDER_ADAPTERS.md) — provider interface, capabilities, failures, and integration criteria.
