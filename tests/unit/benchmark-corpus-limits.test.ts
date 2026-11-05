@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BENCHMARK_LIMITS } from '../../src/benchmark/validate.ts';
+import { MAX_ARTIFACT_ID_LENGTH } from '../../src/benchmark/naming.ts';
 import { MAX_CANONICAL_DEPTH } from '../../src/benchmark/hashing.ts';
 
 /**
@@ -42,4 +43,10 @@ test('a file count and a case count are separate limits', () => {
   // A file may hold an array of cases, so the file ceiling must be the one that bounds the *read* and the
   // case ceiling the one that bounds the corpus; asserting inequality of values would be wrong (both 5000),
   // so the loader tests are what prove each is applied to the right quantity.
+});
+
+test('the identifier ceiling the naming rule uses is the validator ceiling', () => {
+  // `naming.ts` cannot import `validate.ts` (the validator imports it), so the number is stated twice and
+  // bound here. Two ceilings that drift would let an id validate and then be refused as a file name.
+  assert.equal(MAX_ARTIFACT_ID_LENGTH, BENCHMARK_LIMITS.maxIdLength);
 });
