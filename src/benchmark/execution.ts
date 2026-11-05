@@ -15,7 +15,9 @@
  * Pure and offline: no filesystem, no clock, no path, no hostname, no environment. The same inputs always
  * produce the same bytes, on any machine, which is what makes a stored receipt checkable later.
  */
+import { createHash } from 'node:crypto';
 import {
+  BENCHMARK_DIMENSIONS,
   BENCHMARK_RELEASE_MANIFEST_VERSION,
   BENCHMARK_RUN_RECORD_VERSION,
   type BenchmarkCase,
@@ -23,7 +25,21 @@ import {
 } from './types.ts';
 import { canonicalise, contentHash, isContentHash, sha256Hex } from './hashing.ts';
 import { releaseGates, verifyRelease, type ReleaseManifest } from './release.ts';
-import type { BenchmarkReport } from './report.ts';
+import {
+  BENCHMARK_REPORT_VERSION,
+  buildBenchmarkReport,
+  caseDigest,
+  serialiseBenchmarkReport,
+  type BenchmarkReport,
+  type CorpusDigest,
+} from './report.ts';
+import { regressionResults, unusableEvidenceRecords } from './regression.ts';
+import {
+  agreementRows,
+  annotationSummaries,
+  scoreByDimension,
+  type ScoredPair,
+} from './scoring.ts';
 import { disagreementReport } from './review.ts';
 import { compareStrings } from './provenance.ts';
 
@@ -189,6 +205,88 @@ export function runRecordProblem(parsed: unknown): string | null {
   }
   return null;
 }
+
+/** One corpus file as read, kept whole because a report digests both the file and the cases in it. */
+export interface CorpusFileInput {
+  readonly name: string;
+  readonly text: string;
+  readonly values: readonly unknown[];
+}
+
+export interface ComposedRunReport {
+  readonly report: BenchmarkReport;
+  readonly reportText: string;
+}
+
+/**
+ * Score a validated corpus into the report, exactly as the harness does.
+ *
+ * This is shared by `benchmark` and `benchmark:verify` for one reason: a replay that recomputes the report by a
+ * second implementation will drift from the original in some field nobody thought to compare — the corpus
+ * digests are the likeliest place. One pipeline means a verification compares the same construction it claims to
+ * reproduce, and the receipt's report hashes are checkable rather than approximately right.
+ *
+ * Only what the software itself produces is scored as produced-versus-gold. Human-judgement dimensions are
+ * reported as annotation agreement in their own block, from their own rule, and nothing selects a reviewer label
+ * to manufacture a consensus or merges an agreement figure into a regression count.
+ */
+export function composeRunReport(
+  files: readonly CorpusFileInput[],
+  validation: BenchmarkCorpusValidation,
+): ComposedRunReport {
+  const regression = regressionResults(validation.cases);
+  const deterministicPairs: ScoredPair[] = regression.map((row) => ({
+    caseId: row.caseId,
+    dimension: row.dimension,
+    subjectId: row.subjectId,
+    expected: row.expected,
+    predicted: row.produced,
+    component: row.component,
+  }));
+  const dimensions = scoreByDimension(deterministicPairs, BENCHMARK_DIMENSIONS);
+  const agreement = agreementRows(validation.cases);
+  const annotation = annotationSummaries(agreement, BENCHMARK_DIMENSIONS);
+  const unusable = unusableEvidenceRecords(validation.cases).map((row) => ({
+    caseId: row.caseId,
+    propositionId: row.propositionId,
+    evidenceId: row.evidence.id,
+  }));
+
+  const acceptedValues = new Set<unknown>(validation.cases as readonly unknown[]);
+  const digests: CorpusDigest[] = files.map((file) => ({
+    kind: 'file',
+    source: file.name,
+    caseCount: file.values.length,
+    digest: createHash('sha256').update(file.text, 'utf8').digest('hex').slice(0, 16),
+    bytes: Buffer.byteLength(file.text, 'utf8'),
+    // Settled once validation has run, so a file whose cases were all refused is visible.
+    accepted: file.values.every((value) => acceptedValues.has(value)),
+  }));
+  for (const benchmarkCase of validation.cases) {
+    digests.push({
+      kind: 'case',
+      source: benchmarkCase.id,
+      caseCount: 1,
+      digest: caseDigest(benchmarkCase),
+      bytes: Buffer.byteLength(JSON.stringify(benchmarkCase), 'utf8'),
+      accepted: true,
+    });
+  }
+
+  const report = buildBenchmarkReport(
+    validation,
+    regression,
+    dimensions,
+    agreement,
+    annotation,
+    unusable,
+    digests,
+  );
+  return { report, reportText: serialiseBenchmarkReport(report) };
+}
+
+/** The report contract version this build writes, re-exported so a reader can compare a stored document. */
+export const CURRENT_REPORT_VERSION = BENCHMARK_REPORT_VERSION;
 
 export interface RunRecordReplay {
   readonly report: BenchmarkReport;
