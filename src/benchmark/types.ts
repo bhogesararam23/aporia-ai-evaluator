@@ -57,6 +57,15 @@ export const BENCHMARK_AUDIT_VERSION = 'benchmark-audit-v1';
  * carries no clock, path or machine identity, so the same corpus always produces the same bytes.
  */
 export const BENCHMARK_RELEASE_MANIFEST_VERSION = 'benchmark-release-manifest-v1';
+/**
+ * v0.8 run receipt. A receipt binds one scored run to one verified release: it records which frozen corpus was
+ * measured, which manifest bytes were trusted, which report came out, and which contract versions produced it.
+ *
+ * It proves that *this build scored this corpus into this report*. It does not prove the material is genuine,
+ * that two reviewer names are two people, or that the evaluator is accurate, and it carries no clock, path,
+ * hostname or environment value, so the same run over the same inputs writes the same bytes anywhere.
+ */
+export const BENCHMARK_RUN_RECORD_VERSION = 'benchmark-run-record-v1';
 /** The journal a staged batch leaves behind, which is the only record of an interrupted write. */
 export const BENCHMARK_BATCH_JOURNAL_VERSION = 'benchmark-batch-journal-v1';
 export const KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS = [
@@ -67,6 +76,7 @@ export const KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS = [
   BENCHMARK_ADJUDICATION_VERSION_V2,
   BENCHMARK_AUDIT_VERSION,
   BENCHMARK_RELEASE_MANIFEST_VERSION,
+  BENCHMARK_RUN_RECORD_VERSION,
   BENCHMARK_BATCH_JOURNAL_VERSION,
 ] as const;
 
