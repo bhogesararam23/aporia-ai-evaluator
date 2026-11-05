@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { test } from 'node:test';
 
 import { BENCHMARK_CASE_VERSION } from '../../src/benchmark/types.ts';
+import { BENCHMARK_LIMITS } from '../../src/benchmark/validate.ts';
 import { scratchDirectory } from '../helpers/temp.ts';
 
 /**
@@ -39,8 +40,9 @@ async function script(relative: string, args: readonly string[]): Promise<CliRes
   }
 }
 
-function validCaseJson(id: string): string {
-  return JSON.stringify({
+/** A validating case *object*. Callers serialise it — double-encoding here once produced an array of strings. */
+function validCase(id: string): Record<string, unknown> {
+  return {
     version: BENCHMARK_CASE_VERSION,
     id,
     stratum: 'REFUSAL_NOT_A_DENIAL',
@@ -117,7 +119,7 @@ function validCaseJson(id: string): string {
     reviewerLabels: [],
     adjudications: [],
     limitations: ['Synthetic fixture only.'],
-  });
+  };
 }
 
 /** A frame from the TypeScript runner is what an operator must never be handed. */
@@ -135,7 +137,7 @@ function assertNoStack(stderr: string, label: string): void {
 test('benchmark:case refuses a directory named *.json with the entry named', async () => {
   const temp = scratchDirectory('aporia-corpus-cli-');
   try {
-    writeFileSync(join(temp.path, 'good.json'), validCaseJson('cli-good'), 'utf8');
+    writeFileSync(join(temp.path, 'good.json'), JSON.stringify(validCase('cli-good')), 'utf8');
     mkdirSync(join(temp.path, 'nested.json'));
     const result = await script('scripts/benchmark-case.ts', ['validate', '--corpus', temp.path]);
     assert.notEqual(result.code, 0);
@@ -150,7 +152,7 @@ test('benchmark:case refuses a directory named *.json with the entry named', asy
 test('benchmark:release refuses the same entry, on every subcommand that reads a corpus', async () => {
   const temp = scratchDirectory('aporia-release-cli-');
   try {
-    writeFileSync(join(temp.path, 'good.json'), validCaseJson('cli-good'), 'utf8');
+    writeFileSync(join(temp.path, 'good.json'), JSON.stringify(validCase('cli-good')), 'utf8');
     mkdirSync(join(temp.path, 'nested.json'));
     for (const subcommand of ['gates', 'verify'] as const) {
       const args =
@@ -169,7 +171,7 @@ test('benchmark:release refuses the same entry, on every subcommand that reads a
 test('benchmark:release reports a missing manifest as a stated refusal, not an ENOENT', async () => {
   const temp = scratchDirectory('aporia-manifest-missing-');
   try {
-    writeFileSync(join(temp.path, 'good.json'), validCaseJson('cli-good'), 'utf8');
+    writeFileSync(join(temp.path, 'good.json'), JSON.stringify(validCase('cli-good')), 'utf8');
     const result = await script('scripts/benchmark-release.ts', [
       'verify',
       '--corpus',
@@ -193,6 +195,53 @@ test('malformed JSON is still a stated refusal after the entry checks', async ()
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /broken\.json is not valid JSON/);
     assertNoStack(result.stderr, 'benchmark:case validate with malformed JSON');
+  } finally {
+    temp.remove();
+  }
+});
+
+test('one oversized file is refused by every command, not only by the harness', async () => {
+  // This is the behaviour change the owner approved in ADR-028: `benchmark:case` and `benchmark:release` were
+  // unbounded, so a 1,093,691-byte bundle was parsed by them and reported as "600 valid case(s)" while
+  // `npm run benchmark` refused it. They now refuse it with the same words. The bound was not loosened to
+  // meet them in the middle; the commands with no ceiling became as strict as the command that had one.
+  const temp = scratchDirectory('aporia-corpus-bundle-');
+  try {
+    const padding = 'z'.repeat(BENCHMARK_LIMITS.maxCaseBytes + 200);
+    writeFileSync(join(temp.path, 'bundle.json'), `{ "padding": "${padding}" }`, 'utf8');
+    const results = await Promise.all([
+      script('scripts/benchmark.ts', ['--corpus', temp.path]),
+      script('scripts/benchmark-case.ts', ['validate', '--corpus', temp.path]),
+      script('scripts/benchmark-release.ts', ['gates', '--corpus', temp.path]),
+    ]);
+    for (const [index, result] of results.entries()) {
+      assert.notEqual(result.code, 0, `command ${String(index)} read an oversized corpus`);
+      assert.match(
+        result.stderr,
+        /per-file limit/,
+        `command ${String(index)} refused in other words`,
+      );
+      assert.match(result.stderr, /bundle\.json/);
+      assertNoStack(result.stderr, `oversized-file refusal on command ${String(index)}`);
+    }
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a bundle of many valid cases inside the ceiling is still read as a bundle', async () => {
+  const temp = scratchDirectory('aporia-corpus-many-');
+  try {
+    // Bounding a read must not quietly change what a file *means*: one document holding an array of cases has
+    // always been legal, and the ceiling is about bytes, not about forcing one case per file.
+    writeFileSync(
+      join(temp.path, 'many.json'),
+      JSON.stringify([validCase('many-a'), validCase('many-b')]),
+      'utf8',
+    );
+    const result = await script('scripts/benchmark-case.ts', ['validate', '--corpus', temp.path]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /2 valid case\(s\)/);
   } finally {
     temp.remove();
   }
