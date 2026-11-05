@@ -225,22 +225,24 @@ writes.
 
 ## Appendix — final head and its CI run
 
-Recorded after `gh run watch` completed on the branch's last commit, so the SHA here is the head the pull request
-carries and the runs quoted are that head's own.
+Every run below was read back from `gh run watch` / `gh run view` after it completed; nothing is recorded as
+finished before it finished.
 
 | Item | Value |
 |---|---|
 | Base (`main`) | `e72e77aff6fa8e27d2b10a42920f53712a9cda98` |
-| Branch head | `d2aeebd6eb9d428d3f6895fd0571c4f9a0da5382` |
-| Commits from base | 40 (`git rev-list --count e72e77a..HEAD`) |
+| Branch head | `b5f5a52c3ef18f193caa6c3892e29441298392d2` |
+| Commits from base | 41 (`git rev-list --count e72e77a..HEAD`) |
 | Pull request | [#11](https://github.com/bhogesararam23/aporia-ai-evaluator/pull/11) — **OPEN**, `mergedAt: null`, not merged |
-| CI, pull-request run `41958664701` | 6/6 success — `check` ubuntu 1m11s, windows 1m34s, macos 1m16s; `live workflow` ubuntu 48s, windows 51s, macos 46s |
-| CI, push run `41958658896` | 6/6 success — all three `check` jobs and all three `live workflow` jobs |
+| CI at head `b5f5a52` | pull-request run `41959314593` **6/6 success**; push run `41959307039` **6/6 success** |
+| CI at head `d2aeebd` | pull-request run `41958664701` 6/6 success (`check` ubuntu 1m11s, windows 1m34s, macos 1m16s; `live workflow` ubuntu 48s, windows 51s, macos 46s); push run `41958658896` 6/6 success |
+| CI at head `712e0fb` | pull-request run `41958164087` 6/6 success (`check` ubuntu 1m8s, windows 1m54s, macos 1m55s; `live workflow` ubuntu 33s, windows 1m14s, macos 49s); push run `41958079170` 6/6 success |
+| Last head with executable code | `d47193b` (compatibility ledger); CI green there too, incl. `41953455732` at `0ead024` |
 
-This appendix's own commit is documentation only, so the code, tests and workflows above are the ones CI ran;
-this is the same record v0.7 kept, and a later documentation commit's run is not represented as a code result it
-did not produce. The last commit touching executable code or tests is `d47193b`; every commit after it is
-documentation, and CI is green on both.
+Local verification re-run at the final head: `npm run check` exit 0 (1073 tests, 1072 passing, 0 failing, 1
+skipped) and `npm run verify:workflow` exit 0 (25 passed, 0 failed, 0 not-run).
 
-Local verification re-run at this head before the final push: `npm run check` exit 0 (1073 tests, 1072 passing,
-0 failing, 1 skipped) and `npm run verify:workflow` exit 0 (25 passed, 0 failed, 0 not-run).
+The last commits on this branch are documentation about the milestone, so the head keeps advancing by one while
+the code it describes stays the same; every such head above was still run through the full three-OS matrix and was
+green. The commit that carries this appendix is the only one whose own CI run cannot be listed here, and it changes
+no code and no test — recorded as a fact rather than glossed over.
