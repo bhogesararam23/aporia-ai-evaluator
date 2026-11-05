@@ -241,3 +241,49 @@ refuses rather than mixing two batches; inspect or remove the staging directory 
 no journal present is reported as such and changes nothing. See
 [ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md) and the
 [design document](../technical/BENCHMARK_PROVENANCE_AND_CORPUS_RELEASES.md).
+
+## 11. Running a benchmark against a frozen release, and verifying it later
+
+A freeze on its own does not stop a run scoring a corpus that has quietly moved. Binding does:
+
+```bash
+# Score a corpus only if it is exactly the release the manifest froze, and record the run:
+npm run benchmark -- --corpus ./corpus-final \
+  --release ./releases/release-one.json \
+  --out ./reports/run-one.json \
+  --run-record ./reports/run-one.record.json
+#    The manifest is verified BEFORE anything is scored. A changed, added, removed, duplicated, invalid or
+#    contract-drifted case, or any blocking release-gate failure, prints the refusals and writes NO report.
+#    Non-blocking gaps (a legacy unbound decision, missing strata) print as warnings and do not stop the run.
+#    Optional: --source-revision <text> records a revision you supply. The harness never runs git and never
+#    guesses a commit; omit it and the receipt records null, which is a fact rather than a gap.
+npm run benchmark:verify -- --record ./reports/run-one.record.json \
+  --corpus ./corpus-final --manifest ./releases/release-one.json --report ./reports/run-one.json
+#    VERIFIED, or it names every field that no longer agrees: MANIFEST-TAMPERED, CORPUS-DRIFTED,
+#    REPORT-CONTENT, REPORT-TEXT, VERSION-DRIFT, CASE-COUNT, INCOMPLETE-ARTIFACT.
+```
+
+An unbound run (`--release` omitted) still works and still produces a receipt, which records `releaseId: null`
+and says NOT RELEASE-BOUND. That is the honest shape of a run over material nobody froze: reproducible, but not
+verified against a release.
+
+**Reading a verification result.** A receipt proves that this build scored a corpus matching that manifest into
+that report under those contract versions. It cannot show the material is genuine or that a reviewer was real,
+and `accuracyClaimable` is `false` in the report, the manifest and the receipt. A `serialisation-order difference
+only` note means the report's bytes were rewritten while its content stands — a formatting question, not a forged
+result; `REPORT-CONTENT` is the failure that means the numbers changed.
+
+**Writes refuse by default now.** An existing `--out` report, `--run-record`, manifest, `--snapshot` file or
+canonical export is refused with the digest it would have destroyed; pass `--overwrite` deliberately. A target
+that already holds exactly the bytes a command would write is left alone and reported, so re-running the same
+command is safe. Directory outputs are staged, and a write that fails partway is rolled back — a refusal never
+leaves a half-published corpus behind.
+
+**Hostile input is refused in words.** A symlink in a corpus directory, a subdirectory named `*.json`, a file
+over 256 KiB, a corpus past the total byte or file-count ceiling, and a document nested past 64 levels each print
+a refusal naming the file and the limit, before anything is parsed. Nothing is skipped silently, because a skipped
+entry would report a corpus smaller than the one you supplied.
+
+See [ADR-028](../agents/adrs/ADR-028-release-bound-execution-and-artifact-identities.md) and
+[Release-bound execution and corpus I/O hardening](../technical/BENCHMARK_EXECUTION_BINDING_AND_CORPUS_IO_HARDENING.md)
+for the design behind this section.
