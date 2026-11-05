@@ -12,6 +12,7 @@ import {
   readJsonEntries,
 } from '../../scripts/corpus-io.ts';
 import { BENCHMARK_LIMITS } from '../../src/benchmark/validate.ts';
+import { MAX_CANONICAL_DEPTH } from '../../src/benchmark/hashing.ts';
 import { scratchDirectory } from '../helpers/temp.ts';
 
 /**
@@ -225,6 +226,56 @@ test('a corpus whose files are individually legal but cumulatively too big is re
     assert.match(
       messageOf(() => readCorpusValues(temp.path)),
       /total/,
+    );
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a document nested past the hashing bound is refused by name and ceiling', () => {
+  const temp = scratchDirectory('aporia-corpus-depth-');
+  try {
+    // 200 levels parses fine and is a few hundred bytes, so the only bound that catches it is the nesting
+    // depth this build can canonicalise. Relying on the parser's own stack limit would make the refusal
+    // depend on how much stack Node happened to have left, and on which machine it ran.
+    let deep: unknown = 'leaf';
+    for (let index = 0; index < 200; index += 1) {
+      deep = [deep];
+    }
+    writeFileSync(join(temp.path, 'deep.json'), JSON.stringify({ buried: deep }), 'utf8');
+    assert.equal(
+      kindOf(() => readCorpusValues(temp.path)),
+      'depth',
+    );
+    const message = messageOf(() => readCorpusValues(temp.path));
+    assert.match(message, /deep\.json/);
+    assert.match(message, new RegExp(String(MAX_CANONICAL_DEPTH)));
+    assert.equal(
+      kindOf(() => readJsonEntries(temp.path)),
+      'depth',
+    );
+  } finally {
+    temp.remove();
+  }
+});
+
+test('an ordinary multi-level case, well inside the bound, still reads', () => {
+  const temp = scratchDirectory('aporia-corpus-normal-');
+  try {
+    writeFileSync(
+      join(temp.path, 'fine.json'),
+      JSON.stringify({
+        input: { propositions: [{ id: 'p1', evidence: [{ id: 'e1' }] }] },
+        expected: [{ dimension: 'EVIDENCE_SUPPORT', subjectId: 'p1' }],
+      }),
+      'utf8',
+    );
+    const loaded = readCorpusValues(temp.path);
+    assert.equal(loaded.length, 1);
+    assert.equal(
+      readJsonEntries(temp.path).length,
+      1,
+      'a nested but legal document must not be caught by the depth bound',
     );
   } finally {
     temp.remove();

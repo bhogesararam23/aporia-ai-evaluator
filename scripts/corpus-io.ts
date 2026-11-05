@@ -12,6 +12,7 @@
 import { lstatSync, readFileSync, readdirSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { BENCHMARK_LIMITS } from '../src/benchmark/validate.ts';
+import { nestsDeeperThan } from '../src/benchmark/hashing.ts';
 
 /**
  * What went wrong with a read. Each kind maps to one thing an operator can do about it.
@@ -143,20 +144,38 @@ function readBoundedFiles(directory: string): { name: string; text: string }[] {
   return files;
 }
 
+/**
+ * Parse a document, then refuse it if this build could not hash it.
+ *
+ * The depth check is done here rather than left to the parser or to the canonicaliser for two reasons. A
+ * parser that runs out of stack throws a `RangeError` whose text says nothing about what to fix, and the
+ * limit it hits depends on the stack Node happened to have — so the cheap explicit bound is what actually
+ * decides, and the parser's own failure is described in the same words when it gets there first. And a value
+ * that arrives at `contentHash` past `MAX_CANONICAL_DEPTH` throws mid-run, which is the one failure mode a
+ * validator or CLI is supposed to turn into a stated refusal.
+ */
 function parseJson(name: string, text: string): unknown {
+  let value: unknown;
   try {
-    return JSON.parse(text);
+    value = JSON.parse(text);
   } catch (error) {
-    // A pathological document can fail the parser's own depth limit rather than its syntax check. Saying so
-    // keeps the operator's next action obvious — this file is not merely missing a comma.
     if (error instanceof RangeError) {
       throw new CorpusReadError(
-        'json',
-        `${name} is structured too deeply for the parser to read. Split or flatten it and try again.`,
+        'depth',
+        `${name} is nested past ${String(BENCHMARK_LIMITS.maxNestingDepth)} levels, which is more than the ` +
+          'parser can read. Flatten it; this tool will not trim it silently to make it fit.',
       );
     }
     throw new CorpusReadError('json', `${name} is not valid JSON.`);
   }
+  if (nestsDeeperThan(value, BENCHMARK_LIMITS.maxNestingDepth)) {
+    throw new CorpusReadError(
+      'depth',
+      `${name} is nested deeper than ${String(BENCHMARK_LIMITS.maxNestingDepth)} levels. A document that ` +
+        'deep cannot be canonicalised or hashed, so it cannot belong to a release. Flatten it.',
+    );
+  }
+  return value;
 }
 
 /**
