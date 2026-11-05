@@ -36,7 +36,8 @@ import {
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
 import { CorpusReadError, readArtifactText, readCorpusFiles } from './corpus-io.ts';
 import { ArtifactWriteError, publishFile } from './artifact-io.ts';
-import { bindRunToRelease, type ReleaseBinding } from '../src/benchmark/execution.ts';
+import { bindRunToRelease, buildRunRecord, runRecordText } from '../src/benchmark/execution.ts';
+import type { ReleaseBinding } from '../src/benchmark/execution.ts';
 
 interface Options {
   corpus: string;
@@ -44,6 +45,8 @@ interface Options {
   requireCompleteStrata: boolean;
   overwrite: boolean;
   release: string | null;
+  runRecord: string | null;
+  sourceRevision: string | null;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -53,6 +56,8 @@ function parseArguments(argv: readonly string[]): Options {
     requireCompleteStrata: true,
     overwrite: false,
     release: null,
+    runRecord: null,
+    sourceRevision: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -62,6 +67,10 @@ function parseArguments(argv: readonly string[]): Options {
       options.output = argv[(index += 1)] ?? null;
     } else if (argument === '--release') {
       options.release = argv[(index += 1)] ?? null;
+    } else if (argument === '--run-record') {
+      options.runRecord = argv[(index += 1)] ?? null;
+    } else if (argument === '--source-revision') {
+      options.sourceRevision = argv[(index += 1)] ?? null;
     } else if (argument === '--allow-partial-strata') {
       options.requireCompleteStrata = false;
     } else if (argument === '--overwrite') {
@@ -90,6 +99,13 @@ function printUsage(): void {
                   release-gate failure, refuses the run and writes no report. Non-blocking provenance gaps
                   are disclosed and do not stop the run. Without this flag nothing about the corpus is
                   claimed to be verified, and the report says nothing about a release.
+  --run-record    Where to write benchmark-run-record-v1: the release, manifest bytes, corpus hash, report
+                  hashes, case count and the contract versions that applied. A run not bound to a release
+                  writes one with releaseId null rather than inventing an identity.
+  --source-revision <text>
+                  Recorded verbatim in the receipt. Supply it only when you know it: the harness never reads
+                  a repository, never runs git and never guesses a commit, because an invented revision in a
+                  receipt would be the most misleading field in the artifact.
   --overwrite     Replace an existing report file. Without it an existing target is refused, naming
                   the digest of the bytes that are there, because a report may already be quoted
                   by something else.
@@ -184,9 +200,17 @@ function bindCorpusToRelease(
   options: Options,
   validation: ReturnType<typeof validateBenchmarkCorpus>,
   directory: string,
-): { readonly binding: ReleaseBinding | null; readonly refused: boolean } {
+): { readonly binding: ReleaseBinding; readonly refused: boolean } {
+  const quiet: ReleaseBinding = bindRunToRelease({
+    manifest: null,
+    cases: validation.cases,
+    validation,
+    manifestText: null,
+  });
   if (options.release === null) {
-    return { binding: null, refused: false };
+    // Unbound: computed so a receipt can carry the truth, printed nowhere, because "not release-bound" is the
+    // status of every ordinary run and a warning on each one would teach everyone to ignore warnings.
+    return { binding: quiet, refused: false };
   }
   const manifestPath = resolve(options.release);
   let manifestText: string;
@@ -226,7 +250,7 @@ function bindCorpusToRelease(
       'benchmark: no report was written. A report over a corpus that drifted from its release would read like a result about the reviewed corpus, and it would not be one.',
     );
     process.exitCode = 1;
-    return { binding: null, refused: true };
+    return { binding: quiet, refused: true };
   }
   console.error(
     `benchmark: corpus verified against release ${String(binding.releaseId)}` +
@@ -351,6 +375,45 @@ function main(): void {
       `benchmark: ${String(validation.strataMissing.length)} required stratum(s) have no case: ` +
         validation.strataMissing.join(', '),
     );
+  }
+
+  if (options.runRecord !== null) {
+    const record = buildRunRecord({
+      report,
+      reportText: text,
+      binding: bound.binding,
+      cases: validation.cases,
+      sourceRevision: options.sourceRevision,
+    });
+    const recordPath = resolve(options.runRecord);
+    mkdirSync(resolve(recordPath, '..'), { recursive: true });
+    try {
+      const published = publishFile(recordPath, runRecordText(record), {
+        overwrite: options.overwrite,
+      });
+      console.error(
+        published.written
+          ? `benchmark: run record written to ${recordPath}` +
+              (record.releaseId === null
+                ? ' — NOT RELEASE-BOUND: no release was supplied, so the receipt records that rather than inventing one.'
+                : ` (release ${record.releaseId})`)
+          : `benchmark: the run record at ${recordPath} already holds exactly these bytes; nothing was replaced.`,
+      );
+      if (published.written && published.replacedSha256 !== null) {
+        // Named even though `--overwrite` was asked for: two receipts for one corpus are the pair whose
+        // difference matters, and the displaced digest is the only way to say what is no longer there.
+        console.error(
+          `benchmark: replaced the run record already at ${recordPath} (previous sha256 ${published.replacedSha256}).`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ArtifactWriteError) {
+        return fail(
+          `${error.message} The report was written; the receipt was not, so no run claims a binding it cannot show.`,
+        );
+      }
+      throw error;
+    }
   }
   if (unusable.length > 0) {
     console.error(

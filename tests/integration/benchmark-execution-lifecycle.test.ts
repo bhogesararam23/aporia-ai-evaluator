@@ -7,7 +7,8 @@ import { test } from 'node:test';
 
 import { fixtureCase, labelFor } from '../helpers/benchmark-fixtures.ts';
 import { scratchDirectory } from '../helpers/temp.ts';
-import { canonicalise } from '../../src/benchmark/hashing.ts';
+import { canonicalise, contentHash, sha256Hex } from '../../src/benchmark/hashing.ts';
+import type { BenchmarkRunRecord } from '../../src/benchmark/execution.ts';
 
 /**
  * Release-bound execution end to end (v0.8, spec §4–§6).
@@ -236,6 +237,142 @@ test('without --release the harness behaves as it always did', async () => {
   } finally {
     fixture.temp.remove();
   }
+});
+
+test('a run record is written, agrees with the report it describes, and is honest about being unbound', async () => {
+  const fixture = frozenRelease([agreedCase('rec-a')]);
+  try {
+    assert.equal((await freeze(fixture)).code, 0);
+    const report = join(fixture.temp.path, 'report.json');
+    const record = join(fixture.temp.path, 'run.json');
+    const bound = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--release',
+      fixture.manifest,
+      '--out',
+      report,
+      '--run-record',
+      record,
+      '--source-revision',
+      'e72e77aff6fa8e27d2b10a42920f53712a9cda98',
+      // One case cannot cover sixteen strata; that pre-existing requirement is not the binding, and this test
+      // needs the run's own exit status to mean "the release was accepted".
+      '--allow-partial-strata',
+    ]);
+    assert.equal(bound.code, 0, bound.stderr);
+    const receipt = JSON.parse(readFileSync(record, 'utf8')) as BenchmarkRunRecord;
+    const manifest = JSON.parse(readFileSync(fixture.manifest, 'utf8')) as {
+      releaseId: string;
+      corpusHash: string;
+    };
+    assert.equal(receipt.version, 'benchmark-run-record-v1');
+    assert.equal(receipt.releaseId, manifest.releaseId);
+    assert.equal(receipt.corpusHash, manifest.corpusHash);
+    assert.equal(receipt.caseCount, 1);
+    assert.equal(
+      receipt.sourceRevision,
+      'e72e77aff6fa8e27d2b10a42920f53712a9cda98',
+      'a supplied revision was dropped or altered',
+    );
+    assert.equal(receipt.accuracyClaimable, false);
+    // The report hash must describe the report actually on disk, or the receipt is decoration.
+    const reportText = readFileSync(report, 'utf8');
+    assert.equal(receipt.reportTextSha256, sha256Hex(reportText));
+    assert.equal(
+      receipt.reportSha256,
+      contentHash(JSON.parse(reportText)),
+      'the canonical report hash does not describe the written report',
+    );
+
+    // The same run without a release still gets a receipt, and it says it was not bound instead of pretending.
+    const unboundRecord = join(fixture.temp.path, 'unbound.json');
+    const unbound = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--run-record',
+      unboundRecord,
+      '--allow-partial-strata',
+    ]);
+    assert.match(unbound.stderr, /NOT RELEASE-BOUND/);
+    const quiet = JSON.parse(readFileSync(unboundRecord, 'utf8')) as BenchmarkRunRecord;
+    const quietText = readFileSync(unboundRecord, 'utf8');
+    assert.equal(quiet.releaseId, null, 'an unbound run invented a release id');
+    assert.equal(quiet.sourceRevision, null, 'a revision appeared that nobody supplied');
+    assert.equal(quiet.warnings.notReleaseBound, true);
+
+    // A second identical run writes identical receipt bytes, so the file is left alone and that is said out
+    // loud rather than passed off as a fresh publication.
+    const again = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--run-record',
+      unboundRecord,
+      '--allow-partial-strata',
+    ]);
+    assert.equal(again.code, 0, again.stderr);
+    assert.match(again.stderr, /already holds exactly these bytes/);
+    assert.equal(readFileSync(unboundRecord, 'utf8'), quietText);
+
+    // A *different* receipt for the same path is the destructive case: same corpus, but now bound to a
+    // revision, so the bytes differ. That is refused until the operator says otherwise.
+    const conflicting = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--run-record',
+      unboundRecord,
+      '--source-revision',
+      'a-different-revision',
+      '--allow-partial-strata',
+    ]);
+    assert.notEqual(conflicting.code, 0, 'a receipt was silently overwritten');
+    assert.match(conflicting.stderr, /already exists/);
+    assert.equal(
+      readFileSync(unboundRecord, 'utf8'),
+      quietText,
+      'the refused run replaced the receipt anyway',
+    );
+
+    // And with leave to replace, the new receipt is written and the displaced digest is reported.
+    const forced = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--run-record',
+      unboundRecord,
+      '--source-revision',
+      'a-different-revision',
+      '--allow-partial-strata',
+      '--overwrite',
+    ]);
+    assert.equal(forced.code, 0, forced.stderr);
+    assert.notEqual(readFileSync(unboundRecord, 'utf8'), quietText);
+    assert.match(
+      forced.stderr,
+      /replaced the run record already at .*previous sha256 [0-9a-f]{64}/,
+    );
+  } finally {
+    fixture.temp.remove();
+  }
+});
+
+test('the harness help lists every flag it accepts and no flag it does not', async () => {
+  const help = await script('scripts/benchmark.ts', ['--help']);
+  assert.equal(help.code, 0, help.stderr);
+  for (const flag of [
+    '--corpus',
+    '--out',
+    '--release',
+    '--run-record',
+    '--source-revision',
+    '--overwrite',
+    '--allow-partial-strata',
+  ]) {
+    assert.ok(help.stdout.includes(flag), `${flag} is accepted but not documented`);
+  }
+  // A typo is a refusal, never a silently ignored argument: guessing at intent is how a run ends up unbound.
+  const typo = await script('scripts/benchmark.ts', ['--corpus', '.', '--releas', 'x']);
+  assert.notEqual(typo.code, 0);
+  assert.match(typo.stderr, /Unknown argument/);
 });
 
 test('a non-blocking provenance gap is disclosed but never blocks the run', async () => {
