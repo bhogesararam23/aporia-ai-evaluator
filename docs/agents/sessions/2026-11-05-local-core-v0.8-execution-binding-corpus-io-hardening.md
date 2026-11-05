@@ -225,13 +225,22 @@ writes.
 
 ## Appendix — final head and its CI run
 
-Recorded after `gh run watch` completed on the branch's last commit, so the SHA in this appendix is the head the
-pull request carries and the run quoted is that head's own.
+Recorded after `gh run watch` completed on the branch's last commit, so the SHA here is the head the pull request
+carries and the runs quoted are that head's own.
 
 | Item | Value |
 |---|---|
 | Base (`main`) | `e72e77aff6fa8e27d2b10a42920f53712a9cda98` |
-| Branch head | recorded immediately below by `git rev-parse HEAD` |
-| Commits from base | `git rev-list --count e72e77a..HEAD` |
-| Pull request | #11 — **OPEN**, not merged |
-| CI at that head | recorded below from `gh run view`, all six jobs or explicitly not-finished |
+| Branch head | `d2aeebd6eb9d428d3f6895fd0571c4f9a0da5382` |
+| Commits from base | 40 (`git rev-list --count e72e77a..HEAD`) |
+| Pull request | [#11](https://github.com/bhogesararam23/aporia-ai-evaluator/pull/11) — **OPEN**, `mergedAt: null`, not merged |
+| CI, pull-request run `41958664701` | 6/6 success — `check` ubuntu 1m11s, windows 1m34s, macos 1m16s; `live workflow` ubuntu 48s, windows 51s, macos 46s |
+| CI, push run `41958658896` | 6/6 success — all three `check` jobs and all three `live workflow` jobs |
+
+This appendix's own commit is documentation only, so the code, tests and workflows above are the ones CI ran;
+this is the same record v0.7 kept, and a later documentation commit's run is not represented as a code result it
+did not produce. The last commit touching executable code or tests is `d47193b`; every commit after it is
+documentation, and CI is green on both.
+
+Local verification re-run at this head before the final push: `npm run check` exit 0 (1073 tests, 1072 passing,
+0 failing, 1 skipped) and `npm run verify:workflow` exit 0 (25 passed, 0 failed, 0 not-run).
