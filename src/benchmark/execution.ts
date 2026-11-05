@@ -17,17 +17,178 @@
  */
 import {
   BENCHMARK_RELEASE_MANIFEST_VERSION,
+  BENCHMARK_RUN_RECORD_VERSION,
   type BenchmarkCase,
   type BenchmarkCorpusValidation,
 } from './types.ts';
-import { isContentHash, sha256Hex } from './hashing.ts';
+import { canonicalise, contentHash, isContentHash, sha256Hex } from './hashing.ts';
 import { releaseGates, verifyRelease, type ReleaseManifest } from './release.ts';
+import type { BenchmarkReport } from './report.ts';
+import { disagreementReport } from './review.ts';
+import { compareStrings } from './provenance.ts';
 
 /** The same algorithm name the release manifest declares, so one change cannot be silent in one artifact only. */
 export const RUN_RECORD_ALGORITHM = 'sha256-canonical-v1';
 
 /** A release id is `release-` plus twelve hex characters derived from the corpus hash. */
 const RELEASE_ID_PATTERN = /^release-[0-9a-f]{12}$/;
+
+/**
+ * What a receipt does and does not say, recorded inside the artifact rather than only in prose, because a
+ * receipt is the file a later reader will actually open.
+ */
+const RUN_RECORD_NOTE =
+  'This receipt binds one scored run to one verified release: it names the manifest bytes that were trusted, ' +
+  'the corpus hash they froze, the report this build produced, and the contract versions in force. It proves ' +
+  'that this build scored this corpus into this report. It does not prove that the material is genuine, that ' +
+  'two reviewer names are two people, or that any reviewer existed - reviewer identity in a case file is ' +
+  'operator-asserted and this application has no authentication. A source revision appears only when an ' +
+  'operator supplied one; this tool never reads a repository and never infers a commit. A receipt over a ' +
+  'complete, fully-gated corpus describes a ready corpus, not an accurate evaluator.';
+
+export interface RunRecordVersions {
+  /** Contract versions actually present in the corpus, so a mixed corpus is visible in the receipt. */
+  readonly caseContractVersions: readonly string[];
+  readonly reportVersion: string;
+  readonly methodologyVersion: string;
+  readonly metricsVersion: string;
+  /** The rule in force for this build, never a proposed one. */
+  readonly evidenceRuleVersion: string;
+}
+
+export interface RunRecordWarnings {
+  readonly notReleaseBound: boolean;
+  /** Legacy decisions that settle a subject without naming the split - honoured, and disclosed. */
+  readonly unboundAdjudications: number;
+  readonly strataMissing: readonly string[];
+  readonly gateNotes: readonly string[];
+}
+
+export interface BenchmarkRunRecord {
+  readonly version: string;
+  readonly algorithm: string;
+  readonly producedBy: string;
+  readonly releaseId: string | null;
+  readonly manifestSha256: string | null;
+  readonly manifestLabel: string | null;
+  readonly corpusHash: string | null;
+  /** Canonical content hash: stable across serialisation and platform, so a replay can be compared anywhere. */
+  readonly reportSha256: string;
+  /** SHA-256 of the exact report text this run wrote, kept beside the content hash rather than instead of it. */
+  readonly reportTextSha256: string;
+  readonly caseCount: number;
+  readonly versions: RunRecordVersions;
+  readonly warnings: RunRecordWarnings;
+  /** Only what an operator explicitly supplied. `null` means none was given, never "unknown but assumed". */
+  readonly sourceRevision: string | null;
+  readonly accuracyClaimable: false;
+  readonly note: string;
+}
+
+export interface RunRecordInput {
+  readonly report: BenchmarkReport;
+  readonly reportText: string;
+  readonly binding: ReleaseBinding;
+  readonly cases: readonly BenchmarkCase[];
+  readonly sourceRevision: string | null;
+}
+
+function uniqueSorted(values: readonly string[]): readonly string[] {
+  return [...new Set(values)].sort(compareStrings);
+}
+
+/**
+ * Build the receipt for a run that has just been scored.
+ *
+ * `warnings.unboundAdjudications` is counted from the validated cases through the same shared binding resolver
+ * v0.7 introduced, not read out of the manifest: an unbound run and a bound run over one corpus must report the
+ * same provenance figure, or the absence of a manifest would look like the absence of a gap.
+ */
+export function buildRunRecord(input: RunRecordInput): BenchmarkRunRecord {
+  const { report, binding, cases } = input;
+  const unboundAdjudications = cases.reduce(
+    (total, benchmarkCase) => total + disagreementReport(benchmarkCase).unbound,
+    0,
+  );
+  return {
+    version: BENCHMARK_RUN_RECORD_VERSION,
+    algorithm: RUN_RECORD_ALGORITHM,
+    producedBy: 'npm run benchmark',
+    releaseId: binding.releaseId,
+    manifestSha256: binding.manifestSha256,
+    manifestLabel: binding.manifestLabel,
+    corpusHash: binding.corpusHash,
+    reportSha256: contentHash(report),
+    reportTextSha256: sha256Hex(input.reportText),
+    caseCount: cases.length,
+    versions: {
+      caseContractVersions: uniqueSorted(cases.map((benchmarkCase) => benchmarkCase.version)),
+      reportVersion: report.version,
+      methodologyVersion: report.methodologyVersion,
+      metricsVersion: report.metricsVersion,
+      evidenceRuleVersion: report.evidenceRuleVersion,
+    },
+    warnings: {
+      notReleaseBound: binding.warnings.includes('NOT-RELEASE-BOUND'),
+      unboundAdjudications,
+      strataMissing: report.corpus.strataMissing.map((entry) => entry.stratum),
+      gateNotes: binding.warnings.filter((warning) => warning !== 'NOT-RELEASE-BOUND'),
+    },
+    sourceRevision: input.sourceRevision,
+    accuracyClaimable: false,
+    note: RUN_RECORD_NOTE,
+  };
+}
+
+/**
+ * Canonical bytes of a receipt, so the same run writes the same file on any machine.
+ *
+ * Sorted by code unit through the shared canonicaliser, exactly like a release manifest: a receipt whose own
+ * bytes drifted between platforms could not be used to verify anything, including itself.
+ */
+export function runRecordText(record: BenchmarkRunRecord): string {
+  return `${JSON.stringify(canonicalise(record), null, 2)}\n`;
+}
+
+/**
+ * Why this value is not a run receipt this build may verify, or `null` when it is one.
+ */
+export function runRecordProblem(parsed: unknown): string | null {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return 'the file is not a JSON object, so it cannot be a run receipt';
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record['version'] !== BENCHMARK_RUN_RECORD_VERSION) {
+    return `version must be "${BENCHMARK_RUN_RECORD_VERSION}"; found ${JSON.stringify(record['version'])}`;
+  }
+  for (const field of ['reportSha256', 'reportTextSha256'] as const) {
+    if (!isContentHash(record[field])) {
+      return `${field} must be a 64-character lowercase SHA-256 digest; found ${JSON.stringify(record[field])}`;
+    }
+  }
+  for (const field of [
+    'releaseId',
+    'manifestSha256',
+    'manifestLabel',
+    'corpusHash',
+    'sourceRevision',
+  ] as const) {
+    const value = record[field];
+    if (value !== null && typeof value !== 'string') {
+      return `${field} must be a string or null; found ${JSON.stringify(value)}`;
+    }
+  }
+  if (!Number.isInteger(record['caseCount']) || (record['caseCount'] as number) < 0) {
+    return `caseCount must be a non-negative integer; found ${JSON.stringify(record['caseCount'])}`;
+  }
+  if (typeof record['versions'] !== 'object' || record['versions'] === null) {
+    return 'versions is required; a receipt without the contract versions that applied proves nothing';
+  }
+  if (record['accuracyClaimable'] !== false) {
+    return 'accuracyClaimable must be false; a receipt that claims accuracy is not a receipt this build writes';
+  }
+  return null;
+}
 
 /**
  * Why this value is not a release manifest this build may trust, or `null` when it is one.
