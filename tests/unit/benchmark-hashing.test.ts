@@ -119,10 +119,7 @@ test('the validator refuses an over-deep case with a reason instead of letting t
 });
 
 test('sha256Hex digests exact bytes, with the published vector for empty input', () => {
-  assert.equal(
-    sha256Hex(''),
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-  );
+  assert.equal(sha256Hex(''), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
   assert.match(sha256Hex('a'), /^[0-9a-f]{64}$/);
 });
 
