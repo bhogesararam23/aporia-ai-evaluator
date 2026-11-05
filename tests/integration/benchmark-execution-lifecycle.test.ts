@@ -375,6 +375,232 @@ test('the harness help lists every flag it accepts and no flag it does not', asy
   assert.match(typo.stderr, /Unknown argument/);
 });
 
+test('a verified run replays clean, and every tampered artifact is caught by name', async () => {
+  const fixture = frozenRelease([agreedCase('vr-a'), agreedCase('vr-b')]);
+  try {
+    assert.equal((await freeze(fixture)).code, 0);
+    const report = join(fixture.temp.path, 'report.json');
+    const record = join(fixture.temp.path, 'run.json');
+    const run = await script('scripts/benchmark.ts', [
+      '--corpus',
+      fixture.corpus,
+      '--release',
+      fixture.manifest,
+      '--out',
+      report,
+      '--run-record',
+      record,
+      '--allow-partial-strata',
+    ]);
+    assert.equal(run.code, 0, run.stderr);
+
+    const clean = await script('scripts/benchmark-verify.ts', [
+      '--record',
+      record,
+      '--corpus',
+      fixture.corpus,
+      '--manifest',
+      fixture.manifest,
+      '--report',
+      report,
+    ]);
+    assert.equal(clean.code, 0, clean.stderr);
+    assert.match(clean.stderr, /VERIFIED/);
+
+    // A tampered corpus: the receipt says two cases were frozen, and one of them has since been edited.
+    writeFileSync(
+      join(fixture.corpus, 'case-0.json'),
+      JSON.stringify({ ...agreedCase('vr-a'), title: 'edited after the run' }),
+      'utf8',
+    );
+    const drifted = await script('scripts/benchmark-verify.ts', [
+      '--record',
+      record,
+      '--corpus',
+      fixture.corpus,
+      '--manifest',
+      fixture.manifest,
+      '--report',
+      report,
+    ]);
+    assert.notEqual(drifted.code, 0, 'a tampered corpus verified clean against an honest receipt');
+    assert.match(drifted.stderr, /DISAGREES/);
+    assert.match(drifted.stderr, /CORPUS-DRIFTED|CHANGED vr-a/);
+
+    // Restore the corpus and tamper with the *report* instead: the binding holds, the stored document does not.
+    writeFileSync(join(fixture.corpus, 'case-0.json'), JSON.stringify(agreedCase('vr-a')), 'utf8');
+    const forgedReport = JSON.parse(readFileSync(report, 'utf8')) as Record<string, unknown>;
+    forgedReport['methodologyVersion'] = 'methodology-from-a-different-build';
+    writeFileSync(report, `${JSON.stringify(forgedReport, null, 2)}\n`, 'utf8');
+    const reportTampered = await script('scripts/benchmark-verify.ts', [
+      '--record',
+      record,
+      '--corpus',
+      fixture.corpus,
+      '--manifest',
+      fixture.manifest,
+      '--report',
+      report,
+    ]);
+    assert.notEqual(reportTampered.code, 0, 'a rewritten report was accepted');
+    assert.match(reportTampered.stderr, /REPORT-CONTENT|VERSION-DRIFT methodologyVersion/);
+  } finally {
+    fixture.temp.remove();
+  }
+});
+
+test('tampering each recorded field of a receipt produces a named refusal', async () => {
+  const fixture = frozenRelease([agreedCase('tamper-a')]);
+  try {
+    assert.equal((await freeze(fixture)).code, 0);
+    const report = join(fixture.temp.path, 'report.json');
+    const pristine = join(fixture.temp.path, 'run.json');
+    assert.equal(
+      (
+        await script('scripts/benchmark.ts', [
+          '--corpus',
+          fixture.corpus,
+          '--release',
+          fixture.manifest,
+          '--out',
+          report,
+          '--run-record',
+          pristine,
+          '--allow-partial-strata',
+        ])
+      ).code,
+      0,
+    );
+    const original = JSON.parse(readFileSync(pristine, 'utf8')) as BenchmarkRunRecord;
+    const hex = (seed: string): string => seed.repeat(64).slice(0, 64);
+
+    const corruptions: [string, BenchmarkRunRecord][] = [
+      ['manifestSha256', { ...original, manifestSha256: hex('a') }],
+      ['corpusHash', { ...original, corpusHash: hex('b') }],
+      ['releaseId', { ...original, releaseId: 'release-aaaaaaaaaa' }],
+      ['reportSha256', { ...original, reportSha256: hex('c') }],
+      ['reportTextSha256', { ...original, reportTextSha256: hex('d') }],
+      ['caseCount', { ...original, caseCount: 99 }],
+      [
+        'methodologyVersion',
+        { ...original, versions: { ...original.versions, methodologyVersion: 'x' } },
+      ],
+      [
+        'metricsVersion',
+        { ...original, versions: { ...original.versions, metricsVersion: 'metrics-v9' } },
+      ],
+      [
+        'evidenceRuleVersion',
+        {
+          ...original,
+          versions: { ...original.versions, evidenceRuleVersion: 'evidence-aggregation-v2' },
+        },
+      ],
+      [
+        'caseContractVersions',
+        {
+          ...original,
+          versions: { ...original.versions, caseContractVersions: ['benchmark-case-v9'] },
+        },
+      ],
+      ['sourceRevision', { ...original, sourceRevision: 'invented-by-tampering' }],
+    ];
+
+    for (const [field, tampered] of corruptions) {
+      const path = join(fixture.temp.path, `run-${field}.json`);
+      writeFileSync(path, `${JSON.stringify(canonicalise(tampered), null, 2)}\n`, 'utf8');
+      const result = await script('scripts/benchmark-verify.ts', [
+        '--record',
+        path,
+        '--corpus',
+        fixture.corpus,
+        '--manifest',
+        fixture.manifest,
+        '--report',
+        report,
+      ]);
+      assert.notEqual(result.code, 0, `${field} was tampered and verification still passed`);
+      assert.ok(
+        result.stderr.includes(field),
+        `${field} was refused without naming itself:\n${result.stderr.slice(0, 500)}`,
+      );
+      assert.ok(
+        !/at .*\.ts:\d+:\d+/.test(result.stderr),
+        `${field} crashed instead of refusing:\n${result.stderr.slice(0, 300)}`,
+      );
+    }
+
+    // A receipt that is not a receipt at all is refused by the reader, not by a later comparison.
+    const junk = join(fixture.temp.path, 'run-junk.json');
+    writeFileSync(junk, '{"version":"benchmark-run-record-v0"}\n', 'utf8');
+    const junkResult = await script('scripts/benchmark-verify.ts', ['--record', junk]);
+    assert.notEqual(junkResult.code, 0);
+    assert.match(junkResult.stderr, /benchmark-run-record-v1/);
+
+    // A bound receipt checked without its corpus cannot pass: the binding is the claim being verified.
+    const partial = await script('scripts/benchmark-verify.ts', [
+      '--record',
+      pristine,
+      '--report',
+      report,
+    ]);
+    assert.notEqual(
+      partial.code,
+      0,
+      'a bound receipt was called verified with half its inputs missing',
+    );
+    assert.match(partial.stderr, /INCOMPLETE-ARTIFACT/);
+
+    // No --record at all is a stated usage refusal.
+    const missing = await script('scripts/benchmark-verify.ts', []);
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /--record/);
+
+    const help = await script('scripts/benchmark-verify.ts', ['--help']);
+    assert.equal(help.code, 0, help.stderr);
+    for (const flag of ['--record', '--corpus', '--manifest', '--report', '--source-revision']) {
+      assert.ok(help.stdout.includes(flag), `${flag} is accepted but not documented`);
+    }
+  } finally {
+    fixture.temp.remove();
+  }
+});
+
+test('an unbound receipt can still be checked against its stored report', async () => {
+  const fixture = frozenRelease([agreedCase('quiet-run')]);
+  try {
+    const report = join(fixture.temp.path, 'report.json');
+    const record = join(fixture.temp.path, 'run.json');
+    assert.equal(
+      (
+        await script('scripts/benchmark.ts', [
+          '--corpus',
+          fixture.corpus,
+          '--out',
+          report,
+          '--run-record',
+          record,
+          '--allow-partial-strata',
+        ])
+      ).code,
+      0,
+    );
+    const result = await script('scripts/benchmark-verify.ts', [
+      '--record',
+      record,
+      '--report',
+      report,
+    ]);
+    // There was no binding to replay, so this checks the report and says so rather than claiming more.
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /VERIFIED/);
+    assert.match(result.stderr, /NOT bound to a release|never bound/i);
+    assert.match(result.stderr, /accuracyClaimable is false/);
+  } finally {
+    fixture.temp.remove();
+  }
+});
+
 test('a non-blocking provenance gap is disclosed but never blocks the run', async () => {
   // Legacy unbound decision, exactly the shape the owner asked to keep readable.
   const legacy = {
