@@ -149,6 +149,26 @@ test('benchmark:case refuses a directory named *.json with the entry named', asy
   }
 });
 
+test('npm run benchmark refuses a hostile entry it used to skip', async () => {
+  // v0.7's harness loader stat'd each entry and `continue`d past anything that was not a regular file, so a
+  // directory named nested.json silently produced a report over a smaller corpus than the operator supplied.
+  // Skipping is not the same as refusing: it reports a number as if nothing were missing.
+  const temp = scratchDirectory('aporia-harness-nested-');
+  try {
+    writeFileSync(join(temp.path, 'good.json'), JSON.stringify(validCase('cli-good')), 'utf8');
+    mkdirSync(join(temp.path, 'nested.json'));
+    const result = await script('scripts/benchmark.ts', ['--corpus', temp.path]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /nested\.json/);
+    assert.match(result.stderr, /not a regular file/);
+    assertNoStack(result.stderr, 'npm run benchmark with a directory named *.json');
+    // And the report is not written on the way out, so a refusal cannot be mistaken for a result.
+    assert.doesNotMatch(result.stdout, /"version": "benchmark-report-v2"/);
+  } finally {
+    temp.remove();
+  }
+});
+
 test('benchmark:release refuses the same entry, on every subcommand that reads a corpus', async () => {
   const temp = scratchDirectory('aporia-release-cli-');
   try {

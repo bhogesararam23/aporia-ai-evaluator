@@ -17,8 +17,8 @@
  * evidence that the evaluator is accurate, and nothing here turns a disagreement into a consensus.
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   agreementRows,
   annotationSummaries,
@@ -33,7 +33,8 @@ import {
   serialiseBenchmarkReport,
   type CorpusDigest,
 } from '../src/benchmark/report.ts';
-import { BENCHMARK_LIMITS, validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
+import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
+import { CorpusReadError, readCorpusFiles } from './corpus-io.ts';
 
 interface Options {
   corpus: string;
@@ -98,69 +99,47 @@ interface CorpusReading {
 }
 
 /**
- * Read the corpus under explicit bounds. A hostile or bloated file must fail, not consume memory.
+ * Read the corpus through the one bounded loader, keeping the file identity the report needs.
  *
- * A file may hold one case or an array of them; `validateBenchmarkCorpus` expands and counts them, so
- * the ceiling applies to cases rather than filenames. This layer keeps the file identity, because the
- * report must be able to say which file a rejected case came from.
+ * Until v0.8 this command carried its own loader: it stat'd entries, applied the byte ceilings and skipped
+ * anything that was not a file, while `benchmark:case` and `benchmark:release` shared a second loader that did
+ * none of that. The same hostile directory therefore produced a clean skip here and a stack trace there, and
+ * one oversized file was refused by this command only. Every read now goes through `scripts/corpus-io.ts`, so
+ * one ceiling means one thing across all three commands.
+ *
+ * The per-file digest and the empty-array refusal stay here, because they belong to what a *report* says about
+ * a file rather than to whether the file could be read.
  */
 function readCorpus(directory: string): CorpusReading {
-  let names: string[];
+  let files: { name: string; text: string; parsed: unknown; values: unknown[] }[];
   try {
-    names = readdirSync(directory)
-      .filter((name) => name.endsWith('.json'))
-      .sort();
-  } catch {
-    return fail(`The corpus directory could not be read: ${directory}`);
-  }
-  if (names.length > BENCHMARK_LIMITS.maxCases) {
-    return fail(
-      `The corpus holds ${String(names.length)} files; the limit is ${String(BENCHMARK_LIMITS.maxCases)}.`,
-    );
+    files = readCorpusFiles(directory);
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(error.message);
+    }
+    throw error;
   }
   const sources: CaseSource[] = [];
-  const files: { name: string; values: unknown[] }[] = [];
+  const kept: { name: string; values: unknown[] }[] = [];
   const fileDigests: CorpusDigest[] = [];
-  let totalBytes = 0;
-  for (const name of names) {
-    const path = join(directory, name);
-    const stat = statSync(path);
-    if (!stat.isFile()) {
-      continue;
+  for (const file of files) {
+    if (file.values.length === 0) {
+      return fail(`${file.name} holds an empty array; a file must carry at least one case.`);
     }
-    if (stat.size > BENCHMARK_LIMITS.maxCaseBytes) {
-      return fail(
-        `${name} is ${String(stat.size)} bytes; the per-file limit is ${String(BENCHMARK_LIMITS.maxCaseBytes)}.`,
-      );
-    }
-    totalBytes += stat.size;
-    if (totalBytes > BENCHMARK_LIMITS.maxCorpusBytes) {
-      return fail(`The corpus exceeds ${String(BENCHMARK_LIMITS.maxCorpusBytes)} bytes in total.`);
-    }
-    const text = readFileSync(path, 'utf8');
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      return fail(`${name} is not valid JSON.`);
-    }
-    const values = Array.isArray(value) ? value : [value];
-    if (values.length === 0) {
-      return fail(`${name} holds an empty array; a file must carry at least one case.`);
-    }
-    sources.push({ index: sources.length, name, value });
-    files.push({ name, values });
+    sources.push({ index: sources.length, name: file.name, value: file.parsed });
+    kept.push({ name: file.name, values: file.values });
     fileDigests.push({
       kind: 'file',
-      source: name,
-      caseCount: values.length,
-      digest: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
-      bytes: Buffer.byteLength(text, 'utf8'),
+      source: file.name,
+      caseCount: file.values.length,
+      digest: createHash('sha256').update(file.text, 'utf8').digest('hex').slice(0, 16),
+      bytes: Buffer.byteLength(file.text, 'utf8'),
       // Settled once validation has run, so a file whose cases were all refused is visible.
       accepted: true,
     });
   }
-  return { sources, files, fileDigests };
+  return { sources, files: kept, fileDigests };
 }
 
 /** The disclaimer a reader must see on every route, including a run that is about to fail. */

@@ -179,6 +179,27 @@ function parseJson(name: string, text: string): unknown {
 }
 
 /**
+ * Every file in a directory with its raw text and its flattened values.
+ *
+ * The harness needs the text to digest a file as read and the values to say how many cases a file carried,
+ * from one pass. Exposing the file boundary rather than only the flattened values is what keeps a report able
+ * to name the file a rejected case came from.
+ */
+export function readCorpusFiles(
+  directory: string,
+): { name: string; text: string; parsed: unknown; values: unknown[] }[] {
+  return readBoundedFiles(directory).map((file) => {
+    const parsed = parseJson(file.name, file.text);
+    return {
+      name: file.name,
+      text: file.text,
+      parsed,
+      values: Array.isArray(parsed) ? parsed : [parsed],
+    };
+  });
+}
+
+/**
  * Every case value in a directory, flattened so a file may hold one case or an array of them.
  *
  * `index` is a global position across the whole load, because a ceiling counted in files would let one
@@ -188,11 +209,9 @@ export function readCorpusValues(
   directory: string,
 ): { index: number; value: unknown; source: string }[] {
   const sources: { index: number; value: unknown; source: string }[] = [];
-  for (const file of readBoundedFiles(directory)) {
-    const value = parseJson(file.name, file.text);
-    const entries = Array.isArray(value) ? value : [value];
-    for (const entry of entries) {
-      sources.push({ index: sources.length, value: entry, source: file.name });
+  for (const file of readCorpusFiles(directory)) {
+    for (const value of file.values) {
+      sources.push({ index: sources.length, value, source: file.name });
     }
   }
   return sources;
@@ -201,13 +220,8 @@ export function readCorpusValues(
 /** Every JSON value in a directory, flattening top-level arrays, keyed by the file it came from. */
 export function readJsonEntries(directory: string): { name: string; value: unknown }[] {
   const entries: { name: string; value: unknown }[] = [];
-  for (const file of readBoundedFiles(directory)) {
-    const value = parseJson(file.name, file.text);
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        entries.push({ name: file.name, value: item });
-      }
-    } else {
+  for (const file of readCorpusFiles(directory)) {
+    for (const value of file.values) {
       entries.push({ name: file.name, value });
     }
   }
