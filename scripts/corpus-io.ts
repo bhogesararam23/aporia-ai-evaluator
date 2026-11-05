@@ -154,7 +154,11 @@ function readBoundedFiles(directory: string): { name: string; text: string }[] {
  * that arrives at `contentHash` past `MAX_CANONICAL_DEPTH` throws mid-run, which is the one failure mode a
  * validator or CLI is supposed to turn into a stated refusal.
  */
-function parseJson(name: string, text: string): unknown {
+function parseJson(name: string, raw: string): unknown {
+  // A UTF-8 byte-order mark is how Notepad and several editors save a file, and `JSON.parse` refuses it. An
+  // operator would otherwise be told their hand-saved case file is "not valid JSON" — a syntax error that is
+  // not in the document. The website analyser has stripped a leading BOM for the same reason since v0.1.
+  const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
   let value: unknown;
   try {
     value = JSON.parse(text);

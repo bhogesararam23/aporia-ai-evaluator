@@ -234,6 +234,30 @@ test('a corpus whose files are individually legal but cumulatively too big is re
   }
 });
 
+test('a corpus file saved with a byte-order mark still reads as JSON', () => {
+  const temp = scratchDirectory('aporia-corpus-bom-');
+  try {
+    // Notepad on Windows writes a UTF-8 BOM by default, and Node's JSON.parse refuses it. The corpus loader
+    // already tolerates a BOM in no other place, so an operator's own hand-saved case file was reported as
+    // "not valid JSON" — a syntax error that is not in the file. The website analyser has always stripped a
+    // leading BOM for the same reason.
+    const payload = JSON.stringify({ id: 'bom-case', version: 'benchmark-case-v2' });
+    writeFileSync(join(temp.path, 'bom.json'), `\uFEFF${payload}`, 'utf8');
+    writeFileSync(join(temp.path, 'plain.json'), `[${payload}]`, 'utf8');
+    const loaded = readCorpusValues(temp.path);
+    assert.equal(loaded.length, 2);
+    for (const entry of loaded) {
+      assert.equal(
+        (entry.value as { id?: string }).id,
+        'bom-case',
+        `${entry.source} parsed to something other than the case it holds`,
+      );
+    }
+  } finally {
+    temp.remove();
+  }
+});
+
 test('a document nested past the hashing bound is refused by name and ceiling', () => {
   const temp = scratchDirectory('aporia-corpus-depth-');
   try {
