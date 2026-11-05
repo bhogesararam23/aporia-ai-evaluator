@@ -3,7 +3,42 @@
 - Status: Proposed sequencing, not a delivery commitment
 - Date: 2026-11-05
 
-## Implementation note — 2026-11-05 (v0.7, in progress — PR open, not merged)
+## Implementation note — 2026-11-05 (v0.8, in progress — PR open, not merged)
+
+Local core v0.8 makes the release v0.7 created actually govern a run, and hardens the file handling around it.
+Seven defects were reproduced against merged v0.7 (`e72e77a`) before any fix was written
+([ADR-028](../agents/adrs/ADR-028-release-bound-execution-and-artifact-identities.md)): a case id of
+`../../../../pwned` validated cleanly and `normalise` exited zero while writing a case file outside the `--out`
+it had been given; a directory named `nested.json` produced a raw `EISDIR` stack trace on two of three benchmark
+commands while the third skipped it; byte ceilings applied only to the harness; a pre-existing report and a
+pre-existing manifest were destroyed without a word; report bytes depended on locale collation; and `--release`
+was an unknown argument, so no report could name the corpus it scored. The milestone then does four things: **one
+bounded corpus and artifact read** across all three commands, with typed refusals for symlinks, non-regular
+entries, oversized or over-counted files and over-deep documents; **release-bound execution**, where
+`npm run benchmark -- --release <manifest>` verifies the corpus before scoring and refuses to write a report when
+anything drifted, a blocking gate failed or the manifest came from another contract; **a deterministic
+`benchmark-run-record-v1`** binding release id, manifest bytes, corpus hash, canonical and exact-text report
+hashes, case count and the applicable case/report/methodology/metrics/evidence-rule versions, with a source
+revision only when an operator supplies one, checked afterwards by `npm run benchmark:verify`; and **atomic,
+refuse-by-default publication** of every artifact, with a staged directory batch that rolls back rather than
+half-publishing.
+
+Two things changed deliberately, both recorded in ADR-028: the per-file byte ceiling now applies to
+`benchmark:case` and `benchmark:release` as well as the harness (no ceiling was loosened — the commands that had
+none became as strict as the one that did), and an existing output target is refused unless `--overwrite` is
+passed. `benchmark-case-v1`/`v2` still read, and **`benchmark-report-v2` was left byte-for-byte unchanged on
+purpose**: the binding lives in the receipt rather than in the report, so a stored report stays comparable and a
+receipt written on one operating system can still be verified on another, because the receipt also records the
+report's canonical content hash, which does not depend on collation.
+
+**What v0.8 does not do:** it establishes no accuracy. A receipt proves that this build scored this corpus into
+this report; it cannot show the material is genuine, that two reviewer names are two people, or that any reviewer
+existed. It creates no case, no review and no corpus, it does not make `--release` mandatory, it leaves
+`evidence-aggregation-v1` the default, and it accepts no ADR: `accuracyClaimable` is `false` in the report, the
+manifest and the receipt. Symlink refusal is implemented and tested but cannot be demonstrated on this Windows
+host (creating a link fails `EPERM`), so the test says so and skips; the Linux and macOS CI jobs execute it.
+
+## Implementation note — 2026-11-05 (v0.7, merged to `main` at `e72e77a` via PR #10)
 
 Local core v0.7 closes five defects that were reproduced in the merged v0.6 review workflow and adds
 reproducible corpus releases ([ADR-027](../agents/adrs/ADR-027-review-provenance-and-corpus-releases.md)).
@@ -32,7 +67,9 @@ status vocabulary, disclosing binding through additive fields only.
 not proof of reviewer identity or material genuineness; readiness gates are not validation; legacy unbound
 adjudications are disclosed rather than credited; and no case, reviewer, timestamp or label is real. Phase
 3's reviewed gold set still does not exist. `accuracyClaimable` remains `false`, the
-`evidence-aggregation-v1` default is untouched, and ADR-025/026/027 all still await owner acceptance.
+`evidence-aggregation-v1` default is untouched, and ADR-025/026/027 all still await owner acceptance. That
+v0.7 status is now historical: the milestone was merged to `main` at `e72e77a` (PR #10) on 2026-11-05 and remains
+not owner-accepted, and the release machinery it added is what v0.8 above binds execution to.
 
 ## Implementation note — 2026-11-04 (v0.6, merged to `main` at `2b1ecab` via PR #9)
 
