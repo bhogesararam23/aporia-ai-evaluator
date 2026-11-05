@@ -79,6 +79,28 @@ v0.7 (ADR-027) hardened that workflow where it was leaking or unsafe, and added 
   completeness only, and every manifest states that a hash authenticates no reviewer and that
   `accuracyClaimable` is `false`.
 
+v0.8 (ADR-028) bound execution to those releases and hardened the file handling around them:
+
+- One **bounded corpus and artifact read** serves `benchmark`, `benchmark:case` and `benchmark:release`. Each
+  directory entry is classified before anything is parsed — a symlink or a non-regular file named `*.json` is
+  refused by name rather than crashing or being skipped, and file count, per-file bytes, total bytes and nesting
+  depth all have stated ceilings. Every refusal is a typed `CorpusReadError` with a message an operator can act
+  on; no benchmark command prints a stack trace for hostile input.
+- A **case id must be usable as a file name.** One rule in `naming.ts` is enforced by the validator and by every
+  writer, so `../../../../pwned` can no longer validate and then write outside the directory it was given. A
+  refusal never renames the id.
+- `npm run benchmark -- --release <manifest>` **verifies before scoring** — changed, added, removed, duplicated,
+  contract-drifted or invalid cases, a stale manifest, or a blocking gate failure refuse the run and write no
+  report; non-blocking provenance gaps are disclosed as warnings and recorded.
+- `--run-record` writes **`benchmark-run-record-v1`**, a deterministic receipt with no clock, path or host value,
+  and `npm run benchmark:verify` replays the run through the same scoring pipeline and names every field that no
+  longer agrees. `--source-revision` is stored only when an operator supplies it.
+- Every artifact publishes **atomically and refuses an existing target** unless `--overwrite`, naming the digest it
+  would have destroyed; a directory output is staged, so a mid-batch failure rolls back instead of half-publishing
+  a corpus, and an identical re-run is left alone and said so rather than refused.
+- `benchmark-report-v2` is **byte-frozen**: no field added, no key reordered, pinned by digest against the merged
+  v0.7 output, with the binding carried by the receipt instead.
+
 `verify:workflow` drives §6's 24-step sequence by submitting the forms the running application served:
 it reads each form's action, method, field names, select choices and default values from the returned
 HTML, and treats a field it cannot fill, or a value the page never offered, as a failure of that step.
@@ -120,34 +142,45 @@ The project has no build step: Node runs the TypeScript sources and `tsc --noEmi
 | Unit: report compatibility | `report-compatibility.test.ts`, `reporting-snapshot.test.ts` | `metrics-v1` to `v4` and `report-template-v1` to `v4` snapshots rendering the figures they were stored with, absent blocks shown as not recorded rather than zero, and the review-progress wording following the version that produced the snapshot |
 | Unit and integration: benchmark contract | `benchmark-validate.test.ts`, `benchmark-source-identity.test.ts`, `benchmark-cli.test.ts` | Nested field-by-field corpus validation, evidence versus underlying-source identity, reviewer disagreement staying unresolved rather than becoming a manufactured consensus, adjudication scoping, and a harness that refuses to present an accuracy claim from synthetic or insufficient material |
 | Unit and integration: benchmark review workflow (v0.6) | `benchmark-review-packet.test.ts`, `benchmark-review-merge.test.ts`, `benchmark-review-disagreement.test.ts`, `benchmark-review-adjudication.test.ts`, `benchmark-review-audit.test.ts`, `benchmark-review-compat.test.ts`, `benchmark-review-cli.test.ts` | Blinded packets that leak no gold/annotation/output and a stable content hash that detects a stale input; all-or-nothing submission merge refusing stale/duplicate/mismatched/unknown-subject/out-of-vocabulary/blank cases without touching `expected`; per-subject agreement with a split left unresolved; `applyAdjudication` that settles only a real disagreement and refuses to manufacture consensus; corpus readiness/provenance audit with `accuracyClaimable: false`; v1/v2 case-reading compatibility preserved through the workflow; and the `packet`/`merge`/`review`/`audit`/`adjudicate` CLI end to end |
+| Unit and integration: corpus release (v0.7) | `benchmark-release.test.ts`, `benchmark-release-cli.test.ts`, `benchmark-fixture-validity.test.ts`, `benchmark-v06-compatibility.test.ts` | Deterministic `benchmark-release-manifest-v1` with no clock, path or machine input; verify isolating added/removed/changed/duplicate/contract-drift; diff naming case, stratum, authorisation and gate deltas; blocking versus disclosing gates; and merged v0.6/v0.7 artifacts still readable |
+| Unit and integration: corpus and artifact I/O (v0.8) | `benchmark-corpus-limits.test.ts`, `benchmark-corpus-io.test.ts`, `benchmark-corpus-io-cli.test.ts` | One bounded loader for all three commands: typed refusals for a non-regular entry, a symlink, file count, per-file and total bytes and an over-deep document; code-unit ordering so the read does not depend on a locale; a byte-order-marked file still parsed; an oversized file refused with the same words by every command; and an escaping case id excluded while the rest of the corpus still publishes |
+| Unit: identifier and artifact naming (v0.8) | `benchmark-naming.test.ts` | One rule shared by the validator and the writers: separators and traversal shapes, OS-reserved characters, control characters, leading/trailing whitespace, trailing dot and over-long ids refused; ordinary and merely unusual ids (dots, underscores, unicode) accepted; the reason a writer gives is the reason the validator reports |
+| Unit and integration: release-bound execution and the run record (v0.8) | `benchmark-execution-binding.test.ts`, `benchmark-run-record.test.ts`, `benchmark-verify-record.test.ts`, `benchmark-execution-lifecycle.test.ts` | Manifest shape and contract version checked before anything else; refusal of every drift kind, invalid corpus and blocking gate before scoring with no report written; non-blocking gaps disclosed not promoted; a deterministic receipt with no clock, path or host field and a source revision only when supplied; replay verification naming each disagreeing field, with a reformat reported as a note; and the full `packet → merge → adjudicate → freeze → bound run → verify` lifecycle with an eleven-field receipt tamper matrix |
+| Unit and integration: artifact publication (v0.8) | `benchmark-artifact-io.test.ts`, `benchmark-publication-cli.test.ts` | Atomic temp-plus-rename publish; an existing target refused by name and digest unless `--overwrite`, which then reports the displaced digest; a directory batch that refuses collisions before staging, rolls back a mid-batch failure and restores replaced bytes; an identical rerun left alone and said; and every benchmark command's report, manifest, snapshot, packet, template, canonical export and receipt going through that one path |
+| Unit: report byte compatibility (v0.8) | `benchmark-report-compatibility.test.ts` | The serialisation the merged v0.7 code path produced over a synthetic fixture corpus is pinned by digest, so `benchmark-report-v2` cannot gain a field or reorder a key; the v0.7 key order inside `structuralReadiness` is asserted directly; and `caseDigest`/`CorpusDigest` keep their existing 16-hex shapes rather than being widened into the new identities |
 | Architecture and policy | `boundaries.test.ts`, `docs-links.test.ts`, `no-network.test.ts` | Layer boundaries, relative documentation links, no external network/provider client code |
 
 Most tests use in-memory SQLite and temporary data directories. No test writes to the production `data/` directory. Test fixtures are isolated from the shipped application; the application starts with no seeded projects, claims, runs, or reports.
 
 ## 4. Results at the time of this document
 
-Measured on 2026-11-05 in this checkout (`feat/aporia-v0.7-review-provenance-corpus-releases`,
-baseline `main` = `2b1ecab`), Node v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the CI matrix
-confirms all three OSes):
+Measured on 2026-11-05 in this checkout (`feat/aporia-v0.8-execution-binding-corpus-io-hardening`,
+baseline `main` = `e72e77a`, merged v0.7), Node v24.13.1, npm 11.8.0 (local figures taken on Windows x64; the
+CI matrix confirms all three OSes):
 
 - `npm ci`: pass.
 - `npm run typecheck`: pass.
 - `npm run lint`: pass.
 - `npm run format:check`: pass.
 - `npm run check:boundaries`: pass.
-- `npm test`: **956 tests, 956 passing, 0 failing** — 593 under `tests/unit`, 363 under
-  `tests/integration`, counted by running each glob separately rather than inferred.
-- `npm run check`: exit 0 with the same 956/956 result.
+- `npm test`: **1073 tests, 1072 passing, 0 failing, 1 skipped** — 681 under `tests/unit` (all passing) and
+  392 under `tests/integration` (391 passing, 1 skipped), counted by running each glob separately rather than
+  inferred. The single skip is the corpus symlink test: this Windows host cannot create a symlink
+  (`EPERM` without developer mode), so the test prints its reason and the Linux and macOS jobs execute it.
+- `npm run check`: exit 0 with the same 1073-test result and the same single documented skip.
 - `npm run verify:workflow`: exit 0, **25 step entries passed, 0 failed, 0 left not-run**, against a
   server booted on a free loopback port with a fresh temporary data directory. `/health` reported
-  `0.4.0` (the v0.5–v0.7 work is additive; the release version is not bumped while ADR-025 stays Proposed).
+  `0.4.0` (the v0.5–v0.8 work is additive; the release version is not bumped while ADR-025 stays Proposed).
   The run entered every record by hand through the served forms; nothing was seeded, and no
   provider or network call was made.
 - `npm run benchmark` on the isolated workflow-fixture corpus: pass.
-- CI (`.github/workflows/ci.yml`): `npm run check` and `npm run verify:workflow` each run on Windows,
-  Linux and macOS runners on Node 24. The v0.7 run's per-job results are recorded in the pull request and the
-  v0.7 session report; a job that has not finished is reported as not finished. Confirmed green across all six
-  jobs on the v0.5 run `41807701771`.
+- Release-bound CLI lifecycle: `benchmark:case packet`/`merge`/`adjudicate` → `benchmark:release freeze` →
+  `benchmark --release --run-record` → `benchmark:verify` over temporary fixture corpora, then the same checks
+  after tampering the corpus, the report and eleven receipt fields — each refusal naming its kind
+  (`CHANGED`, `REPORT-CONTENT`, `MANIFEST-TAMPERED`, …) and no run producing a stack trace.
+- CI (`.github/workflows/ci.yml`): `npm run check` and `npm run verify:workflow` each run on Windows, Linux and
+  macOS runners on Node 24. The v0.8 per-job results are recorded in the pull request and the v0.8 session
+  report; a job that has not finished is reported as not finished, never as a pass.
 - Backup, verification, restore into a separate temporary directory, restart on the restored data, and
   a read-back of the restored statements, both reports, and the finding with its recorded comparison
   all completed inside that same run (steps 22–24).
@@ -158,6 +191,14 @@ confirms all three OSes):
   `benchmark-scoring-binding`, `benchmark-batch-plan`, `benchmark-release`, `benchmark-review-malformed`,
   `benchmark-batch-cli`, `benchmark-release-cli`, `benchmark-roster-cli`,
   `benchmark-review-lifecycle` and `benchmark-v06-compatibility`.
+- v0.8 added these suites: `benchmark-report-compatibility`, `benchmark-corpus-limits`, `benchmark-corpus-io`,
+  `benchmark-corpus-io-cli`, `benchmark-naming`, `benchmark-artifact-io`, `benchmark-execution-binding`,
+  `benchmark-run-record`, `benchmark-verify-record`, `benchmark-publication-cli` and
+  `benchmark-execution-lifecycle`, and extended `benchmark-validate`, `benchmark-batch-plan`,
+  `benchmark-hashing`, `benchmark-corpus-limits` and `benchmark-v06-compatibility` with the v0.8 rules. The
+  v0.6/v0.7 suites were kept, not adjusted to fit the new behaviour — the only pre-existing expectation that
+  changed was a manifest-error message, updated because the refusal became more specific while its guarantee
+  (refused, never thrown) stayed.
 
 - Earlier runs of this workflow recorded the specific refusals it depends on rather than assuming
   them: a reviewer description claiming a verbatim position, a quote absent from the captured answer, a
