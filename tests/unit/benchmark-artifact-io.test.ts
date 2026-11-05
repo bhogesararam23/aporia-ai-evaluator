@@ -115,6 +115,58 @@ test('a missing parent directory is a stated refusal, not a bare ENOENT', () => 
   }
 });
 
+test('a target that already holds exactly these bytes is neither rewritten nor refused', () => {
+  // The distinction is deliberate. An identical file cannot be destroyed, and treating a re-run as an error
+  // would train an operator to pass --overwrite reflexively — the very flag that does destroy an artifact. A
+  // *different* file is refused, which the tests above cover.
+  const temp = scratchDirectory('aporia-publish-idempotent-');
+  try {
+    const target = join(temp.path, 'release.json');
+    const text = '{ "version": "benchmark-release-manifest-v1" }\n';
+    publishFile(target, text);
+    const second = publishFile(target, text);
+    assert.equal(second.written, false, 'an identical file was reported as replaced');
+    assert.equal(second.replacedSha256, null);
+    assert.equal(readFileSync(target, 'utf8'), text);
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a directory batch skips identical targets and refuses one that was edited', () => {
+  const temp = scratchDirectory('aporia-publish-skip-');
+  try {
+    const target = join(temp.path, 'out');
+    const files = [staged('a.json', '{ "id": "a" }\n'), staged('b.json', '{ "id": "b" }\n')];
+    publishDirectory(target, files);
+    // Both files now match, so a re-run publishes nothing and refuses nothing.
+    const rerun = publishDirectory(target, files);
+    assert.equal(rerun.published, 0);
+    assert.equal(rerun.skipped, 2, 'identical files were counted as work rather than as no-op');
+
+    // One edited file is a different statement: overwriting it would lose what the operator wrote, so the
+    // whole batch is refused and nothing in it is touched.
+    writeFileSync(join(target, 'a.json'), 'HUMAN EDIT\n', 'utf8');
+    let kind: string | null = null;
+    try {
+      publishDirectory(target, files);
+    } catch (error) {
+      kind = error instanceof ArtifactWriteError ? error.kind : `raw:${String(error)}`;
+    }
+    assert.equal(kind, 'exists');
+    assert.equal(readFileSync(join(target, 'a.json'), 'utf8'), 'HUMAN EDIT\n');
+    assert.equal(readFileSync(join(target, 'b.json'), 'utf8'), files[1]?.contents);
+
+    // With explicit leave to replace, exactly the one differing file is written.
+    const forced = publishDirectory(target, files, { overwrite: true });
+    assert.equal(forced.published, 1);
+    assert.equal(forced.skipped, 1);
+    assert.equal(readFileSync(join(target, 'a.json'), 'utf8'), files[0]?.contents);
+  } finally {
+    temp.remove();
+  }
+});
+
 test('a clean directory publish leaves no staging tree and holds every file', () => {
   const temp = scratchDirectory('aporia-publish-dir-');
   try {

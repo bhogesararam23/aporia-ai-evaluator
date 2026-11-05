@@ -17,7 +17,7 @@
  * evidence that the evaluator is accurate, and nothing here turns a disagreement into a consensus.
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   agreementRows,
@@ -35,11 +35,13 @@ import {
 } from '../src/benchmark/report.ts';
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
 import { CorpusReadError, readCorpusFiles } from './corpus-io.ts';
+import { ArtifactWriteError, publishFile } from './artifact-io.ts';
 
 interface Options {
   corpus: string;
   output: string | null;
   requireCompleteStrata: boolean;
+  overwrite: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -47,6 +49,7 @@ function parseArguments(argv: readonly string[]): Options {
     corpus: '',
     output: null,
     requireCompleteStrata: true,
+    overwrite: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -56,6 +59,8 @@ function parseArguments(argv: readonly string[]): Options {
       options.output = argv[(index += 1)] ?? null;
     } else if (argument === '--allow-partial-strata') {
       options.requireCompleteStrata = false;
+    } else if (argument === '--overwrite') {
+      options.overwrite = true;
     } else if (argument === '--help' || argument === '-h') {
       printUsage();
       process.exit(0);
@@ -75,6 +80,9 @@ function printUsage(): void {
 
   --corpus        Directory of benchmark case JSON files. Required.
   --out           Where to write the report. Defaults to stdout.
+  --overwrite     Replace an existing report file. Without it an existing target is refused, naming
+                  the digest of the bytes that are there, because a report may already be quoted
+                  by something else.
   --allow-partial-strata
                   Report on a corpus that does not cover every required stratum. Absence is still
                   printed; this flag only stops it from failing the run.`);
@@ -236,7 +244,23 @@ function main(): void {
   } else {
     const target = resolve(options.output);
     mkdirSync(resolve(target, '..'), { recursive: true });
-    writeFileSync(target, text, 'utf8');
+    try {
+      const published = publishFile(target, text, { overwrite: options.overwrite });
+      if (!published.written) {
+        console.error(
+          `benchmark: the file already at ${target} holds exactly these bytes; nothing was replaced.`,
+        );
+      } else if (published.replacedSha256 !== null) {
+        console.error(
+          `benchmark: replaced the file already at ${target} (previous sha256 ${published.replacedSha256}).`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ArtifactWriteError) {
+        return fail(error.message);
+      }
+      throw error;
+    }
   }
 
   if (validation.strataMissing.length > 0) {

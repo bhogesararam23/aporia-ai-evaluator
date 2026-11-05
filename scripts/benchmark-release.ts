@@ -24,8 +24,9 @@
  * benchmark material may carry sensitive claims and evidence excerpts, and freezing a corpus should not
  * silently duplicate that material into a second location nobody thought to protect.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { ArtifactWriteError, publishDirectory, publishFile } from './artifact-io.ts';
+import { UnsafeCaseNameError, renderStagedCorpus } from '../src/benchmark/batch.ts';
 import {
   buildReleaseManifest,
   compareReleases,
@@ -33,7 +34,6 @@ import {
   verifyRelease,
   type ReleaseManifest,
 } from '../src/benchmark/release.ts';
-import { normaliseCase } from '../src/benchmark/authoring.ts';
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
 import { CorpusReadError, readCorpusValues, readJsonArtifact } from './corpus-io.ts';
 import { canonicalise } from '../src/benchmark/hashing.ts';
@@ -53,6 +53,7 @@ interface Options {
   after: string | null;
   label: string | null;
   snapshot: string | null;
+  overwrite: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -65,6 +66,7 @@ function parseArguments(argv: readonly string[]): Options {
     after: null,
     label: null,
     snapshot: null,
+    overwrite: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -82,6 +84,8 @@ function parseArguments(argv: readonly string[]): Options {
       options.label = argv[(index += 1)] ?? null;
     } else if (argument === '--snapshot') {
       options.snapshot = argv[(index += 1)] ?? null;
+    } else if (argument === '--overwrite') {
+      options.overwrite = true;
     } else {
       fail(`Unknown argument: ${String(argument)}`);
     }
@@ -187,26 +191,54 @@ function freeze(options: Options): void {
   }
   const manifest = buildReleaseManifest(cases, files, options.label, { issues });
   const target = resolve(options.out);
-  writeFileSync(target, canonicalText(manifest), 'utf8');
+  try {
+    const published = publishFile(target, canonicalText(manifest), {
+      overwrite: options.overwrite,
+    });
+    if (!published.written) {
+      console.error(
+        `benchmark:release: the manifest already at ${target} holds exactly these bytes; nothing was replaced.`,
+      );
+    } else if (published.replacedSha256 !== null) {
+      console.error(
+        `benchmark:release: replaced the manifest already at ${target} (previous sha256 ${published.replacedSha256}).`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ArtifactWriteError) {
+      fail(`${error.message} A freeze that cannot publish its manifest has not frozen anything.`);
+    }
+    throw error;
+  }
   console.error(
     `benchmark:release: froze ${String(manifest.caseCount)} case(s) as ${manifest.releaseId} ` +
       `(corpus ${manifest.corpusHash.slice(0, 12)}…) to ${target}.`,
   );
   if (options.snapshot !== null) {
     const snapshotDirectory = resolve(options.snapshot);
-    mkdirSync(snapshotDirectory, { recursive: true });
-    for (const benchmarkCase of cases) {
-      writeFileSync(
-        join(snapshotDirectory, `${benchmarkCase.id}.json`),
-        normaliseCase(benchmarkCase),
-        'utf8',
+    try {
+      const result = publishDirectory(
+        snapshotDirectory,
+        renderStagedCorpus(cases as unknown as readonly BenchmarkCase[]),
+        { overwrite: options.overwrite },
       );
+      console.error(
+        `benchmark:release: --snapshot wrote canonical copies of ${String(result.published)} case(s) to ` +
+          `${snapshotDirectory}` +
+          (result.skipped > 0
+            ? ` (${String(result.skipped)} already held these exact bytes)`
+            : '') +
+          `. This duplicated corpus material into a second location; protect it like the ` +
+          `first one. Without this flag a freeze stores digests only.`,
+      );
+    } catch (error) {
+      if (error instanceof UnsafeCaseNameError || error instanceof ArtifactWriteError) {
+        fail(
+          `${error.message} The manifest was written; the snapshot was not, so no partially copied corpus exists.`,
+        );
+      }
+      throw error;
     }
-    console.error(
-      `benchmark:release: --snapshot wrote canonical copies of ${String(cases.length)} case(s) to ` +
-        `${snapshotDirectory}. This duplicated corpus material into a second location; protect it like the ` +
-        `first one. Without this flag a freeze stores digests only.`,
-    );
   }
   printGates(manifest.gates);
   console.error(`benchmark:release: ${CLOSING_NOTE}`);
@@ -325,10 +357,12 @@ function main(): void {
     default:
       console.log(
         'Usage: npm run benchmark:release -- <subcommand> [options]\n' +
-          '  freeze   --corpus <dir> --out <file> [--label <text>] [--snapshot <dir>]\n' +
+          '  freeze   --corpus <dir> --out <file> [--label <text>] [--snapshot <dir>] [--overwrite]\n' +
           '  verify   --corpus <dir> --manifest <file>\n' +
           '  diff     --before <file> --after <file>\n' +
           '  gates    --corpus <dir>\n' +
+          'An existing --out or --snapshot file is refused unless --overwrite is given, naming the bytes\n' +
+          'that are there. A snapshot is published as one staged batch, so it is never left half-copied.\n' +
           'Offline only. A manifest is an integrity record of case bytes, not a proof of reviewer identity,\n' +
           'material genuineness, or evaluator accuracy; accuracyClaimable is false in every release.',
       );

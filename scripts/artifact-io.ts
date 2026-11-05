@@ -60,6 +60,7 @@ export interface PublishOptions {
 
 /** What a single-file publish did. `replacedSha256` is the bytes-as-read identity of what it displaced. */
 export interface PublishResult {
+  /** False when the target already held exactly these bytes, so there was nothing to destroy. */
   readonly written: boolean;
   readonly replacedSha256: string | null;
 }
@@ -86,12 +87,18 @@ function digestOf(path: string): string | null {
  * Write `text` beside `target` and rename over it.
  *
  * `renameSync` replaces atomically on all three supported platforms, so a reader either sees the old file or
- * the new one — never the truncated middle a direct write can produce.
+ * the new one — never the truncated middle a direct write can produce. Exported because the journalled batch
+ * path needs exactly this step and must not carry a second copy of it: a duplicated atomic write is a
+ * duplicated set of assumptions about what "published" means.
  */
-function writeThenRename(target: string, text: string): void {
+export function atomicReplaceFile(target: string, text: string): void {
   const temporary = `${target}.tmp`;
   writeFileSync(temporary, text, 'utf8');
   renameSync(temporary, target);
+}
+
+function writeThenRename(target: string, text: string): void {
+  atomicReplaceFile(target, text);
 }
 
 /**
@@ -113,6 +120,12 @@ export function publishFile(
   }
   const existed = existsSync(target);
   const existingSha256 = existed ? digestOf(target) : null;
+  if (existed && existingSha256 !== null && sha256Hex(text) === existingSha256) {
+    // Nothing would be lost by "replacing" it, so it is not replaced, and not refused: a re-run of a command
+    // over the same input is a normal thing for an operator to do, and treating it as an error would train
+    // everyone to pass --overwrite reflexively — which is the flag that destroys a real artifact.
+    return { written: false, replacedSha256: null };
+  }
   if (existed && options.overwrite !== true) {
     throw new ArtifactWriteError(
       'exists',

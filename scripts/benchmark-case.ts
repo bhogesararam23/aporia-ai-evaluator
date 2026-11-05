@@ -25,7 +25,7 @@
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
  * never reach the network or the application database, and never edit a case's gold `expected` array.
  */
-import { mkdirSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import {
   CorpusReadError,
   readCorpusValues,
@@ -64,6 +64,13 @@ import {
   type BatchPlan,
   type StagedFile,
 } from '../src/benchmark/batch.ts';
+import { safeArtifactName } from '../src/benchmark/naming.ts';
+import {
+  ArtifactWriteError,
+  atomicReplaceFile,
+  publishDirectory,
+  publishFile,
+} from './artifact-io.ts';
 import { contentHash } from '../src/benchmark/hashing.ts';
 import { BENCHMARK_BATCH_JOURNAL_VERSION } from '../src/benchmark/types.ts';
 import { BENCHMARK_STRATA, type BenchmarkCase } from '../src/benchmark/types.ts';
@@ -84,6 +91,7 @@ interface Options {
   dryRun: boolean;
   allowPartial: boolean;
   recover: boolean;
+  overwrite: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -99,6 +107,7 @@ function parseArguments(argv: readonly string[]): Options {
     dryRun: false,
     allowPartial: false,
     recover: false,
+    overwrite: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -120,11 +129,44 @@ function parseArguments(argv: readonly string[]): Options {
       options.allowPartial = true;
     } else if (argument === '--recover') {
       options.recover = true;
+    } else if (argument === '--overwrite') {
+      options.overwrite = true;
     } else {
       fail(`Unknown argument: ${String(argument)}`);
     }
   }
   return options;
+}
+
+/**
+ * Publish a directory of artifacts through the one staged path.
+ *
+ * `normalise` and `packet` used to loop `writeFileSync` over their targets, so an error halfway through left a
+ * directory holding some of the output and not the rest — the shape that looks like a successful export. One
+ * call, all or nothing, is the guarantee; an existing target is refused until the operator asks to replace it.
+ */
+function publishFiles(options: Options, target: string, files: readonly StagedFile[]): void {
+  if (files.length === 0) {
+    return;
+  }
+  try {
+    const result = publishDirectory(target, files, { overwrite: options.overwrite });
+    if (result.skipped > 0) {
+      console.error(
+        `benchmark:case: ${String(result.skipped)} file(s) in ${target} already held these exact bytes and were left alone.`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ArtifactWriteError) {
+      fail(`${error.message} Nothing was published.`);
+    }
+    throw error;
+  }
+}
+
+/** Canonicalise and publish a case set as canonical JSON. */
+function publishCorpus(options: Options, target: string, cases: readonly BenchmarkCase[]): void {
+  publishFiles(options, target, stagedOrRefuse(cases));
 }
 
 function readCorpus(directory: string): { index: number; value: unknown }[] {
@@ -161,7 +203,23 @@ function scaffold(options: Options): void {
     return;
   }
   const target = resolve(options.out);
-  writeFileSync(target, text, 'utf8');
+  try {
+    const published = publishFile(target, text, { overwrite: options.overwrite });
+    if (!published.written) {
+      console.error(
+        `benchmark:case: the file already at ${target} holds exactly these bytes; nothing was replaced.`,
+      );
+    } else if (published.replacedSha256 !== null) {
+      console.error(
+        `benchmark:case: replaced the file already at ${target} (previous sha256 ${published.replacedSha256}).`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ArtifactWriteError) {
+      fail(error.message);
+    }
+    throw error;
+  }
   console.error(`benchmark:case: template written to ${target}`);
 }
 
@@ -204,10 +262,7 @@ function normalise(options: Options): void {
   }
   const result = validateBenchmarkCorpus(readCorpus(requireCorpus(options)));
   const target = resolve(options.out);
-  mkdirSync(target, { recursive: true });
-  for (const benchmarkCase of result.cases) {
-    writeFileSync(join(target, `${benchmarkCase.id}.json`), normaliseCase(benchmarkCase), 'utf8');
-  }
+  publishCorpus(options, target, result.cases as unknown as readonly BenchmarkCase[]);
   console.error(
     `benchmark:case: wrote ${String(result.cases.length)} canonical case(s) to ${target}; ` +
       `refused ${String(result.issues.length)} invalid entries (imported files that do not validate are never exported).`,
@@ -342,14 +397,15 @@ function coerceAdjudication(value: unknown): PendingAdjudication | null {
 }
 
 /**
- * Publish one file so a reader never sees a half-written case: write a sibling temp file, then rename it over
- * the target. `renameSync` replaces atomically on Windows, Linux and macOS, which is why the batch can be
- * resumed file by file after an interruption instead of started again.
+ * Publish one staged file into `target`.
+ *
+ * The batch replaces a case deliberately — it commits a corpus of record, and writing the merged case over the
+ * unmerged one is the whole operation — so this path does not refuse an existing file the way `normalise` or a
+ * manifest freeze does. What it shares with them is the atomic replace, so a reader never sees half a case,
+ * and the journal beside it, so an interrupted run can be finished or discarded rather than guessed at.
  */
-function publishFile(target: string, file: StagedFile): void {
-  const temporary = join(target, `${file.name}.tmp`);
-  writeFileSync(temporary, file.contents, 'utf8');
-  renameSync(temporary, join(target, file.name));
+function publishStagedFile(target: string, file: StagedFile): void {
+  atomicReplaceFile(join(target, file.name), file.contents);
 }
 
 /**
@@ -506,13 +562,12 @@ function publishBatch(
       if (fileHash(join(target, item.name)) === item.contentsHash) {
         continue;
       }
-      publishFile(target, file);
+      publishStagedFile(target, file);
       published += 1;
     }
-    writeFileSync(
+    atomicReplaceFile(
       journalPath,
       `${JSON.stringify(advanceJournal(journal, 'committed').ok ? { ...journal, state: 'committed' } : journal, null, 2)}\n`,
-      'utf8',
     );
     cleanStaging(staging);
     console.error(
@@ -550,7 +605,10 @@ function publishBatch(
   const staged = stagedOrRefuse(plan.cases);
   mkdirSync(staging, { recursive: true });
   const journal = createJournal(plan, staged);
-  writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`, 'utf8');
+  // The journal is written through the same atomic replace as everything else: it is the crash record, and a
+  // half-written journal is indistinguishable from no journal, which turns a recoverable interruption into an
+  // unrecoverable one.
+  atomicReplaceFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   for (const file of staged) {
     writeFileSync(join(staging, file.name), file.contents, 'utf8');
   }
@@ -559,19 +617,18 @@ function publishBatch(
     cleanStaging(staging);
     return fail(`internal: ${committing.reason}`);
   }
-  writeFileSync(journalPath, `${JSON.stringify(committing.journal, null, 2)}\n`, 'utf8');
+  atomicReplaceFile(journalPath, `${JSON.stringify(committing.journal, null, 2)}\n`);
 
   mkdirSync(target, { recursive: true });
   for (const file of staged) {
     if (fileHash(join(target, file.name)) === file.contentsHash) {
       continue;
     }
-    publishFile(target, file);
+    publishStagedFile(target, file);
   }
-  writeFileSync(
+  atomicReplaceFile(
     journalPath,
     `${JSON.stringify({ ...committing.journal, state: 'committed' }, null, 2)}\n`,
-    'utf8',
   );
   cleanStaging(staging);
   console.error(
@@ -692,22 +749,35 @@ function packet(options: Options): void {
     fail('no valid case in the corpus; there is nothing to build a blinded packet from.');
   }
   const target = resolve(options.out);
-  mkdirSync(target, { recursive: true });
+  const files: StagedFile[] = [];
   for (const entry of result.cases) {
     const benchmarkCase = entry as unknown as BenchmarkCase;
     const reviewerPacket = buildReviewerPacket(benchmarkCase);
     const template = buildSubmissionTemplate(reviewerPacket);
-    writeFileSync(
-      join(target, `${benchmarkCase.id}.packet.json`),
-      `${JSON.stringify(reviewerPacket, null, 2)}\n`,
-      'utf8',
-    );
-    writeFileSync(
-      join(target, `${benchmarkCase.id}.submission.json`),
-      `${JSON.stringify(template, null, 2)}\n`,
-      'utf8',
-    );
+    const packet = safeArtifactName(benchmarkCase.id, '.packet.json');
+    const submission = safeArtifactName(benchmarkCase.id, '.submission.json');
+    if (!packet.ok) {
+      fail(
+        `case ${JSON.stringify(benchmarkCase.id)} cannot be published as a packet: ${packet.reason}.`,
+      );
+    }
+    if (!submission.ok) {
+      fail(
+        `case ${JSON.stringify(benchmarkCase.id)} cannot be given a submission template: ${submission.reason}.`,
+      );
+    }
+    files.push({
+      name: packet.name,
+      contents: `${JSON.stringify(reviewerPacket, null, 2)}\n`,
+      contentsHash: contentHash(`${JSON.stringify(reviewerPacket, null, 2)}\n`),
+    });
+    files.push({
+      name: submission.name,
+      contents: `${JSON.stringify(template, null, 2)}\n`,
+      contentsHash: contentHash(`${JSON.stringify(template, null, 2)}\n`),
+    });
   }
+  publishFiles(options, target, files);
   console.error(
     `benchmark:case: wrote a blinded packet + empty submission template for ` +
       `${String(result.cases.length)} case(s) to ${target}. The packet omits gold labels, existing ` +
@@ -829,7 +899,7 @@ function adjudicate(options: Options): void {
   // applied without a conversion step.
   if (options.issue) {
     const target = resolve(options.out);
-    mkdirSync(target, { recursive: true });
+    const forms: StagedFile[] = [];
     let issued = 0;
     for (const entry of result.cases) {
       const benchmarkCase = entry as unknown as BenchmarkCase;
@@ -837,7 +907,7 @@ function adjudicate(options: Options): void {
       if (template.adjudications.length === 0) {
         continue;
       }
-      const forms = template.adjudications.map((adjudication) => ({
+      const entries = template.adjudications.map((adjudication) => ({
         caseId: benchmarkCase.id,
         dimension: adjudication.dimension,
         subjectId: adjudication.subjectId,
@@ -848,13 +918,15 @@ function adjudicate(options: Options): void {
         disagreementHash: adjudication.disagreementHash,
         adjudicatedAt: '',
       }));
-      issued += forms.length;
-      writeFileSync(
-        join(target, `${benchmarkCase.id}.adjudication.json`),
-        `${JSON.stringify(forms, null, 2)}\n`,
-        'utf8',
-      );
+      issued += entries.length;
+      const contents = `${JSON.stringify(entries, null, 2)}\n`;
+      const name = safeArtifactName(benchmarkCase.id, '.adjudication.json');
+      if (!name.ok) {
+        fail(`case ${JSON.stringify(benchmarkCase.id)} cannot be issued a form: ${name.reason}.`);
+      }
+      forms.push({ name: name.name, contents, contentsHash: contentHash(contents) });
     }
+    publishFiles(options, target, forms);
     console.error(
       `benchmark:case: issued ${String(issued)} bound adjudication entr(y/ies) to ${target}. ` +
         'Each entry carries the disagreement hash it settles; outcome, label, reason, adjudicator and the ' +
@@ -945,6 +1017,8 @@ function main(): void {
           '  adjudicate --corpus <dir> --issue --out <dir>        write the blank bound forms for a human\n' +
           '  adjudicate --corpus <dir> --adjudications <dir> --out <dir>  apply decisions that still bind\n' +
           '  merge      --corpus <dir> --submissions <dir> --out <dir>\n' +
+          'Writing: an existing --out file is refused unless --overwrite is given; a directory output is\n' +
+          'staged and journalled, so an interrupted run is rolled back or resumed, never left half-written.\n' +
           'Batch runs (merge, adjudicate) take --dry-run to report the plan without writing anything,\n' +
           '--allow-partial to write accepted items when another is refused, and --recover to finish or\n' +
           'discard an interrupted run from its journal. The default is atomic: one refusal writes nothing.',
