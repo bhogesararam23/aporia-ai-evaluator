@@ -34,14 +34,16 @@ import {
   type CorpusDigest,
 } from '../src/benchmark/report.ts';
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
-import { CorpusReadError, readCorpusFiles } from './corpus-io.ts';
+import { CorpusReadError, readArtifactText, readCorpusFiles } from './corpus-io.ts';
 import { ArtifactWriteError, publishFile } from './artifact-io.ts';
+import { bindRunToRelease, type ReleaseBinding } from '../src/benchmark/execution.ts';
 
 interface Options {
   corpus: string;
   output: string | null;
   requireCompleteStrata: boolean;
   overwrite: boolean;
+  release: string | null;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -50,6 +52,7 @@ function parseArguments(argv: readonly string[]): Options {
     output: null,
     requireCompleteStrata: true,
     overwrite: false,
+    release: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -57,6 +60,8 @@ function parseArguments(argv: readonly string[]): Options {
       options.corpus = String(argv[(index += 1)] ?? '');
     } else if (argument === '--out') {
       options.output = argv[(index += 1)] ?? null;
+    } else if (argument === '--release') {
+      options.release = argv[(index += 1)] ?? null;
     } else if (argument === '--allow-partial-strata') {
       options.requireCompleteStrata = false;
     } else if (argument === '--overwrite') {
@@ -80,6 +85,11 @@ function printUsage(): void {
 
   --corpus        Directory of benchmark case JSON files. Required.
   --out           Where to write the report. Defaults to stdout.
+  --release       A benchmark-release-manifest-v1 file. The corpus is verified against it BEFORE scoring:
+                  a changed, added, removed, duplicated, invalid or contract-drifted case, or a blocking
+                  release-gate failure, refuses the run and writes no report. Non-blocking provenance gaps
+                  are disclosed and do not stop the run. Without this flag nothing about the corpus is
+                  claimed to be verified, and the report says nothing about a release.
   --overwrite     Replace an existing report file. Without it an existing target is refused, naming
                   the digest of the bytes that are there, because a report may already be quoted
                   by something else.
@@ -160,6 +170,72 @@ function honestyLine(caseCount: number): string {
   );
 }
 
+/**
+ * Verify the corpus against the release it claims to be, before anything is scored.
+ *
+ * The order is the whole point. Scoring first and checking after would produce a report that reads normally and
+ * is quietly about a different corpus than the one that was reviewed — the failure a release binding exists to
+ * make impossible. A refusal here writes no report at all, because a report the harness itself refused to stand
+ * behind is worse than no report: it looks like a result.
+ *
+ * Without `--release` nothing is asserted about the corpus, and nothing is printed about one either.
+ */
+function bindCorpusToRelease(
+  options: Options,
+  validation: ReturnType<typeof validateBenchmarkCorpus>,
+  directory: string,
+): { readonly binding: ReleaseBinding | null; readonly refused: boolean } {
+  if (options.release === null) {
+    return { binding: null, refused: false };
+  }
+  const manifestPath = resolve(options.release);
+  let manifestText: string;
+  try {
+    manifestText = readArtifactText(manifestPath, { label: 'The release manifest' });
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(`${error.message} A run cannot be bound to a release it cannot read.`);
+    }
+    throw error;
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch {
+    return fail(
+      `The release manifest at ${manifestPath} is not valid JSON, so nothing can be verified against it.`,
+    );
+  }
+  const binding = bindRunToRelease({
+    manifest,
+    cases: validation.cases,
+    validation,
+    manifestText,
+  });
+  for (const warning of binding.warnings) {
+    console.error(`benchmark: release warning — ${warning}`);
+  }
+  if (!binding.ok) {
+    console.error(
+      `benchmark: the corpus at ${directory} is not the release ${manifestPath} describes. Refusing to score it.`,
+    );
+    for (const refusal of binding.refused) {
+      console.error(`  ${refusal}`);
+    }
+    console.error(
+      'benchmark: no report was written. A report over a corpus that drifted from its release would read like a result about the reviewed corpus, and it would not be one.',
+    );
+    process.exitCode = 1;
+    return { binding: null, refused: true };
+  }
+  console.error(
+    `benchmark: corpus verified against release ${String(binding.releaseId)}` +
+      (binding.manifestLabel === null ? '' : ` ("${binding.manifestLabel}")`) +
+      ` — ${String(binding.caseCount)} case(s), corpus ${String(binding.corpusHash).slice(0, 12)}…, manifest sha256 ${String(binding.manifestSha256).slice(0, 12)}…`,
+  );
+  return { binding, refused: false };
+}
+
 function main(): void {
   const options = parseArguments(process.argv.slice(2));
   const directory = resolve(options.corpus);
@@ -204,6 +280,13 @@ function main(): void {
     if (validation.issues.length > 40) {
       console.error(`  ...and ${String(validation.issues.length - 40)} more.`);
     }
+  }
+
+  const bound = bindCorpusToRelease(options, validation, directory);
+  if (bound.refused) {
+    // Stopped here, before scoring, before the report, before any output path is touched. A refusal that still
+    // produced a document would be the failure this binding exists to prevent.
+    return;
   }
 
   const regression = regressionResults(validation.cases);
