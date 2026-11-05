@@ -9,27 +9,75 @@
  * These helpers throw a typed error instead of exiting, so each command decides how to report it. A CLI that
  * dies with a stack trace on a bad JSON file is the failure ADR-026 says must become a printed refusal.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 
-export class CorpusReadError extends Error {
-  readonly kind: 'directory' | 'json';
+/**
+ * What went wrong with a read. Each kind maps to one thing an operator can do about it.
+ *
+ * `directory` — the path is not readable. `symlink` — an entry points outside the corpus. `type` — an entry
+ * is a directory or device named `*.json`. `count`/`size` — a stated ceiling was passed. `json` — the bytes
+ * are not JSON. `depth` — they are JSON nested past what this build can hash.
+ */
+export type CorpusReadKind = 'directory' | 'symlink' | 'type' | 'count' | 'size' | 'json' | 'depth';
 
-  constructor(kind: 'directory' | 'json', message: string) {
+export class CorpusReadError extends Error {
+  readonly kind: CorpusReadKind;
+
+  constructor(kind: CorpusReadKind, message: string) {
     super(message);
     this.name = 'CorpusReadError';
     this.kind = kind;
   }
 }
 
+/**
+ * Every `*.json` entry name in a directory, sorted by code unit, each confirmed to be a plain file.
+ *
+ * Ordering by code unit rather than a locale collation is deliberate: the position a value gets here is the
+ * index a validation issue quotes, so two machines must not disagree about which case is `case#0`.
+ *
+ * Each entry is inspected with `lstatSync`, which does not follow a link. A symlink named `x.json` pointing
+ * somewhere else is refused rather than read, because a corpus that silently pulls in material from outside
+ * its own directory is not the corpus a release manifest describes. A directory named `x.json` used to reach
+ * `readFileSync` and throw a raw `EISDIR`; refusing it with its name is the difference between an operator
+ * fixing a layout mistake and an operator reading a stack trace.
+ *
+ * An entry that disappears between listing and inspection is reported as unreadable rather than skipped:
+ * skipping would let a corpus quietly hold fewer cases than its operator believes it froze.
+ */
 function jsonFileNames(directory: string): string[] {
+  let names: string[];
   try {
-    return readdirSync(directory)
+    names = readdirSync(directory)
       .filter((name) => name.endsWith('.json'))
-      .sort();
+      .sort((left, right) => (left === right ? 0 : left < right ? -1 : 1));
   } catch {
     throw new CorpusReadError('directory', `The directory could not be read: ${directory}`);
   }
+  for (const name of names) {
+    let stat: Stats;
+    try {
+      stat = lstatSync(join(directory, name));
+    } catch {
+      throw new CorpusReadError('directory', `The corpus entry could not be inspected: ${name}`);
+    }
+    if (stat.isSymbolicLink()) {
+      throw new CorpusReadError(
+        'symlink',
+        `${name} is a symbolic link. A corpus reads only the files inside its own directory: a link ` +
+          'could point at material that is not part of the release being verified. Replace it with the file.',
+      );
+    }
+    if (!stat.isFile()) {
+      throw new CorpusReadError(
+        'type',
+        `${name} is not a regular file. Only a plain file may hold a case — a directory or device named ` +
+          '*.json is a layout mistake, and skipping it would understate the corpus.',
+      );
+    }
+  }
+  return names;
 }
 
 function parseJson(name: string, text: string): unknown {
