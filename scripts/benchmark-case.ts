@@ -25,8 +25,15 @@
  * JSON files and write plain JSON files. They never invent a label, reviewer, timestamp or permission,
  * never reach the network or the application database, and never edit a case's gold `expected` array.
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { CorpusReadError, readCorpusValues, readJsonEntries } from './corpus-io.ts';
+import { mkdirSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  CorpusReadError,
+  readCorpusValues,
+  readJsonEntries,
+  readArtifactText,
+  readJsonArtifact,
+} from './corpus-io.ts';
+import { BENCHMARK_LIMITS } from '../src/benchmark/validate.ts';
 import { join, resolve } from 'node:path';
 import {
   caseProvenanceSummary,
@@ -329,9 +336,18 @@ function publishFile(target: string, file: StagedFile): void {
   renameSync(temporary, join(target, file.name));
 }
 
+/**
+ * The digest of a file already on disk, for the resume comparison.
+ *
+ * Bounded, because a recovery pass reads a file an operator may have edited in between: reading an arbitrary
+ * size of it into memory to compare a hash is not a recovery, it is a second failure waiting to happen. A
+ * file that cannot be read or is too big simply does not match, which the caller already reports.
+ */
 function fileHash(path: string): string | null {
   try {
-    return contentHash(readFileSync(path, 'utf8'));
+    return contentHash(
+      readArtifactText(path, { maxBytes: BENCHMARK_LIMITS.maxCaseBytes, label: 'A corpus file' }),
+    );
   } catch {
     return null;
   }
@@ -340,7 +356,7 @@ function fileHash(path: string): string | null {
 function readJournal(path: string): BatchJournal | null {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    parsed = readJsonArtifact(path, { label: 'The batch journal' });
   } catch {
     return null;
   }

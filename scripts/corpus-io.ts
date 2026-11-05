@@ -10,7 +10,7 @@
  * dies with a stack trace on a bad JSON file is the failure ADR-026 says must become a printed refusal.
  */
 import { lstatSync, readFileSync, readdirSync, type Stats } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { BENCHMARK_LIMITS } from '../src/benchmark/validate.ts';
 import { nestsDeeperThan } from '../src/benchmark/hashing.ts';
 
@@ -176,6 +176,65 @@ function parseJson(name: string, text: string): unknown {
     );
   }
   return value;
+}
+
+/**
+ * The ceiling on one artifact this tool reads back.
+ *
+ * A release manifest describes a whole corpus, so it is legitimately larger than a single case file; tying it
+ * to the corpus ceiling keeps the bound real without inventing a number that would reject a genuine manifest.
+ */
+export const MAX_ARTIFACT_BYTES = BENCHMARK_LIMITS.maxCorpusBytes;
+
+/**
+ * One artifact file, bounded and classified the same way a corpus directory is.
+ *
+ * `freeze --out`, `verify --manifest` and batch recovery all read a single JSON file back. Before v0.8 each of
+ * them called `readFileSync` with no bound at all, so the file that a verification trusts most was the one the
+ * least checked.
+ */
+export function readArtifactText(
+  path: string,
+  options: { maxBytes?: number; label?: string } = {},
+): string {
+  const name = basename(path);
+  const maxBytes = options.maxBytes ?? MAX_ARTIFACT_BYTES;
+  const label = options.label ?? 'The artifact';
+  let stat: Stats;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    throw new CorpusReadError('directory', `${label} could not be read: ${name}`);
+  }
+  if (stat.isSymbolicLink()) {
+    throw new CorpusReadError(
+      'symlink',
+      `${label} ${name} is a symbolic link. A run verifies the file it was pointed at, not a pointer ` +
+        'that can be repointed afterwards.',
+    );
+  }
+  if (!stat.isFile()) {
+    throw new CorpusReadError('type', `${label} ${name} is not a regular file.`);
+  }
+  if (stat.size > maxBytes) {
+    throw new CorpusReadError(
+      'size',
+      `${name} is ${String(stat.size)} bytes; the limit for ${label.toLowerCase()} is ${String(maxBytes)}.`,
+    );
+  }
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    throw new CorpusReadError('directory', `${label} could not be read: ${name}`);
+  }
+}
+
+/** A bounded artifact read that also refuses malformed JSON by file name. */
+export function readJsonArtifact(
+  path: string,
+  options: { maxBytes?: number; label?: string } = {},
+): unknown {
+  return parseJson(basename(path), readArtifactText(path, options));
 }
 
 /**

@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 
+import { MAX_ARTIFACT_BYTES } from '../../scripts/corpus-io.ts';
 import { BENCHMARK_CASE_VERSION } from '../../src/benchmark/types.ts';
 import { BENCHMARK_LIMITS } from '../../src/benchmark/validate.ts';
 import { scratchDirectory } from '../helpers/temp.ts';
@@ -215,6 +216,49 @@ test('malformed JSON is still a stated refusal after the entry checks', async ()
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /broken\.json is not valid JSON/);
     assertNoStack(result.stderr, 'benchmark:case validate with malformed JSON');
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a manifest is read under a ceiling as well, and a directory is refused by name', async () => {
+  const temp = scratchDirectory('aporia-manifest-bound-');
+  try {
+    const corpus = join(temp.path, 'corpus');
+    mkdirSync(corpus, { recursive: true });
+    writeFileSync(join(corpus, 'a.json'), JSON.stringify(validCase('bound-case')), 'utf8');
+
+    // A manifest path that is a directory used to reach readFileSync and be reported as "could not be read or
+    // parsed", which is technically true and practically useless.
+    mkdirSync(join(temp.path, 'adir.json'));
+    const wrongType = await script('scripts/benchmark-release.ts', [
+      'verify',
+      '--corpus',
+      corpus,
+      '--manifest',
+      join(temp.path, 'adir.json'),
+    ]);
+    assert.notEqual(wrongType.code, 0);
+    assert.match(wrongType.stderr, /not a regular file/);
+    assertNoStack(wrongType.stderr, 'benchmark:release verify with a directory manifest');
+
+    // Past the ceiling the file is refused rather than handed to the parser.
+    writeFileSync(
+      join(temp.path, 'fat.json'),
+      `{"padding":"${'w'.repeat(MAX_ARTIFACT_BYTES + 10)}}`,
+      'utf8',
+    );
+    const tooBig = await script('scripts/benchmark-release.ts', [
+      'verify',
+      '--corpus',
+      corpus,
+      '--manifest',
+      join(temp.path, 'fat.json'),
+    ]);
+    assert.notEqual(tooBig.code, 0);
+    assert.match(tooBig.stderr, /fat\.json/);
+    assert.match(tooBig.stderr, /is not valid JSON|limit/);
+    assertNoStack(tooBig.stderr, 'benchmark:release verify with an oversized manifest');
   } finally {
     temp.remove();
   }

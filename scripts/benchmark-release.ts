@@ -24,7 +24,7 @@
  * benchmark material may carry sensitive claims and evidence excerpts, and freezing a corpus should not
  * silently duplicate that material into a second location nobody thought to protect.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   buildReleaseManifest,
@@ -35,7 +35,7 @@ import {
 } from '../src/benchmark/release.ts';
 import { normaliseCase } from '../src/benchmark/authoring.ts';
 import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
-import { CorpusReadError, readCorpusValues } from './corpus-io.ts';
+import { CorpusReadError, readCorpusValues, readJsonArtifact } from './corpus-io.ts';
 import { canonicalise } from '../src/benchmark/hashing.ts';
 import type { BenchmarkCase } from '../src/benchmark/types.ts';
 
@@ -137,9 +137,14 @@ function canonicalText(value: unknown): string {
 function readManifest(path: string): ReleaseManifest {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(resolve(path), 'utf8'));
-  } catch {
-    return fail(`The manifest could not be read or parsed: ${path}`);
+    parsed = readJsonArtifact(resolve(path), { label: 'The release manifest' });
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(
+        `${error.message} A release cannot be verified against a manifest that cannot be read.`,
+      );
+    }
+    throw error;
   }
   if (typeof parsed !== 'object' || parsed === null) {
     return fail(`The manifest is not an object: ${path}`);

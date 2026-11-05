@@ -10,6 +10,8 @@ import {
   CorpusReadError,
   readCorpusValues,
   readJsonEntries,
+  readJsonArtifact,
+  MAX_ARTIFACT_BYTES,
 } from '../../scripts/corpus-io.ts';
 import { BENCHMARK_LIMITS } from '../../src/benchmark/validate.ts';
 import { MAX_CANONICAL_DEPTH } from '../../src/benchmark/hashing.ts';
@@ -276,6 +278,56 @@ test('an ordinary multi-level case, well inside the bound, still reads', () => {
       readJsonEntries(temp.path).length,
       1,
       'a nested but legal document must not be caught by the depth bound',
+    );
+  } finally {
+    temp.remove();
+  }
+});
+
+test('a single artifact is read under a ceiling too, and refused by path when absent', () => {
+  const temp = scratchDirectory('aporia-artifact-');
+  try {
+    // A manifest describes a whole corpus, so it may legitimately be larger than one case file. The ceiling
+    // is stated rather than assumed infinite, because `freeze` used to hand any size file to JSON.parse.
+    assert.equal(MAX_ARTIFACT_BYTES, BENCHMARK_LIMITS.maxCorpusBytes);
+    assert.equal(
+      kindOf(() => readJsonArtifact(join(temp.path, 'absent.json'))),
+      'directory',
+    );
+    assert.match(
+      messageOf(() => readJsonArtifact(join(temp.path, 'absent.json'))),
+      /absent\.json/,
+    );
+
+    writeFileSync(join(temp.path, 'broken.json'), 'not json', 'utf8');
+    assert.equal(
+      kindOf(() => readJsonArtifact(join(temp.path, 'broken.json'))),
+      'json',
+    );
+
+    mkdirSync(join(temp.path, 'adir.json'));
+    assert.equal(
+      kindOf(() => readJsonArtifact(join(temp.path, 'adir.json'))),
+      'type',
+    );
+
+    writeFileSync(
+      join(temp.path, 'big.json'),
+      JSON.stringify({ padding: 'q'.repeat(5000) }),
+      'utf8',
+    );
+    assert.equal(
+      kindOf(() => readJsonArtifact(join(temp.path, 'big.json'), { maxBytes: 100 })),
+      'size',
+    );
+    // The refusal must name the file, not the temporary directory it happens to live in.
+    assert.match(
+      messageOf(() => readJsonArtifact(join(temp.path, 'big.json'), { maxBytes: 100 })),
+      /big\.json/,
+    );
+    assert.equal(
+      kindOf(() => readJsonArtifact(join(temp.path, 'big.json'))),
+      null,
     );
   } finally {
     temp.remove();
