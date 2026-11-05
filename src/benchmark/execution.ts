@@ -190,6 +190,152 @@ export function runRecordProblem(parsed: unknown): string | null {
   return null;
 }
 
+export interface RunRecordReplay {
+  readonly report: BenchmarkReport;
+  readonly reportText: string;
+  readonly binding: ReleaseBinding;
+  /** The cases the replay scored, so a contract-version mix can be compared against the receipt. */
+  readonly cases: readonly BenchmarkCase[];
+  /** The source revision supplied to *this* verification, if any. Never inferred and never reused from the receipt. */
+  readonly sourceRevision: string | null;
+  /** The manifest bytes now on disk, or `null` when the caller could not read any. */
+  readonly manifestText: string | null;
+}
+
+export interface RunRecordVerification {
+  readonly ok: boolean;
+  /** Each line begins with the kind of disagreement and names the field that moved. */
+  readonly mismatches: readonly string[];
+  /** Real differences that are not failures, said plainly rather than quietly passed. */
+  readonly notes: readonly string[];
+  readonly checked: readonly string[];
+}
+
+/**
+ * Replay a run against what is on disk now, and report where they disagree.
+ *
+ * The two report digests are compared separately on purpose. `reportSha256` is over canonical content, so it
+ * survives a reformat and an ICU-versus-code-unit ordering difference — which is the only way a receipt written
+ * on one operating system can be checked on another. `reportTextSha256` is over exact bytes, so a rewritten file
+ * is visible even when its content still parses. Content disagreement fails the verification; a text difference
+ * alone is reported as what it is: a reformatted file, not a forged one.
+ *
+ * A binding that no longer holds is reported field by field, because "the corpus changed" is not actionable and
+ * "CHANGED case-42 is not the case that was frozen" is.
+ */
+export function verifyRunRecord(
+  record: BenchmarkRunRecord,
+  replay: RunRecordReplay,
+): RunRecordVerification {
+  const mismatches: string[] = [];
+  const notes: string[] = [];
+  const checked: string[] = [];
+
+  if (record.manifestSha256 !== null) {
+    if (replay.manifestText === null) {
+      mismatches.push(
+        `INCOMPLETE-ARTIFACT the receipt names manifest bytes (sha256 ${record.manifestSha256.slice(0, 12)}\u2026) that were not supplied, so the binding cannot be checked.`,
+      );
+    } else {
+      checked.push('manifestSha256');
+      const actual = sha256Hex(replay.manifestText);
+      if (actual !== record.manifestSha256) {
+        mismatches.push(
+          `MANIFEST-TAMPERED manifestSha256 is ${actual} now and ${record.manifestSha256} when the run was recorded.`,
+        );
+      }
+    }
+  } else if (replay.manifestText !== null) {
+    // The reverse case: a manifest was offered to a receipt that never had one. Agreeing here would let a later
+    // file retroactively certify an unverified run.
+    mismatches.push(
+      'RECORD-BOUND-STATE sourceRevision and releaseId were recorded without a release, so a manifest supplied now cannot be the one that was verified.',
+    );
+  }
+
+  checked.push('releaseId');
+  if (record.releaseId !== replay.binding.releaseId) {
+    mismatches.push(
+      `RELEASE-ID releaseId is ${String(replay.binding.releaseId)} now and ${String(record.releaseId)} in the receipt.`,
+    );
+  }
+  checked.push('corpusHash');
+  if (record.corpusHash !== replay.binding.corpusHash) {
+    mismatches.push(
+      `CORPUS-HASH corpusHash is ${String(replay.binding.corpusHash)} now and ${String(record.corpusHash)} in the receipt.`,
+    );
+  }
+
+  if (!replay.binding.ok) {
+    for (const refusal of replay.binding.refused) {
+      if (refusal.startsWith('GATE')) {
+        mismatches.push(`RECORD-GATES ${refusal}`);
+      } else {
+        mismatches.push(`CORPUS-DRIFTED ${refusal}`);
+      }
+    }
+  }
+
+  checked.push('reportSha256');
+  const content = contentHash(replay.report);
+  if (content !== record.reportSha256) {
+    mismatches.push(
+      `REPORT-CONTENT reportSha256 is ${content} on replay and ${record.reportSha256} in the receipt.`,
+    );
+  }
+  checked.push('reportTextSha256');
+  const text = sha256Hex(replay.reportText);
+  if (text !== record.reportTextSha256) {
+    if (content === record.reportSha256) {
+      notes.push(
+        `serialisation-order difference only: the report text hashes to ${text} rather than ${record.reportTextSha256}, while its canonical content is unchanged. Same result, different bytes.`,
+      );
+    } else {
+      mismatches.push(
+        `REPORT-CONTENT reportTextSha256 is ${text} on replay and ${record.reportTextSha256} in the receipt, and the content differs too.`,
+      );
+    }
+  }
+
+  checked.push('caseCount');
+  if (record.caseCount !== replay.binding.caseCount) {
+    mismatches.push(
+      `CASE-COUNT caseCount is ${String(replay.binding.caseCount)} on replay and ${String(record.caseCount)} in the receipt.`,
+    );
+  }
+
+  const versions: [string, string, string][] = [
+    ['reportVersion', record.versions.reportVersion, replay.report.version],
+    ['methodologyVersion', record.versions.methodologyVersion, replay.report.methodologyVersion],
+    ['metricsVersion', record.versions.metricsVersion, replay.report.metricsVersion],
+    ['evidenceRuleVersion', record.versions.evidenceRuleVersion, replay.report.evidenceRuleVersion],
+  ];
+  for (const [field, recorded, actual] of versions) {
+    checked.push(field);
+    if (recorded !== actual) {
+      mismatches.push(
+        `VERSION-DRIFT ${field} applied to this run is ${actual} now and ${recorded} when it was recorded — a different rule, so this is not the same measurement.`,
+      );
+    }
+  }
+  checked.push('caseContractVersions');
+  const present = uniqueSorted(replay.cases.map((benchmarkCase) => benchmarkCase.version));
+  if (record.versions.caseContractVersions.join(',') !== present.join(',')) {
+    mismatches.push(
+      `VERSION-DRIFT caseContractVersions are ${present.join('+') || 'none'} on replay and ${record.versions.caseContractVersions.join('+') || 'none'} in the receipt.`,
+    );
+  }
+
+  checked.push('sourceRevision');
+  if ((record.sourceRevision ?? null) !== (replay.sourceRevision ?? null)) {
+    mismatches.push(
+      `sourceRevision is ${JSON.stringify(replay.sourceRevision ?? null)} now and ${JSON.stringify(record.sourceRevision)} in the receipt.`,
+    );
+  }
+
+  return { ok: mismatches.length === 0, mismatches, notes, checked };
+}
+
 /**
  * Why this value is not a release manifest this build may trust, or `null` when it is one.
  *
