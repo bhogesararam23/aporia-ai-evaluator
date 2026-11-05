@@ -245,3 +245,41 @@ head: exit 0, 956/956. The only later commits are this report's own finalisation
 authoritative commit total is `git rev-list --count 2b1ecab..HEAD`, recorded in the pull request.
 
 Nothing in this milestone is merged or owner-accepted, and no accuracy claim is made anywhere in it.
+
+---
+
+## 11. Post-merge addendum (2026-11-05) — appended, not a rewrite
+
+Everything above this line is the report as it was written while the pull request was open, and it is left
+untouched, including its closing sentence. Two things have since become fact rather than intention:
+
+- **v0.7 was merged.** PR #10 was merged to `main` as commit `e72e77aff6fa8e27d2b10a42920f53712a9cda98` on
+  2026-11-05, so the sentence above reading "nothing in this milestone is merged" is superseded by this
+  addendum. **It is still not owner-accepted**: merging made the code the trunk, not the decisions approved.
+  ADR-025, ADR-026 and ADR-027 all remain **Proposed**, `evidence-aggregation-v1` remains the default, and
+  `accuracyClaimable` remains `false` everywhere.
+- **The final test count was 956, not 945.** Where §9 or the ADR index quoted 945, that was a mid-milestone
+  figure; the merged tree at `e72e77a` runs 956 tests with 0 failing and `npm run verify:workflow` at 25 passed /
+  0 failed / 0 not-run. The ADR index has been corrected in v0.8.
+
+**What v0.8 superseded in this milestone's own work, stated here because this report is the record of it.**
+v0.7 unified the *adjudication-binding* resolver but left two corpus loaders: `scripts/benchmark.ts` had its
+own careful one and `benchmark:case`/`benchmark:release` shared a second that never stat'd an entry, never applied
+its byte ceilings, and crashed with a raw `EISDIR` on a subdirectory named `nested.json`. It also left every
+artifact write as a plain `writeFileSync`, which truncates before writing — so a report or a release manifest
+could be destroyed without a word, and an interruption could leave a half-written manifest, the very file later
+verifications trust. And it built a release layer that nothing consumed: `--release` was an unknown argument to
+the command that scores the corpus, so no report could name the release it measured. Its `renderStagedCorpus`
+documented "names are bare" without checking, and a case id of `../../../../pwned` was proven to write outside
+the `--out` it was given.
+
+v0.8 (ADR-028) closed those: one bounded loader for all three commands, identifiers that must be usable as file
+names at validation and at write time, atomic refuse-by-default publication of every artifact, release-bound
+execution that verifies before scoring, `benchmark-run-record-v1`, and `npm run benchmark:verify`. None of it
+changed the case contract or the report — the report v0.7 produced is still byte-for-byte what v0.8 produces, and
+that is asserted by a digest pinned from this milestone's own code — and no release, manifest or gate v0.7 shipped
+was invalidated, because the manifest format is unchanged and v0.7's release tests still pass unedited.
+
+What this addendum does not do is claim v0.7 was wrong to ship as it did: it closed the five defects it set out to
+close, honestly recorded what it had not proven, and left the remaining gaps visible enough that the next
+milestone could list them from inspection rather than assumption.

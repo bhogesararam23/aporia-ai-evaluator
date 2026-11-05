@@ -7,6 +7,7 @@ import {
   isContentHash,
   MAX_CANONICAL_DEPTH,
   nestsDeeperThan,
+  sha256Hex,
 } from '../../src/benchmark/hashing.ts';
 import { validateBenchmarkCase } from '../../src/benchmark/validate.ts';
 
@@ -115,4 +116,23 @@ test('the validator refuses an over-deep case with a reason instead of letting t
   assert.match(issues[0]?.message ?? '', /nested deeper than 64 levels/);
   // The refusal is reported for the case index, so the operator can find the file.
   assert.equal(issues[0]?.caseId, 'case#7');
+});
+
+test('sha256Hex digests exact bytes, with the published vector for empty input', () => {
+  assert.equal(sha256Hex(''), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  assert.match(sha256Hex('a'), /^[0-9a-f]{64}$/);
+});
+
+test('sha256Hex discriminates text that contentHash deliberately treats as equal', () => {
+  // Two serialisations of one object. `contentHash` must agree across them; `sha256Hex` must not, because
+  // its whole job is to say whether the bytes a reader holds are the bytes that were written.
+  const left = '{"a":1,"b":2}';
+  const right = '{"b":2,"a":1}';
+  assert.equal(contentHash(JSON.parse(left)), contentHash(JSON.parse(right)));
+  assert.notEqual(sha256Hex(left), sha256Hex(right));
+});
+
+test('sha256Hex is stable across repeated calls, so a receipt can be compared after the fact', () => {
+  const text = 'release manifest bytes\n';
+  assert.equal(sha256Hex(text), sha256Hex(text));
 });

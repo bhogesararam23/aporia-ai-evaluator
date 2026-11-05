@@ -7,6 +7,7 @@ import {
   planBatchAdjudication,
   planBatchMerge,
   renderStagedCorpus,
+  UnsafeCaseNameError,
   type BatchPlan,
 } from '../../src/benchmark/batch.ts';
 import { adjudicationTemplate, buildReviewerPacket } from '../../src/benchmark/review.ts';
@@ -295,4 +296,22 @@ test('a journal that lost items mid-publish can be resumed from what remains', (
     .filter((item) => !written.has(item.name))
     .map((item) => item.name);
   assert.deepEqual(remaining, ['case-b.json']);
+});
+
+test('the staged renderer refuses an id that would escape the output directory', () => {
+  // Its own doc comment has always claimed names are bare. The validator now rejects such an id, so this is
+  // the second of the two enforcement points the owner asked for: a caller that builds cases directly gets a
+  // named refusal instead of a plan whose file name contains `..`.
+  const escaping = fixtureCase({ id: '../escaped' });
+  assert.throws(
+    () => renderStagedCorpus([escaping]),
+    (error: unknown) => {
+      assert.ok(error instanceof UnsafeCaseNameError);
+      assert.match(error.message, /escaped/);
+      return true;
+    },
+  );
+  // And it fails before any file is planned, so a batch cannot half-render a corpus with one bad id.
+  const mixed = [fixtureCase({ id: 'case-a' }), fixtureCase({ id: 'a/b' })];
+  assert.throws(() => renderStagedCorpus(mixed), UnsafeCaseNameError);
 });

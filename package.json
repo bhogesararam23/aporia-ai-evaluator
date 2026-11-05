@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "check:boundaries": "node scripts/check-boundaries.ts",
     "benchmark": "node scripts/benchmark.ts",
+    "benchmark:verify": "node scripts/benchmark-verify.ts",
     "benchmark:case": "node scripts/benchmark-case.ts",
     "benchmark:release": "node scripts/benchmark-release.ts",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:boundaries && npm test",

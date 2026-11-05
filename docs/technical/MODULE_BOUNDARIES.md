@@ -39,16 +39,34 @@ not read live application state, because then a benchmark result would depend on
 the database rather than on the frozen case. It must never generate gold material: a label it invents
 is a fabricated validation result.
 
-Internal layering inside `src/benchmark` is directional, so one rule has one owner (ADR-027):
-`hashing.ts` (canonical hashing, no imports) ← `types.ts` (contracts, no behaviour) ← `provenance.ts`
-(reviewer identity, roster, label provenance, disagreement state hash, the single adjudication-binding
-resolver) ← `review.ts` (packets, submissions, merge, report, template, apply, audit) ← `batch.ts`
-(pure batch planning, staged rendering, journal) and `release.ts` (case digests, manifest, verify, diff,
-gates). `scoring.ts` consumes `provenance.ts` and `review.ts`; `validate.ts` and `authoring.ts` consume
-`provenance.ts` and `hashing.ts`. Nothing in this layer may import back up the chain, and `provenance.ts`
-must not import `review.ts` — that cycle would let the report and the scorer resolve an adjudication
-differently, which is how a split reported as unresolved becomes a number reported as settled. Filesystem
-access stays in `scripts/`, so the whole `benchmark` layer remains a pure function of parsed JSON.
+Internal layering inside `src/benchmark` is directional, so one rule has one owner (ADR-027, extended by
+ADR-028): `hashing.ts` (canonical hashing, byte digests, no imports) ← `types.ts` (contracts, no behaviour) ←
+`naming.ts` (the single rule for an identifier that becomes a file name; imports nothing, because the validator
+and the writers both need it) ← `provenance.ts` (reviewer identity, roster, label provenance, disagreement state
+hash, the single adjudication-binding resolver) ← `review.ts` (packets, submissions, merge, report, template,
+apply, audit) ← `batch.ts` (pure batch planning, staged rendering, journal) and `release.ts` (case digests,
+manifest, verify, diff, gates) ← `execution.ts` (manifest shape check, release binding, the run receipt, replay
+verification, and the one report-composition pipeline). `scoring.ts` consumes `provenance.ts` and `review.ts`;
+`validate.ts` consumes `naming.ts`, `provenance.ts` and `hashing.ts`; `authoring.ts` consumes `validate.ts` and
+`hashing.ts`. Nothing in this layer may import back up the chain, and `provenance.ts` must not import `review.ts`
+— that cycle would let the report and the scorer resolve an adjudication differently, which is how a split
+reported as unresolved becomes a number reported as settled. For the same reason there is exactly one report
+pipeline: `composeRunReport` in `execution.ts` is what both `scripts/benchmark.ts` and
+`scripts/benchmark-verify.ts` call, so a replay cannot drift from the run it attests. Filesystem access stays in
+`scripts/`, so the whole `benchmark` layer remains a pure function of parsed JSON — which is why the two script
+modules below are scripts and not part of this layer.
+
+The script side owns the disk, in exactly two places, so a hostile file is met once rather than per command:
+`scripts/corpus-io.ts` is the only reader of corpus directories and artifact files (entry classification by
+`lstatSync`, code-unit ordering, file-count/per-byte/total ceilings applied before parsing, nesting bound, typed
+`CorpusReadError.kind`), and `scripts/artifact-io.ts` is the only writer (atomic temp-plus-rename publish,
+refuse-an-existing-target unless `--overwrite`, staged directory batches with digest re-verification and
+rollback). `benchmark.ts`, `benchmark-case.ts`, `benchmark-release.ts` and `benchmark-verify.ts` do argument
+parsing, reporting and exit codes; none of them reads a corpus or artifact path with `readFileSync`/`readdirSync`,
+and the only direct writes left are creating an output directory's parent and the batch path's own
+`<out>.staging/` scratch files, which its journal governs. That separation is what a v0.7 probe showed missing:
+two loaders with different rules meant one command crashed on a directory named `*.json` while another silently
+skipped it.
 
 ### Commercial module (optional future)
 Owns products/plans, billing, invoices, usage accounting, customer lifecycle, and entitlements. It may provide a quota decision at the API/application boundary. It MUST NOT be imported by evaluator core or influence verdict weights, source selection, claim confidence, attribution, or metric formulas.

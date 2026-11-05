@@ -164,6 +164,42 @@ test('each structural defect is named on its own field', () => {
   }
 });
 
+test('an id that cannot become a file name is refused with the naming rule as its reason', () => {
+  // Every publication path derives `<id>.json`, so this is not a naming preference. A probe against merged
+  // v0.7 showed id `../../../../pwned` validating with zero issues and a canonical case written several
+  // directories above the `--out` the operator had named.
+  for (const id of [
+    '../escape',
+    'a/b',
+    'a\\b',
+    '.',
+    '..',
+    'trailing.',
+    'spaced ',
+    'a:b',
+    'x'.repeat(121),
+  ]) {
+    const fields = fieldsFor(validCase({ id }));
+    assert.ok(
+      hasIssue(fields, 'id'),
+      `${JSON.stringify(id)} should be refused, got ${fields.join(', ')}`,
+    );
+  }
+  const issue = validateBenchmarkCase(validCase({ id: '../escape' }), 0).find(
+    (candidate) => candidate.field === 'id',
+  );
+  assert.match(issue?.message ?? '', /file name/, 'the message must state the consequence');
+});
+
+test('an ordinary or merely unusual id still validates', () => {
+  // Refusing more than the filesystem rule would invalidate corpus material that has always been readable,
+  // which is a different goal from refusing an escape.
+  for (const id of ['case-fixture-1', 'case.2026.a', 'CASE_UPPER', 'ünïcode-câse', 'refusal-1']) {
+    const fields = fieldsFor(validCase({ id }));
+    assert.ok(!fields.includes('id'), `${id} must stay valid, got ${fields.join(', ')}`);
+  }
+});
+
 test('a case without authorised provenance cannot be scored', () => {
   const source = validCase();
   const provenance = source['provenance'] as Record<string, unknown>;

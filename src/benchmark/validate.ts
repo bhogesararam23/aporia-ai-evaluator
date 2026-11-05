@@ -18,19 +18,27 @@ import {
   type BenchmarkStratum,
 } from './types.ts';
 import { reviewerIdentity } from './provenance.ts';
+import { unsafeIdReason } from './naming.ts';
 import { isContentHash, MAX_CANONICAL_DEPTH, nestsDeeperThan } from './hashing.ts';
-
 /**
  * Bounds a hostile or careless corpus file can be forced to respect at load time.
  *
  * These are enforced here, in the validator, not only in the command-line loader. A caller that reads
  * a corpus any other way still gets the same ceiling, which was not true while the byte caps lived
  * only in `scripts/benchmark.ts`.
+ *
+ * v0.8 names the two ceilings a bounded read actually needs. `maxFiles` replaces the file-count check that
+ * used to borrow `maxCases` — a number of files and a number of cases are different quantities, because one
+ * file may hold an array of cases. `maxNestingDepth` names the canonicaliser's own bound rather than leaving
+ * it implicit, so a loader can refuse an over-deep document with the limit in the message. No existing
+ * ceiling is loosened: the commands that had none become as strict as the one that did.
  */
 export const BENCHMARK_LIMITS = {
+  maxFiles: 5000,
   maxCases: 5000,
   maxCaseBytes: 262_144,
   maxCorpusBytes: 8_388_608,
+  maxNestingDepth: MAX_CANONICAL_DEPTH,
   maxIdLength: 120,
   maxTextLength: 8000,
   maxAnswerLength: 100_000,
@@ -849,6 +857,16 @@ export function validateBenchmarkCase(source: unknown, index: number): Benchmark
   const caseVersion = typeof version === 'string' ? version : BENCHMARK_CASE_VERSION;
 
   report.text('id', source['id'], BENCHMARK_LIMITS.maxIdLength);
+  if (typeof source['id'] === 'string') {
+    // One rule, shared with the writers (`src/benchmark/naming.ts`): a case id is not only a label, it is the
+    // file name every publication path derives from it. Checked here as well as at write time because a case
+    // that cannot be published should not be accepted into a corpus and discovered only when something tries
+    // to write it out.
+    const idProblem = unsafeIdReason(source['id']);
+    if (idProblem !== null) {
+      report.push('id', `A case id becomes a file name in every publication path. ${idProblem}.`);
+    }
+  }
   report.text('title', source['title'], 300);
   report.enumeration(
     'stratum',

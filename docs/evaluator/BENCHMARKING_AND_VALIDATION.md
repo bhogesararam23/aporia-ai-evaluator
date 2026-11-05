@@ -18,7 +18,7 @@ a benchmark becomes decoration.
 | 5. Ablation | Version-aware deterministic regression of `evidence-aggregation-v1` **and** `-v2` (verdict plus corroborating-source count) over a frozen input pack, plus metric-formula checks. Duplicate-source counting and canonical-URI collapse are expressible and tested since v2. | Model-assisted classification comparison, query-generation strategies, citation extraction, multilingual processing, contradiction detection. None of these are components that exist yet. |
 | 6. Leakage | Not applicable to an offline corpus of reviewer-recorded cases | Development/validation/held-out splits and time splits. Meaningless until a real corpus exists. |
 | 7. Provider integration | — | Everything. There are no providers, no adapters, and no network access in this build. |
-| 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata. Since v0.7, `npm run benchmark:release` adds **corpus** gates — case validity, duplicate ids, storage authorisation, review date, roster conformity, stale bindings, annotation coverage, two-reviewer depth, unresolved disagreement — over a deterministic manifest that freezes case digests. | Any release gate that depends on measured results. Corpus gates establish that a corpus is consistent, attributable as declared and unchanged; they establish nothing about accuracy, and a passing gate set over fabricated labels is a faithful digest of fabricated labels. |
+| 8. Release gates | The harness refuses to print a percentage over an empty corpus, exits non-zero on invalid cases, on deterministic mismatches, and on missing strata. Since v0.7, `npm run benchmark:release` adds **corpus** gates — case validity, duplicate ids, storage authorisation, review date, roster conformity, stale bindings, annotation coverage, two-reviewer depth, unresolved disagreement — over a deterministic manifest that freezes case digests. Since v0.8 a run can be **bound** to one: `--release` verifies the corpus against the manifest before scoring and writes no report on a blocking failure, and `npm run benchmark:verify` re-derives the report from the receipt's release and names whatever disagrees. | Any release gate that depends on measured results. Corpus gates establish that a corpus is consistent, attributable as declared and unchanged; execution gates establish that a run scored that corpus and produced that report. Neither establishes accuracy, and a passing gate set over fabricated labels is a faithful digest of fabricated labels. |
 | 9. Monitoring | — | Nothing. Local single-operator use has no monitoring pipeline. |
 | 10. Public claims | `accuracyClaimable` is reported as `false` in every artifact, with the reason beside it | — |
 
@@ -188,6 +188,44 @@ evaluator is right. A hash authenticates no reviewer and vouches for no material
 fabricated labels is a faithful digest of fabricated labels. `accuracyClaimable` stays `false`, and public
 reliability claims remain barred until §8's conditions are met with genuine review.
 
+
+### 3.6 Release-bound execution and the run record (v0.8, ADR-028)
+
+v0.7 could freeze a corpus and v0.7 could score a corpus, and nothing connected the two: `--release` was an
+unknown argument and no report said which corpus it described. Three things close that, and each is code in this
+repository, not a plan:
+
+- **Binding before scoring.** `npm run benchmark -- --release <manifest>` refuses to score a corpus that is not
+  the frozen release: any changed, added, removed, duplicated or contract-drifted case, any invalid entry, any
+  blocking gate failure, or a manifest from another contract version stops the run **and writes no report**. A
+  report the tool refused to stand behind would otherwise look exactly like a result. Non-blocking gates — a
+  legacy unbound decision, missing strata — are printed as warnings and recorded, which is the same rule the
+  release layer uses: disclose, never upgrade and never hide.
+- **`benchmark-run-record-v1`.** A deterministic receipt binding release id, the manifest's exact bytes by
+  SHA-256, corpus hash, report hash, case count and the applicable case/report/methodology/metrics/evidence-rule
+  versions. It carries no clock, path, hostname or environment value, so the same run over the same inputs writes
+  the same bytes anywhere. `sourceRevision` is recorded **only** when an operator supplies it: the harness does
+  not run git, does not read the repository, and will not invent a commit, because a fabricated revision would be
+  the most misleading field in the artifact.
+- **Replay and verification.** `npm run benchmark:verify` re-reads the corpus and manifest through the same
+  bounded loader, re-runs the binding, re-scores through `composeRunReport` — the one pipeline the harness itself
+  uses, so a replay cannot drift from the run it attests — and compares field by field: `MANIFEST-TAMPERED`,
+  `CORPUS-DRIFTED`, `REPORT-CONTENT`, `REPORT-TEXT`, `VERSION-DRIFT`, `CASE-COUNT`, `RECORD-BOUND-STATE`,
+  `INCOMPLETE-ARTIFACT`.
+
+Two report identities, deliberately. `benchmark-report-v2` was left **byte-for-byte unchanged** — the binding
+lives in the receipt, so a report stored before v0.8 stays comparable, and its pinned serialisation digest is
+asserted by the test suite. But its key order is locale collation, which is why the receipt records both
+`reportSha256` (canonical content, environment-independent — the check that works across machines) and
+`reportTextSha256` (exact bytes — the check that sees a rewritten file). A stored artifact whose bytes disagree with
+the receipt fails verification; a *replay* whose bytes differ while content agrees is reported as
+`serialisation-order difference only`, because that difference is a formatting fact, not a changed result.
+
+What a receipt does not do: it proves that this build scored this corpus into this report. It cannot show the
+material is genuine, that two reviewer names are two people, or that any reviewer existed — reviewer identity in a
+case file is operator-asserted and this application has no authentication. A bound run over a complete,
+fully-gated corpus is a **ready** corpus, not an accurate evaluator, and `accuracyClaimable` is the literal
+`false` in the report, the manifest and the receipt.
 
 ## 4. Evaluator performance measures
 

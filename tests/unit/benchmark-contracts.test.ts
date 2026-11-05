@@ -3,8 +3,11 @@ import { test } from 'node:test';
 import {
   BENCHMARK_ADJUDICATION_VERSION,
   BENCHMARK_ADJUDICATION_VERSION_V2,
+  BENCHMARK_AUDIT_VERSION,
   BENCHMARK_BATCH_JOURNAL_VERSION,
+  BENCHMARK_PACKET_VERSION,
   BENCHMARK_RELEASE_MANIFEST_VERSION,
+  BENCHMARK_RUN_RECORD_VERSION,
   BENCHMARK_SUBMISSION_VERSION,
   BENCHMARK_SUBMISSION_VERSION_V2,
   KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS,
@@ -104,4 +107,27 @@ test('the submission contract moved to types.ts and is still re-exported from re
   assert.equal(typeof review.mergeSubmission, 'function');
   assert.equal(typeof review.contentHash, 'function');
   assert.equal(review.SUBMISSION_VERSION, BENCHMARK_SUBMISSION_VERSION);
+});
+
+test('benchmark-run-record-v1 is its own artifact contract, not a reuse of another', () => {
+  assert.equal(BENCHMARK_RUN_RECORD_VERSION, 'benchmark-run-record-v1');
+  assert.ok(
+    KNOWN_BENCHMARK_REVIEW_ARTIFACT_VERSIONS.includes(BENCHMARK_RUN_RECORD_VERSION),
+    'a known artifact version list that omits the receipt would let a stale file pass as current',
+  );
+  // Distinct from every version it could be confused with: the receipt describes a *run*, the manifest
+  // describes a corpus, and the report describes scores. Collapsing them would let a reader verify one and
+  // believe it had verified another.
+  for (const other of [
+    BENCHMARK_RELEASE_MANIFEST_VERSION,
+    BENCHMARK_BATCH_JOURNAL_VERSION,
+    BENCHMARK_AUDIT_VERSION,
+    BENCHMARK_ADJUDICATION_VERSION,
+    BENCHMARK_ADJUDICATION_VERSION_V2,
+    BENCHMARK_SUBMISSION_VERSION,
+    BENCHMARK_SUBMISSION_VERSION_V2,
+    BENCHMARK_PACKET_VERSION,
+  ]) {
+    assert.notEqual(BENCHMARK_RUN_RECORD_VERSION, other);
+  }
 });

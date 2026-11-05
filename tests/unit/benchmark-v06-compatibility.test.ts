@@ -12,7 +12,13 @@ import {
   annotationSummaries,
   scoreByDimension,
 } from '../../src/benchmark/scoring.ts';
-import { releaseGates } from '../../src/benchmark/release.ts';
+import { releaseGates, buildReleaseManifest } from '../../src/benchmark/release.ts';
+import {
+  bindRunToRelease,
+  buildRunRecord,
+  composeRunReport,
+} from '../../src/benchmark/execution.ts';
+import { canonicalise } from '../../src/benchmark/hashing.ts';
 import { buildBenchmarkReport, BENCHMARK_REPORT_VERSION } from '../../src/benchmark/report.ts';
 import {
   BENCHMARK_CASE_VERSION_V1,
@@ -226,4 +232,151 @@ test('a v0.6-era packet file verifies against the same case under v0.7', () => {
   ]) {
     assert.ok(!(forbidden in record));
   }
+});
+
+/**
+ * Labels from both reviewers over every subject the fixture exposes.
+ *
+ * A case with unannotated subjects fails a blocking release gate, and an incompatible corpus that cannot be
+ * frozen cannot show anything about compatibility — so the ledger tests label the whole fixture and vary only
+ * the thing under test.
+ */
+function annotatedPair(first: string, second: string, secondEvidenceLabel?: string) {
+  const subjects: [
+    'EVIDENCE_SUPPORT' | 'ANSWER_FIDELITY' | 'CITATION_SUPPORT' | 'ATTRIBUTION',
+    string,
+    string,
+  ][] = [
+    ['EVIDENCE_SUPPORT', 'p1', 'SUPPORTED_WITHIN_SCOPE'],
+    ['ANSWER_FIDELITY', 'st1', 'NOT_ASSESSABLE'],
+    ['CITATION_SUPPORT', 'st1', 'NOT_ASSESSABLE'],
+    ['ATTRIBUTION', 'st1', 'NOT_ASSESSABLE'],
+  ];
+  return subjects.flatMap(([dimension, subjectId, value]) => [
+    labelFor(first, dimension, subjectId, value),
+    labelFor(
+      second,
+      dimension,
+      subjectId,
+      dimension === 'EVIDENCE_SUPPORT' && secondEvidenceLabel !== undefined
+        ? secondEvidenceLabel
+        : value,
+    ),
+  ]);
+}
+
+/**
+ * v0.8 changed a corpus read, a report construction, an id rule and every output path, and claimed none of it
+ * would break an older artifact. Each test below takes something written before v0.8 and runs it through the
+ * v0.8 code, because a compatibility promise that is only asserted in prose is a guess.
+ */
+
+test('a v0.7 release manifest still binds a v0.8 run, and its unbound decision still settles', () => {
+  const legacy = {
+    ...fixtureCase({
+      id: 'v07-manifest-case',
+      reviewedBy: ['dana', 'sam'],
+      reviewerLabels: annotatedPair('dana', 'sam', 'INSUFFICIENT_EVIDENCE'),
+    }),
+    adjudications: [
+      {
+        dimension: 'EVIDENCE_SUPPORT' as const,
+        subjectId: 'p1',
+        outcome: 'RESOLVED' as const,
+        label: 'INSUFFICIENT_EVIDENCE',
+        reason: 'A decision recorded before bindings existed.',
+        adjudicatedBy: 'dana',
+      },
+    ],
+  } as unknown as BenchmarkCase;
+
+  // Built by the v0.7 release code, read by the v0.8 binder: no migration, no re-freeze.
+  const manifest = buildReleaseManifest([legacy], null, 'v07 freeze', {
+    issues: [],
+  });
+  const binding = bindRunToRelease({
+    manifest: JSON.parse(JSON.stringify(canonicalise(manifest))),
+    cases: [legacy],
+    validation: validateBenchmarkCorpus([{ index: 0, value: legacy }]),
+    manifestText: JSON.stringify(manifest),
+  });
+  assert.equal(binding.ok, true, binding.refused.join('; '));
+  // The unbound record still settles the subject - and is still disclosed rather than credited.
+  assert.ok(binding.warnings.some((warning) => warning.includes('allAdjudicationsBound')));
+  assert.equal(disagreementReport(legacy).unbound, 1);
+  assert.equal(disagreementReport(legacy).unresolved, 0);
+});
+
+test('both case contracts score through the shared pipeline exactly as the harness scored them', () => {
+  const v1 = fixtureCase({
+    id: 'compat-v1',
+    version: BENCHMARK_CASE_VERSION_V1,
+    reviewedBy: ['dana', 'sam'],
+    reviewerLabels: annotatedPair('dana', 'sam'),
+  });
+  const v2 = fixtureCase({
+    id: 'compat-v2',
+    reviewedBy: ['dana', 'sam'],
+    reviewerLabels: annotatedPair('dana', 'sam'),
+  });
+  const validation = validateBenchmarkCorpus([
+    { index: 0, value: v1 },
+    { index: 1, value: v2 },
+  ]);
+  assert.equal(validation.cases.length, 2, 'an older contract stopped reading');
+  const { report, reportText } = composeRunReport(
+    [
+      { name: 'v1.json', text: JSON.stringify(v1), values: [v1] },
+      { name: 'v2.json', text: JSON.stringify(v2), values: [v2] },
+    ],
+    validation,
+  );
+  assert.equal(report.version, BENCHMARK_REPORT_VERSION);
+  assert.equal(report.statement.structuralReadiness.legacyContractCases, 1);
+  assert.deepEqual([...report.caseFormatsPresent].sort(), [
+    BENCHMARK_CASE_VERSION_V1,
+    'benchmark-case-v2',
+  ]);
+  // The digests the harness used to build inline are still built, with their old truncated shapes intact.
+  assert.ok(report.corpus.digests.some((entry) => entry.kind === 'file' && entry.caseCount === 1));
+  for (const entry of report.corpus.digests) {
+    assert.match(entry.digest, /^[0-9a-f]{16}$/);
+  }
+  assert.ok(reportText.endsWith('\n'));
+  assert.equal(report.statement.accuracyClaimable, false);
+});
+
+test('a v0.8 receipt can be built over a v0.7-shaped corpus without any new case fields', () => {
+  const plain = fixtureCase({
+    id: 'receipt-legacy',
+    reviewedBy: ['dana', 'sam'],
+    reviewerLabels: annotatedPair('dana', 'sam'),
+  });
+  const validation = validateBenchmarkCorpus([{ index: 0, value: plain }]);
+  const cases = validation.cases as unknown as readonly BenchmarkCase[];
+  const manifest = buildReleaseManifest(cases, null, null, validation);
+  const manifestText = `${JSON.stringify(canonicalise(manifest))}\n`;
+  const binding = bindRunToRelease({
+    manifest: JSON.parse(manifestText),
+    cases,
+    validation,
+    manifestText,
+  });
+  assert.equal(binding.ok, true, binding.refused.join('; '));
+  const composed = composeRunReport(
+    [{ name: 'plain.json', text: JSON.stringify(plain), values: [plain] }],
+    validation,
+  );
+  const record = buildRunRecord({
+    report: composed.report,
+    reportText: composed.reportText,
+    binding,
+    cases,
+    sourceRevision: null,
+  });
+  // A case with none of the v0.7 provenance fields yields a receipt that invents none.
+  assert.equal(record.caseCount, 1);
+  assert.equal(record.warnings.unboundAdjudications, 0);
+  assert.equal(record.sourceRevision, null);
+  assert.deepEqual(record.versions.caseContractVersions, ['benchmark-case-v2']);
 });

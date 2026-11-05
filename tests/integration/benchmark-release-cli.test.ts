@@ -262,7 +262,10 @@ test('a malformed manifest or an unreadable corpus is refused with a reason, nev
     writeFileSync(brokenManifest, '{ not json', 'utf8');
     assertRefused(
       await cli(['verify', '--corpus', corpus.path, '--manifest', brokenManifest]),
-      /could not be read or parsed/,
+      // v0.7 said "could not be read or parsed" for every failure of this kind. The bounded artifact reader
+      // now says which failure it was and names the file, so the guarantee (refused, not thrown) is unchanged
+      // while the message is one an operator can act on.
+      /broken\.json is not valid JSON/,
     );
     writeFileSync(brokenManifest, JSON.stringify({ version: 'x' }), 'utf8');
     assertRefused(

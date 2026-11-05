@@ -1,6 +1,6 @@
 # Known Limitations and Out-of-Scope Behavior
 
-- Status: Current as of local core v0.7
+- Status: Current as of local core v0.8
 - Date: 2026-11-05
 
 This document prevents the implementation from being mistaken for the complete product or a production-ready system. It should be updated whenever a milestone closes one of these gaps.
@@ -136,5 +136,18 @@ Do not use it to:
 - **The default changed.** Batch writes are atomic from v0.7, so a previously working script that relied on partial application now exits non-zero and writes nothing; `--allow-partial` restores it explicitly.
 - **Digest compatibility break, in practice empty.** Ordering that reaches a hash is now by code unit rather than locale collation, so v0.6-computed packet and case hashes differ from v0.7 ones and a packet issued before the change must be re-issued. No such packet exists, because no review has been run.
 - **The release layer has never frozen real material.** Its fixtures are synthetic; `benchmark:release` has not been run against a corpus of genuine reviewed cases, because none exists yet.
+
+## 12. Release-bound execution, run receipt and I/O hardening limits
+
+- **A receipt proves construction, not truth.** `benchmark-run-record-v1` shows that this build scored a corpus matching a given manifest and produced a given report, under named contract versions. It cannot show the material is genuine, that two reviewer names are two people, or that a reviewer existed. Verification recomputes digests; it performs no authentication, because local core has none.
+- **A report can still be run unbound.** `--release` is opt-in so CI and existing invocations keep working; an unbound run is recorded as `notReleaseBound: true` with `releaseId: null` rather than refused. A receipt over an unbound corpus is a reproducibility record, not a claim that the corpus was frozen.
+- **Source revision is operator-asserted, and usually absent.** `--source-revision` stores exactly what an operator typed; it is never looked up, inferred, or validated against a repository. `null` means none was supplied, which is not the same as "the run was not from this commit".
+- **Report bytes still depend on collation.** `benchmark-report-v2` is deliberately byte-frozen, and its serialiser still sorts keys with `localeCompare`, so the same report can serialise differently across builds — the first divergence is `subjectsWithout` versus `subjectsWithTwoDistinctReviewers`. Verification therefore compares the receipt's canonical content hash; a text-only difference on replay is reported as `serialisation-order difference only`, not as tampering. Stored reports remain byte-identical; byte-level report comparison across machines is still not the check to rely on.
+- **Two behaviours changed on purpose.** A corpus file over 256 KiB is now refused by `benchmark:case` and `benchmark:release` as well as the harness (no ceiling was loosened; the commands that had none became as strict as the one that had one), and an existing output file or directory entry is refused unless `--overwrite` is passed. An automation script that assumed either will now exit non-zero.
+- **An identical rerun is not an error.** A target that already holds exactly the bytes a command would write is left alone and reported, not refused; only a write that would destroy different bytes is. A script that treated "file exists" as its completion signal must read the message instead.
+- **Symlink refusal is unverified on this host.** `lstatSync`-based rejection of linked corpus entries and manifest files is implemented and tested, but this Windows installation cannot create a symlink (`EPERM` without developer mode), so the test prints its skip reason and runs only on the Linux and macOS CI jobs. Treat "skipped" here as "not demonstrated locally", not as "not needed".
+- **Boundaries are ceilings, not resource governance.** The loader bounds file count, per-file and total bytes, and nesting depth before parsing, which stops a hostile corpus from exhausting memory in one read. There is still no quota, no concurrent-run locking, and no protection against a corpus directory an operator points at something enormous: `verify:workflow`, the server, and these commands are single-operator by design.
+- **Directory rollback is best-effort against I/O failure, not against power loss.** A staged publish refuses collisions first, so the usual failure is caught before anything is written; if a rename fails mid-batch the batch is rolled back and any file that could not be restored is named in the refusal. An interrupted process killed at the wrong instant can still leave a staged directory, which the next run reports rather than silently reuses.
+- **Nothing here has been run against real reviewed material.** The corpora frozen, bound, replayed and verified in this milestone are synthetic fixtures; the receipt contract has never attested a reviewed benchmark run, because no reviewed corpus exists yet.
 
 See [Implementation Status](IMPLEMENTATION_STATUS.md) for the requirement matrix and [Testing](TESTING.md) for what was actually run.

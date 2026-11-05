@@ -16,29 +16,28 @@
  * A software regression is a code finding. Reviewer disagreement is a methodology finding. Neither is
  * evidence that the evaluator is accurate, and nothing here turns a disagreement into a consensus.
  */
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
+import { CorpusReadError, readArtifactText, readCorpusFiles } from './corpus-io.ts';
+import { ArtifactWriteError, publishFile } from './artifact-io.ts';
 import {
-  agreementRows,
-  annotationSummaries,
-  scoreByDimension,
-  type ScoredPair,
-} from '../src/benchmark/scoring.ts';
-import { BENCHMARK_DIMENSIONS } from '../src/benchmark/types.ts';
-import { regressionResults, unusableEvidenceRecords } from '../src/benchmark/regression.ts';
-import {
-  buildBenchmarkReport,
-  caseDigest,
-  serialiseBenchmarkReport,
-  type CorpusDigest,
-} from '../src/benchmark/report.ts';
-import { BENCHMARK_LIMITS, validateBenchmarkCorpus } from '../src/benchmark/validate.ts';
+  bindRunToRelease,
+  buildRunRecord,
+  composeRunReport,
+  runRecordText,
+  type CorpusFileInput,
+  type ReleaseBinding,
+} from '../src/benchmark/execution.ts';
 
 interface Options {
   corpus: string;
   output: string | null;
   requireCompleteStrata: boolean;
+  overwrite: boolean;
+  release: string | null;
+  runRecord: string | null;
+  sourceRevision: string | null;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -46,6 +45,10 @@ function parseArguments(argv: readonly string[]): Options {
     corpus: '',
     output: null,
     requireCompleteStrata: true,
+    overwrite: false,
+    release: null,
+    runRecord: null,
+    sourceRevision: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -53,8 +56,16 @@ function parseArguments(argv: readonly string[]): Options {
       options.corpus = String(argv[(index += 1)] ?? '');
     } else if (argument === '--out') {
       options.output = argv[(index += 1)] ?? null;
+    } else if (argument === '--release') {
+      options.release = argv[(index += 1)] ?? null;
+    } else if (argument === '--run-record') {
+      options.runRecord = argv[(index += 1)] ?? null;
+    } else if (argument === '--source-revision') {
+      options.sourceRevision = argv[(index += 1)] ?? null;
     } else if (argument === '--allow-partial-strata') {
       options.requireCompleteStrata = false;
+    } else if (argument === '--overwrite') {
+      options.overwrite = true;
     } else if (argument === '--help' || argument === '-h') {
       printUsage();
       process.exit(0);
@@ -74,6 +85,21 @@ function printUsage(): void {
 
   --corpus        Directory of benchmark case JSON files. Required.
   --out           Where to write the report. Defaults to stdout.
+  --release       A benchmark-release-manifest-v1 file. The corpus is verified against it BEFORE scoring:
+                  a changed, added, removed, duplicated, invalid or contract-drifted case, or a blocking
+                  release-gate failure, refuses the run and writes no report. Non-blocking provenance gaps
+                  are disclosed and do not stop the run. Without this flag nothing about the corpus is
+                  claimed to be verified, and the report says nothing about a release.
+  --run-record    Where to write benchmark-run-record-v1: the release, manifest bytes, corpus hash, report
+                  hashes, case count and the contract versions that applied. A run not bound to a release
+                  writes one with releaseId null rather than inventing an identity.
+  --source-revision <text>
+                  Recorded verbatim in the receipt. Supply it only when you know it: the harness never reads
+                  a repository, never runs git and never guesses a commit, because an invented revision in a
+                  receipt would be the most misleading field in the artifact.
+  --overwrite     Replace an existing report file. Without it an existing target is refused, naming
+                  the digest of the bytes that are there, because a report may already be quoted
+                  by something else.
   --allow-partial-strata
                   Report on a corpus that does not cover every required stratum. Absence is still
                   printed; this flag only stops it from failing the run.`);
@@ -93,74 +119,42 @@ interface CaseSource {
 
 interface CorpusReading {
   readonly sources: readonly CaseSource[];
-  readonly files: readonly { readonly name: string; readonly values: readonly unknown[] }[];
-  readonly fileDigests: readonly CorpusDigest[];
+  readonly files: readonly CorpusFileInput[];
 }
 
 /**
- * Read the corpus under explicit bounds. A hostile or bloated file must fail, not consume memory.
+ * Read the corpus through the one bounded loader, keeping the file identity the report needs.
  *
- * A file may hold one case or an array of them; `validateBenchmarkCorpus` expands and counts them, so
- * the ceiling applies to cases rather than filenames. This layer keeps the file identity, because the
- * report must be able to say which file a rejected case came from.
+ * Until v0.8 this command carried its own loader: it stat'd entries, applied the byte ceilings and skipped
+ * anything that was not a file, while `benchmark:case` and `benchmark:release` shared a second loader that did
+ * none of that. The same hostile directory therefore produced a clean skip here and a stack trace there, and
+ * one oversized file was refused by this command only. Every read now goes through `scripts/corpus-io.ts`, so
+ * one ceiling means one thing across all three commands.
+ *
+ * The empty-array refusal stays here, because "a file that carries no case" is a statement about what a report
+ * can say about that file, not about whether it could be read. Per-file and per-case digests are computed by the
+ * shared scoring pipeline, so a replay cannot drift from the run it is verifying.
  */
 function readCorpus(directory: string): CorpusReading {
-  let names: string[];
+  let files: { name: string; text: string; parsed: unknown; values: unknown[] }[];
   try {
-    names = readdirSync(directory)
-      .filter((name) => name.endsWith('.json'))
-      .sort();
-  } catch {
-    return fail(`The corpus directory could not be read: ${directory}`);
-  }
-  if (names.length > BENCHMARK_LIMITS.maxCases) {
-    return fail(
-      `The corpus holds ${String(names.length)} files; the limit is ${String(BENCHMARK_LIMITS.maxCases)}.`,
-    );
+    files = readCorpusFiles(directory);
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(error.message);
+    }
+    throw error;
   }
   const sources: CaseSource[] = [];
-  const files: { name: string; values: unknown[] }[] = [];
-  const fileDigests: CorpusDigest[] = [];
-  let totalBytes = 0;
-  for (const name of names) {
-    const path = join(directory, name);
-    const stat = statSync(path);
-    if (!stat.isFile()) {
-      continue;
+  const kept: CorpusFileInput[] = [];
+  for (const file of files) {
+    if (file.values.length === 0) {
+      return fail(`${file.name} holds an empty array; a file must carry at least one case.`);
     }
-    if (stat.size > BENCHMARK_LIMITS.maxCaseBytes) {
-      return fail(
-        `${name} is ${String(stat.size)} bytes; the per-file limit is ${String(BENCHMARK_LIMITS.maxCaseBytes)}.`,
-      );
-    }
-    totalBytes += stat.size;
-    if (totalBytes > BENCHMARK_LIMITS.maxCorpusBytes) {
-      return fail(`The corpus exceeds ${String(BENCHMARK_LIMITS.maxCorpusBytes)} bytes in total.`);
-    }
-    const text = readFileSync(path, 'utf8');
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      return fail(`${name} is not valid JSON.`);
-    }
-    const values = Array.isArray(value) ? value : [value];
-    if (values.length === 0) {
-      return fail(`${name} holds an empty array; a file must carry at least one case.`);
-    }
-    sources.push({ index: sources.length, name, value });
-    files.push({ name, values });
-    fileDigests.push({
-      kind: 'file',
-      source: name,
-      caseCount: values.length,
-      digest: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
-      bytes: Buffer.byteLength(text, 'utf8'),
-      // Settled once validation has run, so a file whose cases were all refused is visible.
-      accepted: true,
-    });
+    sources.push({ index: sources.length, name: file.name, value: file.parsed });
+    kept.push({ name: file.name, text: file.text, values: file.values });
   }
-  return { sources, files, fileDigests };
+  return { sources, files: kept };
 }
 
 /** The disclaimer a reader must see on every route, including a run that is about to fail. */
@@ -171,6 +165,80 @@ function honestyLine(caseCount: number): string {
     'of independent review, and not a statement about any provider today. ' +
     'Reviewer identity in a case file is operator-asserted.'
   );
+}
+
+/**
+ * Verify the corpus against the release it claims to be, before anything is scored.
+ *
+ * The order is the whole point. Scoring first and checking after would produce a report that reads normally and
+ * is quietly about a different corpus than the one that was reviewed — the failure a release binding exists to
+ * make impossible. A refusal here writes no report at all, because a report the harness itself refused to stand
+ * behind is worse than no report: it looks like a result.
+ *
+ * Without `--release` nothing is asserted about the corpus, and nothing is printed about one either.
+ */
+function bindCorpusToRelease(
+  options: Options,
+  validation: ReturnType<typeof validateBenchmarkCorpus>,
+  directory: string,
+): { readonly binding: ReleaseBinding; readonly refused: boolean } {
+  const quiet: ReleaseBinding = bindRunToRelease({
+    manifest: null,
+    cases: validation.cases,
+    validation,
+    manifestText: null,
+  });
+  if (options.release === null) {
+    // Unbound: computed so a receipt can carry the truth, printed nowhere, because "not release-bound" is the
+    // status of every ordinary run and a warning on each one would teach everyone to ignore warnings.
+    return { binding: quiet, refused: false };
+  }
+  const manifestPath = resolve(options.release);
+  let manifestText: string;
+  try {
+    manifestText = readArtifactText(manifestPath, { label: 'The release manifest' });
+  } catch (error) {
+    if (error instanceof CorpusReadError) {
+      return fail(`${error.message} A run cannot be bound to a release it cannot read.`);
+    }
+    throw error;
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch {
+    return fail(
+      `The release manifest at ${manifestPath} is not valid JSON, so nothing can be verified against it.`,
+    );
+  }
+  const binding = bindRunToRelease({
+    manifest,
+    cases: validation.cases,
+    validation,
+    manifestText,
+  });
+  for (const warning of binding.warnings) {
+    console.error(`benchmark: release warning — ${warning}`);
+  }
+  if (!binding.ok) {
+    console.error(
+      `benchmark: the corpus at ${directory} is not the release ${manifestPath} describes. Refusing to score it.`,
+    );
+    for (const refusal of binding.refused) {
+      console.error(`  ${refusal}`);
+    }
+    console.error(
+      'benchmark: no report was written. A report over a corpus that drifted from its release would read like a result about the reviewed corpus, and it would not be one.',
+    );
+    process.exitCode = 1;
+    return { binding: quiet, refused: true };
+  }
+  console.error(
+    `benchmark: corpus verified against release ${String(binding.releaseId)}` +
+      (binding.manifestLabel === null ? '' : ` ("${binding.manifestLabel}")`) +
+      ` — ${String(binding.caseCount)} case(s), corpus ${String(binding.corpusHash).slice(0, 12)}…, manifest sha256 ${String(binding.manifestSha256).slice(0, 12)}…`,
+  );
+  return { binding, refused: false };
 }
 
 function main(): void {
@@ -193,22 +261,6 @@ function main(): void {
     reading.sources.map((source) => ({ index: source.index, value: source.value })),
   );
 
-  const acceptedValues = new Set<unknown>(validation.cases as readonly unknown[]);
-  const digests: CorpusDigest[] = reading.fileDigests.map((digest, index) => ({
-    ...digest,
-    accepted: (reading.files[index]?.values ?? []).every((value) => acceptedValues.has(value)),
-  }));
-  for (const benchmarkCase of validation.cases) {
-    digests.push({
-      kind: 'case',
-      source: benchmarkCase.id,
-      caseCount: 1,
-      digest: caseDigest(benchmarkCase),
-      bytes: Buffer.byteLength(JSON.stringify(benchmarkCase), 'utf8'),
-      accepted: true,
-    });
-  }
-
   if (validation.issues.length > 0) {
     console.error(`benchmark: ${String(validation.issues.length)} case problem(s) found.`);
     for (const issue of validation.issues.slice(0, 40)) {
@@ -219,45 +271,44 @@ function main(): void {
     }
   }
 
-  const regression = regressionResults(validation.cases);
-  // Only what the software itself produces is scored as produced-versus-gold. Human-judgement
-  // dimensions are reported as annotation agreement in their own block, from their own rule: unanimous
-  // reviewers, or an adjudication naming the subject and the settled label. Nothing selects a reviewer
-  // label to manufacture a consensus, and no annotation figure is merged into a regression count.
-  const deterministicPairs: ScoredPair[] = regression.map((row) => ({
-    caseId: row.caseId,
-    dimension: row.dimension,
-    subjectId: row.subjectId,
-    expected: row.expected,
-    predicted: row.produced,
-    component: row.component,
-  }));
-  const dimensions = scoreByDimension(deterministicPairs, BENCHMARK_DIMENSIONS);
-  const agreement = agreementRows(validation.cases);
-  const annotation = annotationSummaries(agreement, BENCHMARK_DIMENSIONS);
-  const unusable = unusableEvidenceRecords(validation.cases).map((row) => ({
-    caseId: row.caseId,
-    propositionId: row.propositionId,
-    evidenceId: row.evidence.id,
-  }));
+  const bound = bindCorpusToRelease(options, validation, directory);
+  if (bound.refused) {
+    // Stopped here, before scoring, before the report, before any output path is touched. A refusal that still
+    // produced a document would be the failure this binding exists to prevent.
+    return;
+  }
 
-  const report = buildBenchmarkReport(
-    validation,
-    regression,
-    dimensions,
-    agreement,
-    annotation,
-    unusable,
-    digests,
-  );
-
-  const text = serialiseBenchmarkReport(report);
+  // Scoring is one shared pipeline (`composeRunReport`), because a verification that recomputed the report by a
+  // second implementation would drift in some field nobody thought to compare.
+  const { report, reportText: text } = composeRunReport(reading.files, validation);
+  const unusableCount = report.regression.unusableEvidence.length;
+  if (unusableCount > 0) {
+    console.error(
+      `benchmark: ${String(unusableCount)} evidence record(s) carried a value the deterministic rule cannot read and were excluded from scoring.`,
+    );
+  }
   if (options.output === null) {
     process.stdout.write(text);
   } else {
     const target = resolve(options.output);
     mkdirSync(resolve(target, '..'), { recursive: true });
-    writeFileSync(target, text, 'utf8');
+    try {
+      const published = publishFile(target, text, { overwrite: options.overwrite });
+      if (!published.written) {
+        console.error(
+          `benchmark: the file already at ${target} holds exactly these bytes; nothing was replaced.`,
+        );
+      } else if (published.replacedSha256 !== null) {
+        console.error(
+          `benchmark: replaced the file already at ${target} (previous sha256 ${published.replacedSha256}).`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ArtifactWriteError) {
+        return fail(error.message);
+      }
+      throw error;
+    }
   }
 
   if (validation.strataMissing.length > 0) {
@@ -266,10 +317,44 @@ function main(): void {
         validation.strataMissing.join(', '),
     );
   }
-  if (unusable.length > 0) {
-    console.error(
-      `benchmark: ${String(unusable.length)} evidence record(s) carried a value the deterministic rule cannot read and were excluded from scoring.`,
-    );
+
+  if (options.runRecord !== null) {
+    const record = buildRunRecord({
+      report,
+      reportText: text,
+      binding: bound.binding,
+      cases: validation.cases,
+      sourceRevision: options.sourceRevision,
+    });
+    const recordPath = resolve(options.runRecord);
+    mkdirSync(resolve(recordPath, '..'), { recursive: true });
+    try {
+      const published = publishFile(recordPath, runRecordText(record), {
+        overwrite: options.overwrite,
+      });
+      console.error(
+        published.written
+          ? `benchmark: run record written to ${recordPath}` +
+              (record.releaseId === null
+                ? ' — NOT RELEASE-BOUND: no release was supplied, so the receipt records that rather than inventing one.'
+                : ` (release ${record.releaseId})`)
+          : `benchmark: the run record at ${recordPath} already holds exactly these bytes; nothing was replaced.`,
+      );
+      if (published.written && published.replacedSha256 !== null) {
+        // Named even though `--overwrite` was asked for: two receipts for one corpus are the pair whose
+        // difference matters, and the displaced digest is the only way to say what is no longer there.
+        console.error(
+          `benchmark: replaced the run record already at ${recordPath} (previous sha256 ${published.replacedSha256}).`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ArtifactWriteError) {
+        return fail(
+          `${error.message} The report was written; the receipt was not, so no run claims a binding it cannot show.`,
+        );
+      }
+      throw error;
+    }
   }
   if (options.output !== null) {
     console.error(`benchmark: report written to ${resolve(options.output)}`);
