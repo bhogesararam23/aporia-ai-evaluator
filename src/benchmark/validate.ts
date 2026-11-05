@@ -18,6 +18,7 @@ import {
   type BenchmarkStratum,
 } from './types.ts';
 import { reviewerIdentity } from './provenance.ts';
+import { unsafeIdReason } from './naming.ts';
 import { isContentHash, MAX_CANONICAL_DEPTH, nestsDeeperThan } from './hashing.ts';
 /**
  * Bounds a hostile or careless corpus file can be forced to respect at load time.
@@ -856,6 +857,16 @@ export function validateBenchmarkCase(source: unknown, index: number): Benchmark
   const caseVersion = typeof version === 'string' ? version : BENCHMARK_CASE_VERSION;
 
   report.text('id', source['id'], BENCHMARK_LIMITS.maxIdLength);
+  if (typeof source['id'] === 'string') {
+    // One rule, shared with the writers (`src/benchmark/naming.ts`): a case id is not only a label, it is the
+    // file name every publication path derives from it. Checked here as well as at write time because a case
+    // that cannot be published should not be accepted into a corpus and discovered only when something tries
+    // to write it out.
+    const idProblem = unsafeIdReason(source['id']);
+    if (idProblem !== null) {
+      report.push('id', `A case id becomes a file name in every publication path. ${idProblem}.`);
+    }
+  }
   report.text('title', source['title'], 300);
   report.enumeration(
     'stratum',
