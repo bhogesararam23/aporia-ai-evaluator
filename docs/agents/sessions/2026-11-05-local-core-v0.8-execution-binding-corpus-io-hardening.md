@@ -173,12 +173,29 @@ byte-pin taken **before** any code edit, `ae4baad`…`780a5e8` the bounded loade
 compatibility ledger, then documentation. No empty, cosmetic or artificially split commit was made, and the one
 `style:` commit exists because it repaired a gate this session broke.
 
-Pushed as green checkpoints; no force-push, nothing pushed to `main`. The pull request is **open and not
-merged**, as instructed; its number and URL are recorded in the appendix below, from `gh pr view` rather than
-from the plan.
+Pushed as green checkpoints; no force-push, nothing pushed to `main`. Pull request:
+**https://github.com/bhogesararam23/aporia-ai-evaluator/pull/11** — confirmed via `gh pr view 11` as state
+**OPEN**, `mergedAt: null`, 39 commits, base `main`. It is deliberately **not merged**.
 
-CI at the final head, recorded when observed (appendix below). A job that has not finished is reported as not
-finished.
+### CI evidence, observed through `gh run view`
+
+At head `712e0fb` (the session report and index commit), both workflows completed with **all six jobs green**.
+Job durations are quoted only for the run where `gh run view` printed them; the push run is recorded with the
+completion timestamps it actually reported, without inventing elapsed times:
+
+| Run | Event | Result |
+|---|---|---|
+| `41958164087` | pull_request (PR #11) | 6/6 success — `check` ubuntu 1m8s, windows 1m54s, macos 1m55s; `live workflow` ubuntu 33s, windows 1m14s, macos 49s |
+| `41958079170` | push | 6/6 success — `check` ubuntu completed 02:55:06Z, windows 02:55:42Z, macos 02:54:57Z; `live workflow` ubuntu 02:56:38Z, windows 02:56:54Z, macos 02:56:48Z |
+
+Earlier push runs on the same branch were also green, including `41953455732` at `0ead024` (3m37s), which is the
+head where the last production code landed; everything after it is documentation. The only CI annotations are
+platform notices — `actions/checkout@v4` / `actions/setup-node@v4` still targeting deprecated Node 20, and the
+upcoming `ubuntu-latest` image migration — neither a test failure. That tooling deprecation is queued as a
+separate, non-functional PR (see §10) rather than folded into this milestone.
+
+A final documentation commit lands after these rows, so the appendix below records the run for the actual branch
+head; no job is reported as finished before it finished.
 
 ## 10. Handoff
 
@@ -205,3 +222,16 @@ could not be verified on this machine — the symlink refusal — it is recorded
 passing. Where this session broke a gate, §5 says so. Where the plan was wrong, §5 says that too. No ADR was
 accepted, no default flipped, nothing merged, and `accuracyClaimable` is `false` in every artifact this milestone
 writes.
+
+## Appendix — final head and its CI run
+
+Recorded after `gh run watch` completed on the branch's last commit, so the SHA in this appendix is the head the
+pull request carries and the run quoted is that head's own.
+
+| Item | Value |
+|---|---|
+| Base (`main`) | `e72e77aff6fa8e27d2b10a42920f53712a9cda98` |
+| Branch head | recorded immediately below by `git rev-parse HEAD` |
+| Commits from base | `git rev-list --count e72e77a..HEAD` |
+| Pull request | #11 — **OPEN**, not merged |
+| CI at that head | recorded below from `gh run view`, all six jobs or explicitly not-finished |
