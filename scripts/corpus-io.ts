@@ -11,6 +11,7 @@
  */
 import { lstatSync, readFileSync, readdirSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
+import { BENCHMARK_LIMITS } from '../src/benchmark/validate.ts';
 
 /**
  * What went wrong with a read. Each kind maps to one thing an operator can do about it.
@@ -32,6 +33,43 @@ export class CorpusReadError extends Error {
 }
 
 /**
+ * The file-count ceiling, stated as a predicate so the arithmetic is testable without materialising five
+ * thousand files.
+ */
+export function assertFileCount(names: readonly string[]): void {
+  if (names.length > BENCHMARK_LIMITS.maxFiles) {
+    throw new CorpusReadError(
+      'count',
+      `The directory holds ${String(names.length)} JSON files; the limit is ${String(
+        BENCHMARK_LIMITS.maxFiles,
+      )}. A corpus of that size is not a reviewed corpus — split it, or point at the directory you meant.`,
+    );
+  }
+}
+
+/** The per-file ceiling. Refusing to read past it is the point: the bytes are never parsed. */
+export function assertFileBytes(name: string, bytes: number): void {
+  if (bytes > BENCHMARK_LIMITS.maxCaseBytes) {
+    throw new CorpusReadError(
+      'size',
+      `${name} is ${String(bytes)} bytes; the per-file limit is ${String(
+        BENCHMARK_LIMITS.maxCaseBytes,
+      )}. Split it into smaller files.`,
+    );
+  }
+}
+
+/** The cumulative ceiling, so many legal-sized files cannot become an unbounded read. */
+export function assertTotalBytes(bytes: number): void {
+  if (bytes > BENCHMARK_LIMITS.maxCorpusBytes) {
+    throw new CorpusReadError(
+      'size',
+      `The corpus exceeds the total limit of ${String(BENCHMARK_LIMITS.maxCorpusBytes)} bytes in total.`,
+    );
+  }
+}
+
+/**
  * Every `*.json` entry name in a directory, sorted by code unit, each confirmed to be a plain file.
  *
  * Ordering by code unit rather than a locale collation is deliberate: the position a value gets here is the
@@ -46,7 +84,7 @@ export class CorpusReadError extends Error {
  * An entry that disappears between listing and inspection is reported as unreadable rather than skipped:
  * skipping would let a corpus quietly hold fewer cases than its operator believes it froze.
  */
-function jsonFileNames(directory: string): string[] {
+function inspectEntries(directory: string): { name: string; bytes: number }[] {
   let names: string[];
   try {
     names = readdirSync(directory)
@@ -55,6 +93,8 @@ function jsonFileNames(directory: string): string[] {
   } catch {
     throw new CorpusReadError('directory', `The directory could not be read: ${directory}`);
   }
+  assertFileCount(names);
+  const entries: { name: string; bytes: number }[] = [];
   for (const name of names) {
     let stat: Stats;
     try {
@@ -76,8 +116,31 @@ function jsonFileNames(directory: string): string[] {
           '*.json is a layout mistake, and skipping it would understate the corpus.',
       );
     }
+    // Measured from the same stat that classified the entry, so no second lookup races the check.
+    assertFileBytes(name, stat.size);
+    entries.push({ name, bytes: stat.size });
   }
-  return names;
+  return entries;
+}
+
+/**
+ * The whole directory read, bounded: nothing is opened until its size has been accepted.
+ *
+ * The harness applied these ceilings in v0.7 while `benchmark:case` and `benchmark:release` parsed any file
+ * put in front of them — a 1,093,691-byte bundle was refused by one command and reported as "600 valid
+ * case(s)" by the other. One read path, one set of ceilings, and the total is accumulated as files are
+ * accepted rather than computed afterwards, so an oversized corpus stops at the file that crossed it.
+ */
+function readBoundedFiles(directory: string): { name: string; text: string }[] {
+  const entries = inspectEntries(directory);
+  const files: { name: string; text: string }[] = [];
+  let total = 0;
+  for (const entry of entries) {
+    total += entry.bytes;
+    assertTotalBytes(total);
+    files.push({ name: entry.name, text: readFileSync(join(directory, entry.name), 'utf8') });
+  }
+  return files;
 }
 
 function parseJson(name: string, text: string): unknown {
@@ -106,11 +169,11 @@ export function readCorpusValues(
   directory: string,
 ): { index: number; value: unknown; source: string }[] {
   const sources: { index: number; value: unknown; source: string }[] = [];
-  for (const name of jsonFileNames(directory)) {
-    const value = parseJson(name, readFileSync(join(directory, name), 'utf8'));
+  for (const file of readBoundedFiles(directory)) {
+    const value = parseJson(file.name, file.text);
     const entries = Array.isArray(value) ? value : [value];
     for (const entry of entries) {
-      sources.push({ index: sources.length, value: entry, source: name });
+      sources.push({ index: sources.length, value: entry, source: file.name });
     }
   }
   return sources;
@@ -119,14 +182,14 @@ export function readCorpusValues(
 /** Every JSON value in a directory, flattening top-level arrays, keyed by the file it came from. */
 export function readJsonEntries(directory: string): { name: string; value: unknown }[] {
   const entries: { name: string; value: unknown }[] = [];
-  for (const name of jsonFileNames(directory)) {
-    const value = parseJson(name, readFileSync(join(directory, name), 'utf8'));
+  for (const file of readBoundedFiles(directory)) {
+    const value = parseJson(file.name, file.text);
     if (Array.isArray(value)) {
       for (const item of value) {
-        entries.push({ name, value: item });
+        entries.push({ name: file.name, value: item });
       }
     } else {
-      entries.push({ name, value });
+      entries.push({ name: file.name, value });
     }
   }
   return entries;
